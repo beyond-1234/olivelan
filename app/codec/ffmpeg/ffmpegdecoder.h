@@ -121,6 +121,7 @@ private:
     AVCodecContext* codec_ctx_;
     AVStream* avstream_;
     AVDictionary* opts_;
+    int cuda_frame_count_;
 
   };
 

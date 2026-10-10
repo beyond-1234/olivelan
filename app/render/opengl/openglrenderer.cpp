@@ -25,6 +25,13 @@
 #include <QDebug>
 #include <QOpenGLExtraFunctions>
 
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+extern "C" {
+#include <libavutil/hwcontext.h>
+}
+#include "cuda_nv12_to_rgba.h"
+#endif
+
 #include "config/config.h"
 
 namespace olive {
@@ -162,6 +169,13 @@ void OpenGLRenderer::DestroyInternal()
   if (context_) {
     GL_PREAMBLE;
 
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    for (cudaGraphicsResource_t resource : cuda_graphics_resources_) {
+      cudaGraphicsUnregisterResource(resource);
+    }
+    cuda_graphics_resources_.clear();
+#endif
+
     // Delete framebuffer
     functions_->glDeleteFramebuffers(1, &framebuffer_);
     framebuffer_ = 0;
@@ -249,9 +263,94 @@ void OpenGLRenderer::DestroyNativeTexture(QVariant texture)
   GLuint t = texture.value<GLuint>();
 
   if (t > 0) {
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    auto resource = cuda_graphics_resources_.find(t);
+    if (resource != cuda_graphics_resources_.end()) {
+      cudaGraphicsUnregisterResource(resource.value());
+      cuda_graphics_resources_.erase(resource);
+    }
+#endif
     functions_->glDeleteTextures(1, &t);
   }
 }
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame)
+{
+  if (!frame || frame->format != AV_PIX_FMT_CUDA || !frame->hw_frames_ctx || params.is_3d()) {
+    return nullptr;
+  }
+
+  const auto *frames_context = reinterpret_cast<const AVHWFramesContext*>(frame->hw_frames_ctx->data);
+  if (!frames_context || frames_context->sw_format != AV_PIX_FMT_NV12) {
+    return nullptr;
+  }
+
+  TexturePtr texture = CreateTexture(params);
+  if (!texture) {
+    return nullptr;
+  }
+
+  const GLuint texture_id = texture->id().value<GLuint>();
+  cudaGraphicsResource_t resource = cuda_graphics_resources_.value(texture_id, nullptr);
+  if (!resource) {
+    const cudaError_t register_error = cudaGraphicsGLRegisterImage(&resource,
+                                                                    texture_id,
+                                                                    GL_TEXTURE_2D,
+                                                                    cudaGraphicsRegisterFlagsSurfaceLoadStore);
+    if (register_error != cudaSuccess) {
+      qWarning() << "[CUDA-GL] Texture registration failed:" << cudaGetErrorString(register_error);
+      return nullptr;
+    }
+    cuda_graphics_resources_.insert(texture_id, resource);
+  }
+
+  cudaError_t error = cudaGraphicsMapResources(1, &resource, 0);
+  if (error != cudaSuccess) {
+    qWarning() << "[CUDA-GL] Texture map failed:" << cudaGetErrorString(error);
+    return nullptr;
+  }
+
+  cudaArray_t mapped_array = nullptr;
+  error = cudaGraphicsSubResourceGetMappedArray(&mapped_array, resource, 0, 0);
+  cudaSurfaceObject_t surface = 0;
+  if (error == cudaSuccess) {
+    cudaResourceDesc resource_description{};
+    resource_description.resType = cudaResourceTypeArray;
+    resource_description.res.array.array = mapped_array;
+    error = cudaCreateSurfaceObject(&surface, &resource_description);
+  }
+
+  if (error == cudaSuccess) {
+    error = OliveLaunchNv12ToRgbaSurface(frame->data[0],
+                                         frame->linesize[0],
+                                         frame->data[1],
+                                         frame->linesize[1],
+                                         surface,
+                                         frame->width,
+                                         frame->height,
+                                         frame->colorspace,
+                                         frame->color_range == AVCOL_RANGE_JPEG);
+  }
+  if (error == cudaSuccess) {
+    error = cudaDeviceSynchronize();
+  }
+  if (surface) {
+    cudaDestroySurfaceObject(surface);
+  }
+
+  const cudaError_t unmap_error = cudaGraphicsUnmapResources(1, &resource, 0);
+  if (error == cudaSuccess) {
+    error = unmap_error;
+  }
+  if (error != cudaSuccess) {
+    qWarning() << "[CUDA-GL] NV12 texture conversion failed:" << cudaGetErrorString(error);
+    return nullptr;
+  }
+
+  return texture;
+}
+#endif
 
 QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
 {

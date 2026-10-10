@@ -22,6 +22,18 @@ option(BUILD_QT6 "Build with Qt 6 over 5 (experimental)" OFF)
 option(BUILD_DOXYGEN "Build Doxygen documentation" OFF)
 option(BUILD_TESTS "Build unit tests" OFF)
 option(USE_WERROR "Error on compile warning" OFF)
+option(OLIVE_ENABLE_CUDA_NVDEC "Enable optional FFmpeg CUDA/NVDEC decoding" OFF)
+
+if(OLIVE_ENABLE_CUDA_NVDEC)
+  if(NOT CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 89)
+  endif()
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  list(APPEND OLIVE_LIBRARIES CUDA::cudart)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,12 +70,12 @@ if(MSVC)
 else()
   set(OLIVE_COMPILE_OPTIONS
     "$<$<CONFIG:RELEASE>:-O2>"
-    -Wuninitialized
-    -pedantic-errors
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-    -Wshadow
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wuninitialized>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-pedantic-errors>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wextra>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-parameter>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wshadow>"
   )
   if (USE_WERROR)
     list(APPEND OLIVE_COMPILE_OPTIONS "-Werror")
@@ -71,6 +83,9 @@ else()
 endif()
 
 set(OLIVE_DEFINITIONS -DQT_DEPRECATED_WARNINGS)
+if(OLIVE_ENABLE_CUDA_NVDEC)
+  list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_CUDA_NVDEC)
+endif()
 if (WIN32)
   list(APPEND OLIVE_DEFINITIONS -DUNICODE -D_UNICODE)
 endif()

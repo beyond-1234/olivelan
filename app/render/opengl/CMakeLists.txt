@@ -18,5 +18,13 @@ set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
   render/opengl/openglrenderer.cpp
   render/opengl/openglrenderer.h
-  PARENT_SCOPE
 )
+
+if(OLIVE_ENABLE_CUDA_NVDEC)
+  list(APPEND OLIVE_SOURCES
+    render/opengl/cuda_nv12_to_rgba.cu
+    render/opengl/cuda_nv12_to_rgba.h
+  )
+endif()
+
+set(OLIVE_SOURCES ${OLIVE_SOURCES} PARENT_SCOPE)

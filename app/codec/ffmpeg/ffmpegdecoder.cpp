@@ -25,6 +25,7 @@ extern "C" {
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
@@ -43,6 +44,9 @@ extern "C" {
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
 #include "render/renderer.h"
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+#include "render/opengl/openglrenderer.h"
+#endif
 #include "render/subtitleparams.h"
 
 namespace olive {
@@ -239,12 +243,38 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
     }
 
     AVFramePtr original = f;
+    f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    if (f->format == AV_PIX_FMT_CUDA) {
+      if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone) {
+        VideoParams params(f->width,
+                           f->height,
+                           PixelFormat::U8,
+                           VideoParams::kRGBAChannelCount,
+                           av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
+                           VideoParams::kInterlaceNone,
+                           p.divider);
+        if (auto *gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
+          if (TexturePtr texture = gl_renderer->CreateTextureFromCudaFrame(params, f.get())) {
+            return texture;
+          }
+        }
+
+      AVFramePtr software_frame = CreateAVFramePtr();
+      int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
+      if (transfer_error < 0) {
+        qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
+        return nullptr;
+      }
+      av_frame_copy_props(software_frame.get(), f.get());
+      f = software_frame;
+      }
+    }
+#endif
 
     // Disregard "JPEG" pixel formats because we allow the user to override that
     f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
-
-    // Force frame's color range to whatever it's set to in Olive
-    f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
     // Perform any CPU processing required
     f = PreProcessFrame(f, p);
@@ -1021,7 +1051,8 @@ FFmpegDecoder::Instance::Instance() :
   fmt_ctx_(nullptr),
   codec_ctx_(nullptr),
   avstream_(nullptr),
-  opts_(nullptr)
+  opts_(nullptr),
+  cuda_frame_count_(0)
 {
 }
 
@@ -1076,6 +1107,42 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     return false;
   }
 
+  bool cuda_device_ready = false;
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  AVBufferRef* hw_device_ctx = nullptr;
+  error_code = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
+  if (error_code >= 0) {
+    codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+    av_buffer_unref(&hw_device_ctx);
+    codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
+      const bool nvdec_dimensions_supported = context->width <= 4096 && context->height <= 4096;
+      if (nvdec_dimensions_supported) {
+        for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+          if (*format == AV_PIX_FMT_CUDA) {
+            return AV_PIX_FMT_CUDA;
+          }
+        }
+      }
+
+      for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+        const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
+        if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+          return *format;
+        }
+      }
+
+      return AV_PIX_FMT_NONE;
+    };
+    cuda_device_ready = true;
+    qInfo() << "[CUDA-NVDEC] CUDA device initialized for" << filename;
+  } else {
+    if (hw_device_ctx) {
+      av_buffer_unref(&hw_device_ctx);
+    }
+    qWarning() << "[CUDA-NVDEC] CUDA device initialization failed; using software decode:" << error_code;
+  }
+#endif
+
   // Set multithreading setting
   error_code = av_dict_set(&opts_, "threads", "auto", 0);
 
@@ -1086,6 +1153,22 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   // Open codec
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
+  if (error_code < 0 && cuda_device_ready) {
+    qWarning() << "[CUDA-NVDEC] Hardware decoder initialization failed; retrying software decode:" << error_code;
+    avcodec_free_context(&codec_ctx_);
+    codec_ctx_ = avcodec_alloc_context3(codec);
+    if (!codec_ctx_ || avcodec_parameters_to_context(codec_ctx_, avstream_->codecpar) < 0) {
+      qCritical() << "Failed to recreate software codec context";
+      return false;
+    }
+
+    if (opts_) {
+      av_dict_free(&opts_);
+      opts_ = nullptr;
+    }
+    av_dict_set(&opts_, "threads", "auto", 0);
+    error_code = avcodec_open2(codec_ctx_, codec, &opts_);
+  }
   if (error_code < 0) {
     char buf[512];
     av_strerror(error_code, buf, 512);
@@ -1149,6 +1232,17 @@ int FFmpegDecoder::Instance::GetFrame(AVPacket *pkt, AVFrame *frame)
       }
     }
   }
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (ret >= 0 && frame->format == AV_PIX_FMT_CUDA) {
+    ++cuda_frame_count_;
+    if (cuda_frame_count_ == 1 || cuda_frame_count_ % 60 == 0) {
+      qInfo() << "[CUDA-NVDEC] Received hardware frame" << cuda_frame_count_
+              << "size=" << frame->width << "x" << frame->height
+              << "format=" << av_get_pix_fmt_name(static_cast<AVPixelFormat>(frame->format));
+    }
+  }
+#endif
 
   return ret;
 }

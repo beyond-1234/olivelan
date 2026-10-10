@@ -21,6 +21,12 @@
 #ifndef OPENGLCONTEXT_H
 #define OPENGLCONTEXT_H
 
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+#include <cuda_gl_interop.h>
+#include <QHash>
+struct AVFrame;
+#endif
+
 #include <QOffscreenSurface>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
@@ -54,6 +60,10 @@ public:
   virtual QVariant CreateNativeShader(olive::ShaderCode code) override;
 
   virtual void DestroyNativeShader(QVariant shader) override;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  TexturePtr CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame);
+#endif
 
   virtual void UploadToTexture(const QVariant &handle, const VideoParams &params, const void* data, int linesize) override;
 
@@ -116,6 +126,10 @@ private:
   };
 
   QMap<GLuint, TextureCacheKey> texture_params_;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  QHash<GLuint, cudaGraphicsResource_t> cuda_graphics_resources_;
+#endif
 
   static const int kTextureCacheMaxSize;
 

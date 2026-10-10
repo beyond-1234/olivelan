@@ -1,0 +1,18 @@
+#ifndef OLIVE_CUDA_NV12_TO_RGBA_H
+#define OLIVE_CUDA_NV12_TO_RGBA_H
+
+#include <cuda_runtime_api.h>
+
+#include <stdint.h>
+
+cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
+                                         int y_pitch,
+                                         const uint8_t *uv_plane,
+                                         int uv_pitch,
+                                         cudaSurfaceObject_t output_surface,
+                                         int width,
+                                         int height,
+                                         int color_space,
+                                         bool full_range);
+
+#endif
