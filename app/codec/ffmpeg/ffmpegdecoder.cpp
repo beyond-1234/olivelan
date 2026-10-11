@@ -19,6 +19,7 @@
 ***/
 
 #include "ffmpegdecoder.h"
+#include "hardware_quota.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -1128,37 +1129,50 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   bool cuda_device_ready = false;
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  AVBufferRef* hw_device_ctx = nullptr;
-  error_code = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
-  if (error_code >= 0) {
-    codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx);
-    av_buffer_unref(&hw_device_ctx);
-    codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
-      const bool nvdec_dimensions_supported = context->width <= 4096 && context->height <= 4096;
-      if (nvdec_dimensions_supported) {
-        for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
-          if (*format == AV_PIX_FMT_CUDA) {
-            return AV_PIX_FMT_CUDA;
+  if (HardwareQuotaManager::TryAcquireNvdecQuota()) {
+    AVBufferRef* hw_device_ctx = nullptr;
+    error_code = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
+    if (error_code >= 0) {
+      codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+      av_buffer_unref(&hw_device_ctx);
+      codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
+        const bool nvdec_dimensions_supported =
+            context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
+            context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
+        if (nvdec_dimensions_supported) {
+          for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+            if (*format == AV_PIX_FMT_CUDA) {
+              return AV_PIX_FMT_CUDA;
+            }
           }
         }
-      }
 
-      for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
-        const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
-        if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
-          return *format;
+        for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+          const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
+          if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+            return *format;
+          }
         }
-      }
 
-      return AV_PIX_FMT_NONE;
-    };
-    cuda_device_ready = true;
-    qInfo() << "[CUDA-NVDEC] CUDA device initialized for" << filename;
-  } else {
-    if (hw_device_ctx) {
-      av_buffer_unref(&hw_device_ctx);
+        return AV_PIX_FMT_NONE;
+      };
+      holds_nvdec_quota_ = true;
+      cuda_device_ready = true;
+      qInfo() << "[NVDEC-Quota] Granted. Active:"
+              << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
+              << HardwareQuotaManager::GetMaxNvdecSessions()
+              << "for" << filename;
+    } else {
+      if (hw_device_ctx) {
+        av_buffer_unref(&hw_device_ctx);
+      }
+      HardwareQuotaManager::ReleaseNvdecQuota();
+      qWarning() << "[NVDEC-Quota] CUDA device init failed; released quota & fallback to software:" << error_code;
     }
-    qWarning() << "[CUDA-NVDEC] CUDA device initialization failed; using software decode:" << error_code;
+  } else {
+    qInfo() << "[NVDEC-Quota] Saturated ("
+            << HardwareQuotaManager::GetMaxNvdecSessions() << "sessions active); routing"
+            << filename << "to software decode.";
   }
 #endif
 
@@ -1174,6 +1188,10 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
   if (error_code < 0 && cuda_device_ready) {
     qWarning() << "[CUDA-NVDEC] Hardware decoder initialization failed; retrying software decode:" << error_code;
+    if (holds_nvdec_quota_) {
+      holds_nvdec_quota_ = false;
+      HardwareQuotaManager::ReleaseNvdecQuota();
+    }
     avcodec_free_context(&codec_ctx_);
     codec_ctx_ = avcodec_alloc_context3(codec);
     if (!codec_ctx_ || avcodec_parameters_to_context(codec_ctx_, avstream_->codecpar) < 0) {
@@ -1200,6 +1218,15 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
 void FFmpegDecoder::Instance::Close()
 {
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (holds_nvdec_quota_) {
+    holds_nvdec_quota_ = false;
+    HardwareQuotaManager::ReleaseNvdecQuota();
+    qInfo() << "[NVDEC-Quota] Released. Active:"
+            << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
+            << HardwareQuotaManager::GetMaxNvdecSessions();
+  }
+#endif
   if (opts_) {
     av_dict_free(&opts_);
     opts_ = nullptr;
