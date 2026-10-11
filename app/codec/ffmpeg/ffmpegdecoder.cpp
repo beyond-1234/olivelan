@@ -247,6 +247,7 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
     if (f->format == AV_PIX_FMT_CUDA) {
+      // Direct GPU-resident path: only valid at full resolution and for progressive frames.
       if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone) {
         VideoParams params(f->width,
                            f->height,
@@ -260,7 +261,11 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
             return texture;
           }
         }
+      }
 
+      // Any hardware frame that skipped the direct path (scaled preview, interlaced source, or a
+      // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
+      // swscale receives a device pointer and crashes.
       AVFramePtr software_frame = CreateAVFramePtr();
       int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
       if (transfer_error < 0) {
@@ -269,7 +274,6 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
       }
       av_frame_copy_props(software_frame.get(), f.get());
       f = software_frame;
-      }
     }
 #endif
 
@@ -773,6 +777,21 @@ AVFramePtr FFmpegDecoder::PreProcessFrame(AVFramePtr f, const RetrieveVideoParam
   // In pre-processing, we try to achieve the following:
   //   - If a divider is being used, scale down the image
   //   - If a pixel format is not compatible with the GLSL shader, convert it to RGBA ourselves
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  // Last line of defence: a hardware frame must never reach swscale. Download it first.
+  if (f->format == AV_PIX_FMT_CUDA) {
+    qWarning() << "[CUDA-NVDEC] Hardware frame reached pre-processing; downloading to host memory";
+    AVFramePtr software_frame = CreateAVFramePtr();
+    int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
+    if (transfer_error < 0) {
+      qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame in pre-processing:" << FFmpegError(transfer_error);
+      return nullptr;
+    }
+    av_frame_copy_props(software_frame.get(), f.get());
+    f = software_frame;
+  }
+#endif
 
   if (p.divider == 1 && IsPixelFormatGLSLCompatible(static_cast<AVPixelFormat>(f->format))) {
     // No CPU processing required, the user wants this in full resolution and the pixel format can

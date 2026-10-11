@@ -23,6 +23,7 @@
 #include <iostream>
 #include <QDateTime>
 #include <QDebug>
+#include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
@@ -278,6 +279,19 @@ void OpenGLRenderer::DestroyNativeTexture(QVariant texture)
 TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame)
 {
   if (!frame || frame->format != AV_PIX_FMT_CUDA || !frame->hw_frames_ctx || params.is_3d()) {
+    return nullptr;
+  }
+
+  // cudaGraphicsGLRegisterImage/Map require the texture's GL context to be current on this thread.
+  // Without it the interop calls are undefined behaviour and crash, so fall back to the CPU path.
+  QOpenGLContext *current_context = QOpenGLContext::currentContext();
+  if (current_context != context_) {
+    static bool context_warning_emitted = false;
+    if (!context_warning_emitted) {
+      context_warning_emitted = true;
+      qWarning() << "[CUDA-GL] Renderer context is not current on this thread; falling back to"
+                 << "software frame transfer. current:" << current_context << "expected:" << context_;
+    }
     return nullptr;
   }
 
