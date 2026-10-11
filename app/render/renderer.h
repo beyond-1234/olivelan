@@ -46,7 +46,7 @@ public:
 
   TexturePtr CreateTexture(const VideoParams& params, const void *data = nullptr, int linesize = 0);
 
-  void DestroyTexture(Texture *texture);
+  virtual void DestroyTexture(Texture *texture);
 
   void BlitToTexture(QVariant shader,
                      olive::ShaderJob job,

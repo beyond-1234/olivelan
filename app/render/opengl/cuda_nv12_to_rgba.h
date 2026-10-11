@@ -13,6 +13,8 @@ cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
                                          int width,
                                          int height,
                                          int color_space,
-                                         bool full_range);
+                                         bool full_range,
+                                         int dst_x = 0,
+                                         int dst_y = 0);
 
 #endif

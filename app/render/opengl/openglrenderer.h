@@ -24,6 +24,8 @@
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
 #include <cuda_gl_interop.h>
 #include <QHash>
+#include <QMutex>
+#include <vector>
 struct AVFrame;
 #endif
 
@@ -82,6 +84,8 @@ protected:
 
   virtual QVariant CreateNativeTexture(int width, int height, int depth, PixelFormat format, int channel_count, const void* data = nullptr, int linesize = 0) override;
 
+  virtual void DestroyTexture(Texture *texture) override;
+
   virtual void DestroyNativeTexture(QVariant texture) override;
 
   virtual void DestroyInternal() override;
@@ -128,6 +132,27 @@ private:
   QMap<GLuint, TextureCacheKey> texture_params_;
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  struct CudaGLPoolSlot {
+    GLuint gl_tex_id = 0;
+    cudaGraphicsResource_t cuda_resource = nullptr;
+    int width = 0;
+    int height = 0;
+    bool in_use = false;
+  };
+
+  static const int kCudaFramePoolCapacity = 8;
+  static const int kCudaFramePoolMaxWidth = 4096;
+  static const int kCudaFramePoolMaxHeight = 4096;
+
+  std::vector<CudaGLPoolSlot> cuda_frame_pool_;
+  QMutex cuda_pool_mutex_;
+
+  int AcquireCudaPoolSlot(int width, int height);
+  bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height);
+  void ReleaseCudaPoolSlot(int slot_index);
+  bool ReleaseCudaPoolTexture(GLuint tid);
+  void DestroyCudaFramePool();
+
   QHash<GLuint, cudaGraphicsResource_t> cuda_graphics_resources_;
 #endif
 

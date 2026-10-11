@@ -171,6 +171,7 @@ void OpenGLRenderer::DestroyInternal()
     GL_PREAMBLE;
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    DestroyCudaFramePool();
     for (cudaGraphicsResource_t resource : cuda_graphics_resources_) {
       cudaGraphicsUnregisterResource(resource);
     }
@@ -275,7 +276,139 @@ void OpenGLRenderer::DestroyNativeTexture(QVariant texture)
   }
 }
 
+void OpenGLRenderer::DestroyTexture(Texture *texture)
+{
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (texture) {
+    const GLuint tid = texture->id().value<GLuint>();
+    if (ReleaseCudaPoolTexture(tid)) {
+      return;
+    }
+  }
+#endif
+  Renderer::DestroyTexture(texture);
+}
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+
+  if (width <= 0 || height <= 0 || width > kCudaFramePoolMaxWidth || height > kCudaFramePoolMaxHeight) {
+    qWarning() << "[CUDA-GL-Pool] Requested dimensions exceed bounding box:" << width << "x" << height;
+    return -1;
+  }
+
+  // 1. Exact match pass: find a free slot with identical resolution
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    auto &slot = cuda_frame_pool_[i];
+    if (!slot.in_use && slot.width == width && slot.height == height && slot.gl_tex_id != 0 && slot.cuda_resource != nullptr) {
+      slot.in_use = true;
+      return static_cast<int>(i);
+    }
+  }
+
+  // 2. Reuse pass: resize an existing idle slot
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    auto &slot = cuda_frame_pool_[i];
+    if (!slot.in_use) {
+      if (!AllocateOrResizePoolSlot(slot, width, height)) {
+        return -1;
+      }
+      slot.in_use = true;
+      return static_cast<int>(i);
+    }
+  }
+
+  // 3. Growth pass: append a new slot if under capacity
+  if (static_cast<int>(cuda_frame_pool_.size()) < kCudaFramePoolCapacity) {
+    CudaGLPoolSlot new_slot;
+    if (AllocateOrResizePoolSlot(new_slot, width, height)) {
+      new_slot.in_use = true;
+      cuda_frame_pool_.push_back(new_slot);
+      return static_cast<int>(cuda_frame_pool_.size() - 1);
+    }
+  }
+
+  qWarning() << "[CUDA-GL-Pool] Pool capacity reached (" << cuda_frame_pool_.size() << "slots all in use)";
+  return -1;
+}
+
+bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height)
+{
+  if (slot.cuda_resource) {
+    cudaGraphicsUnregisterResource(slot.cuda_resource);
+    slot.cuda_resource = nullptr;
+  }
+  if (slot.gl_tex_id) {
+    functions_->glDeleteTextures(1, &slot.gl_tex_id);
+    slot.gl_tex_id = 0;
+  }
+
+  functions_->glGenTextures(1, &slot.gl_tex_id);
+  functions_->glBindTexture(GL_TEXTURE_2D, slot.gl_tex_id);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  functions_->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  functions_->glBindTexture(GL_TEXTURE_2D, 0);
+
+  const cudaError_t reg_err = cudaGraphicsGLRegisterImage(&slot.cuda_resource,
+                                                          slot.gl_tex_id,
+                                                          GL_TEXTURE_2D,
+                                                          cudaGraphicsRegisterFlagsSurfaceLoadStore);
+  if (reg_err != cudaSuccess) {
+    qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err);
+    if (slot.gl_tex_id) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    return false;
+  }
+
+  slot.width = width;
+  slot.height = height;
+  return true;
+}
+
+void OpenGLRenderer::ReleaseCudaPoolSlot(int slot_index)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+  if (slot_index >= 0 && slot_index < static_cast<int>(cuda_frame_pool_.size())) {
+    cuda_frame_pool_[slot_index].in_use = false;
+  }
+}
+
+bool OpenGLRenderer::ReleaseCudaPoolTexture(GLuint tid)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    if (cuda_frame_pool_[i].gl_tex_id == tid) {
+      cuda_frame_pool_[i].in_use = false;
+      return true;
+    }
+  }
+  return false;
+}
+
+void OpenGLRenderer::DestroyCudaFramePool()
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+  for (auto &slot : cuda_frame_pool_) {
+    if (slot.cuda_resource) {
+      cudaGraphicsUnregisterResource(slot.cuda_resource);
+      slot.cuda_resource = nullptr;
+    }
+    if (slot.gl_tex_id) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    slot.in_use = false;
+  }
+  cuda_frame_pool_.clear();
+}
+
 TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame)
 {
   if (!frame || frame->format != AV_PIX_FMT_CUDA || !frame->hw_frames_ctx || params.is_3d()) {
@@ -300,28 +433,18 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
     return nullptr;
   }
 
-  TexturePtr texture = CreateTexture(params);
-  if (!texture) {
+  const int slot_index = AcquireCudaPoolSlot(frame->width, frame->height);
+  if (slot_index < 0) {
     return nullptr;
   }
 
-  const GLuint texture_id = texture->id().value<GLuint>();
-  cudaGraphicsResource_t resource = cuda_graphics_resources_.value(texture_id, nullptr);
-  if (!resource) {
-    const cudaError_t register_error = cudaGraphicsGLRegisterImage(&resource,
-                                                                    texture_id,
-                                                                    GL_TEXTURE_2D,
-                                                                    cudaGraphicsRegisterFlagsSurfaceLoadStore);
-    if (register_error != cudaSuccess) {
-      qWarning() << "[CUDA-GL] Texture registration failed:" << cudaGetErrorString(register_error);
-      return nullptr;
-    }
-    cuda_graphics_resources_.insert(texture_id, resource);
-  }
+  cudaGraphicsResource_t resource = cuda_frame_pool_[slot_index].cuda_resource;
+  const GLuint texture_id = cuda_frame_pool_[slot_index].gl_tex_id;
 
   cudaError_t error = cudaGraphicsMapResources(1, &resource, 0);
   if (error != cudaSuccess) {
     qWarning() << "[CUDA-GL] Texture map failed:" << cudaGetErrorString(error);
+    ReleaseCudaPoolSlot(slot_index);
     return nullptr;
   }
 
@@ -359,10 +482,12 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   }
   if (error != cudaSuccess) {
     qWarning() << "[CUDA-GL] NV12 texture conversion failed:" << cudaGetErrorString(error);
+    ReleaseCudaPoolSlot(slot_index);
     return nullptr;
   }
 
-  return texture;
+  // Return Texture with this as renderer so IsDummy() is false and Texture::~Texture() routes to DestroyTexture
+  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), params);
 }
 #endif
 

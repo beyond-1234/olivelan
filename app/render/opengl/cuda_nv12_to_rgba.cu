@@ -19,7 +19,9 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
                                         int width,
                                         int height,
                                         int color_space,
-                                        bool full_range)
+                                        bool full_range,
+                                        int dst_x,
+                                        int dst_y)
 {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -27,11 +29,18 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
     return;
   }
 
+  // Access Y plane strictly respecting driver line pitch
   const float sample_y = static_cast<float>(y_plane[y * y_pitch + x]);
-  const int uv_x = (x / 2) * 2;
-  const int uv_y = y / 2;
-  const float u = static_cast<float>(uv_plane[uv_y * uv_pitch + uv_x]) - 128.0f;
-  const float v = static_cast<float>(uv_plane[uv_y * uv_pitch + uv_x + 1]) - 128.0f;
+
+  // Robust UV subsampling using bitwise ops to round down to even index
+  const int uv_x = (x >> 1) << 1;
+  const int uv_y = y >> 1;
+
+  // Boundary clamp: ensure (uv_x + 1) does not exceed valid line pitch
+  const int safe_uv_x = (uv_x + 1 < uv_pitch) ? uv_x : max(0, uv_pitch - 2);
+
+  const float u = static_cast<float>(uv_plane[uv_y * uv_pitch + safe_uv_x]) - 128.0f;
+  const float v = static_cast<float>(uv_plane[uv_y * uv_pitch + safe_uv_x + 1]) - 128.0f;
 
   float y_value = sample_y;
   float red_v;
@@ -69,7 +78,10 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
   const float green = y_value - green_u * u - green_v * v;
   const float blue = y_value + blue_u * u;
   const uchar4 rgba = make_uchar4(ClampByte(red), ClampByte(green), ClampByte(blue), 255);
-  surf2Dwrite(rgba, output_surface, x * sizeof(uchar4), y);
+
+  const int write_x = dst_x + x;
+  const int write_y = dst_y + y;
+  surf2Dwrite(rgba, output_surface, write_x * sizeof(uchar4), write_y);
 }
 
 }
@@ -82,8 +94,14 @@ cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
                                          int width,
                                          int height,
                                          int color_space,
-                                         bool full_range)
+                                         bool full_range,
+                                         int dst_x,
+                                         int dst_y)
 {
+  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch <= 0 || uv_pitch <= 0) {
+    return cudaErrorInvalidValue;
+  }
+
   const dim3 threads(16, 16);
   const dim3 blocks((width + threads.x - 1) / threads.x,
                     (height + threads.y - 1) / threads.y);
@@ -95,6 +113,8 @@ cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
                                                width,
                                                height,
                                                color_space,
-                                               full_range);
+                                               full_range,
+                                               dst_x,
+                                               dst_y);
   return cudaGetLastError();
 }
