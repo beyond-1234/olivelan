@@ -122,7 +122,7 @@ private:
     AVStream* avstream_;
     AVDictionary* opts_;
     int cuda_frame_count_;
-    bool holds_nvdec_quota_{false};
+    int nvdec_quota_slot_{-1};
 
   };
 

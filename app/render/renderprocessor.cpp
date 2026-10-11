@@ -375,6 +375,12 @@ void RenderProcessor::ProcessVideoFootage(TexturePtr destination, const FootageJ
   if (decoder && render_ctx_) {
     Decoder::RetrieveVideoParams p;
     p.divider = stream->video_params().divider();
+    if (destination && destination->width() > 0 && destination->height() > 0 &&
+        stream_data.width() > 0 && stream_data.height() > 0) {
+      if (destination->width() <= stream_data.width() / 2 && destination->height() <= stream_data.height() / 2) {
+        p.divider = std::max(p.divider, 2);
+      }
+    }
     p.maximum_format = destination->format();
 
     if (!IsCancelled()) {

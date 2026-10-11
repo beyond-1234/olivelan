@@ -1130,7 +1130,9 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   bool cuda_device_ready = false;
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (HardwareQuotaManager::TryAcquireNvdecQuota()) {
+  const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
+  nvdec_quota_slot_ = is_video_stream ? HardwareQuotaManager::AcquireOrPreemptNvdecQuota(this) : -1;
+  if (nvdec_quota_slot_ >= 0) {
     AVBufferRef* hw_device_ctx = nullptr;
     error_code = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
     if (error_code >= 0) {
@@ -1157,28 +1159,38 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
         return AV_PIX_FMT_NONE;
       };
-      holds_nvdec_quota_ = true;
       cuda_device_ready = true;
       qInfo() << "[NVDEC-Quota] Granted. Active:"
               << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
               << HardwareQuotaManager::GetMaxNvdecSessions()
-              << "for" << filename;
+              << "(slot" << nvdec_quota_slot_ << ") for" << filename;
     } else {
       if (hw_device_ctx) {
         av_buffer_unref(&hw_device_ctx);
       }
-      HardwareQuotaManager::ReleaseNvdecQuota();
+      HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+      nvdec_quota_slot_ = -1;
       qWarning() << "[NVDEC-Quota] CUDA device init failed; released quota & fallback to software:" << error_code;
     }
-  } else {
+  } else if (is_video_stream) {
     qInfo() << "[NVDEC-Quota] Saturated ("
             << HardwareQuotaManager::GetMaxNvdecSessions() << "sessions active); routing"
             << filename << "to software decode.";
   }
 #endif
 
-  // Set multithreading setting
+  // Set multithreading setting: throttle secondary software-fallback tracks to 2 threads
+  // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (nvdec_quota_slot_ < 0 && is_video_stream) {
+    error_code = av_dict_set(&opts_, "threads", "2", 0);
+    codec_ctx_->skip_frame = AVDISCARD_NONREF;
+  } else {
+    error_code = av_dict_set(&opts_, "threads", "auto", 0);
+  }
+#else
   error_code = av_dict_set(&opts_, "threads", "auto", 0);
+#endif
 
   // Handle failure to set multithreaded decoding
   if (error_code < 0) {
@@ -1189,9 +1201,9 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
   if (error_code < 0 && cuda_device_ready) {
     qWarning() << "[CUDA-NVDEC] Hardware decoder initialization failed; retrying software decode:" << error_code;
-    if (holds_nvdec_quota_) {
-      holds_nvdec_quota_ = false;
-      HardwareQuotaManager::ReleaseNvdecQuota();
+    if (nvdec_quota_slot_ >= 0) {
+      HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+      nvdec_quota_slot_ = -1;
     }
     avcodec_free_context(&codec_ctx_);
     codec_ctx_ = avcodec_alloc_context3(codec);
@@ -1204,7 +1216,8 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
       av_dict_free(&opts_);
       opts_ = nullptr;
     }
-    av_dict_set(&opts_, "threads", "auto", 0);
+    av_dict_set(&opts_, "threads", "2", 0);
+    codec_ctx_->skip_frame = AVDISCARD_NONREF;
     error_code = avcodec_open2(codec_ctx_, codec, &opts_);
   }
   if (error_code < 0) {
@@ -1220,9 +1233,9 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 void FFmpegDecoder::Instance::Close()
 {
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (holds_nvdec_quota_) {
-    holds_nvdec_quota_ = false;
-    HardwareQuotaManager::ReleaseNvdecQuota();
+  if (nvdec_quota_slot_ >= 0) {
+    HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+    nvdec_quota_slot_ = -1;
     qInfo() << "[NVDEC-Quota] Released. Active:"
             << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
             << HardwareQuotaManager::GetMaxNvdecSessions();
@@ -1282,6 +1295,7 @@ int FFmpegDecoder::Instance::GetFrame(AVPacket *pkt, AVFrame *frame)
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (ret >= 0 && frame->format == AV_PIX_FMT_CUDA) {
+    HardwareQuotaManager::TouchNvdecQuota(nvdec_quota_slot_, this);
     ++cuda_frame_count_;
     if (cuda_frame_count_ == 1 || cuda_frame_count_ % 60 == 0) {
       qInfo() << "[CUDA-NVDEC] Received hardware frame" << cuda_frame_count_
