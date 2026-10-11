@@ -263,6 +263,7 @@ void VideoParams::validate_pixel_aspect_ratio()
 void VideoParams::set_defaults_for_footage()
 {
   enabled_ = true;
+  is_opaque_ = false;
   stream_index_ = 0;
   video_type_ = kVideoTypeVideo;
   start_time_ = 0;

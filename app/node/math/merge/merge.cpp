@@ -81,8 +81,8 @@ void MergeNode::Value(const NodeValueRow &value, const NodeGlobals &globals, Nod
   TexturePtr blend_tex = value[kBlendIn].toTexture();
 
   if (base_tex || blend_tex) {
-    if (!base_tex || (blend_tex && blend_tex->channel_count() < VideoParams::kRGBAChannelCount)) {
-      // We only have a blend texture or the blend texture is RGB only, no need to alpha over
+    if (!base_tex || (blend_tex && (blend_tex->channel_count() < VideoParams::kRGBAChannelCount || blend_tex->params().is_opaque()))) {
+      // We only have a blend texture or the blend texture is fully opaque, no need to alpha over
       table->Push(value[kBlendIn]);
     } else if (!blend_tex) {
       // We only have a base texture, no need to alpha over

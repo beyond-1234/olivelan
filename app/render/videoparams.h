@@ -276,6 +276,16 @@ public:
     enabled_ = e;
   }
 
+  bool is_opaque() const
+  {
+    return is_opaque_ || channel_count_ < kRGBAChannelCount;
+  }
+
+  void set_opaque(bool o)
+  {
+    is_opaque_ = o;
+  }
+
   float x() const { return x_; }
   void set_x(float x) { x_ = x; }
   float y() const { return y_; }
@@ -392,6 +402,7 @@ private:
   int par_width_;
 
   bool enabled_;
+  bool is_opaque_;
   int stream_index_;
   Type video_type_;
   rational frame_rate_;

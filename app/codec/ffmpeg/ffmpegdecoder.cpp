@@ -257,6 +257,7 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
                            av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
                            VideoParams::kInterlaceNone,
                            p.divider);
+        params.set_opaque(true);
         if (auto *gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
           if (TexturePtr texture = gl_renderer->CreateTextureFromCudaFrame(params, f.get())) {
             return texture;

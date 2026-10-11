@@ -22,6 +22,7 @@
 
 #include "node.h"
 #include "node/block/clip/clip.h"
+#include "node/math/merge/merge.h"
 #include "render/job/footagejob.h"
 #include "render/rendermanager.h"
 
@@ -35,6 +36,39 @@ NodeValueDatabase NodeTraverser::GenerateDatabase(const Node* node, const TimeRa
   LoopMode old_loop_mode = loop_mode_;
   if (const ClipBlock *clip = dynamic_cast<const ClipBlock*>(node)) {
     loop_mode_ = clip->loop_mode();
+  }
+
+  // Phase 4 Occlusion Culling optimization:
+  // If this is a MergeNode, evaluate the top overlay layer (blend_in) first.
+  // If blend_in yields a fully opaque texture, the lower base_in layer
+  // is 100% occluded. Pruning base_in completely bypasses decoding and rendering
+  // of all underlying tracks!
+  if (dynamic_cast<const MergeNode*>(node)) {
+    NodeValueTable blend_table = ProcessInput(node, MergeNode::kBlendIn, range);
+    database.Insert(MergeNode::kBlendIn, blend_table);
+
+    bool occluded = false;
+    if (!blend_table.isEmpty()) {
+      NodeValue blend_val = blend_table.Get(NodeValue::kTexture);
+      if (blend_val) {
+        TexturePtr blend_tex = blend_val.toTexture();
+        if (blend_tex && blend_tex->params().is_opaque()) {
+          occluded = true;
+        }
+      }
+    }
+
+    if (occluded) {
+      // Base layer is fully occluded: skip base_in evaluation entirely!
+      qDebug() << "[Culling] Occluded: skipping base_in under fully opaque blend_in.";
+    } else {
+      if (!IsCancelled()) {
+        database.Insert(MergeNode::kBaseIn, ProcessInput(node, MergeNode::kBaseIn, range));
+      }
+    }
+
+    loop_mode_ = old_loop_mode;
+    return database;
   }
 
   // We need to insert tables into the database for each input
