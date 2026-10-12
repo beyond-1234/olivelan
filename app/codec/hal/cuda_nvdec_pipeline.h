@@ -14,7 +14,7 @@ public:
   virtual ~CudaNvdecPipeline() override;
 
   virtual bool ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w, int max_h) override;
-  virtual bool ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame) override;
+  virtual bool ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame) override;
   virtual void Close() override;
 
   virtual HardwareBackendType GetType() const override { return HardwareBackendType::CudaNvdec; }
@@ -24,7 +24,7 @@ public:
 
   int quota_slot() const { return quota_slot_; }
 
-  void SetRenderer(OpenGLRenderer* renderer) override { renderer_ = renderer; }
+  void SetRenderer(Renderer* renderer) override;
 
 private:
   OpenGLRenderer* renderer_{nullptr};

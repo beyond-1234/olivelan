@@ -19,8 +19,8 @@ extern "C" {
 namespace olive {
 
 VideoToolboxPipeline::VideoToolboxPipeline(OpenGLRenderer* renderer)
-  : renderer_(renderer)
 {
+  Q_UNUSED(renderer);
 }
 
 VideoToolboxPipeline::~VideoToolboxPipeline()
@@ -61,10 +61,11 @@ bool VideoToolboxPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max
 #endif
 }
 
-bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame)
+bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame)
 {
 #if !defined(__APPLE__)
   Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
   Q_UNUSED(out_frame);
   return false;
 #else
@@ -116,16 +117,11 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecod
 
   active_iosurface_ = iosurface;
 
-  out_frame.gl_texture_id = resident_gl_texture_;
-  out_frame.width = hw_frame->width;
-  out_frame.height = hw_frame->height;
-  out_frame.coded_width = hw_frame->width;
-  out_frame.coded_height = hw_frame->height;
-  out_frame.uv_scale_x = 1.0f;
-  out_frame.uv_scale_y = 1.0f;
-  out_frame.pts = hw_frame->pts;
-
-  return true;
+  // NOTE: this texture is owned by the pipeline rather than a renderer pool, so it cannot yet be
+  // transferred as an owning TexturePtr without breaking the single-release contract (the texture
+  // outlives any one frame). That pool wiring is the remaining Tier 2 gap on macOS.
+  qWarning() << "[VideoToolbox-HAL] IOSurface bound, but no owning texture pool is wired yet; refusing the frame";
+  return false;
 #endif
 }
 

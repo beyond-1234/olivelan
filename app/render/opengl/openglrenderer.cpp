@@ -303,7 +303,9 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
   for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
     auto &slot = cuda_frame_pool_[i];
     if (!slot.in_use && slot.width == width && slot.height == height && slot.gl_tex_id != 0 && slot.cuda_resource != nullptr) {
-      slot.in_use = true;
+      if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
+        return -1;
+      }
       return static_cast<int>(i);
     }
   }
@@ -315,7 +317,9 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
       if (!AllocateOrResizePoolSlot(slot, width, height)) {
         return -1;
       }
-      slot.in_use = true;
+      if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
+        return -1;
+      }
       return static_cast<int>(i);
     }
   }
@@ -324,9 +328,12 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
   if (static_cast<int>(cuda_frame_pool_.size()) < kCudaFramePoolCapacity) {
     CudaGLPoolSlot new_slot;
     if (AllocateOrResizePoolSlot(new_slot, width, height)) {
-      new_slot.in_use = true;
       cuda_frame_pool_.push_back(new_slot);
-      return static_cast<int>(cuda_frame_pool_.size() - 1);
+      int new_index = static_cast<int>(cuda_frame_pool_.size() - 1);
+      if (!MarkCudaSlotBorrowed(new_index)) {
+        return -1;
+      }
+      return new_index;
     }
   }
 
@@ -372,20 +379,70 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
   return true;
 }
 
+int OpenGLRenderer::MarkCudaSlotBorrowed(int slot_index)
+{
+  // Caller must hold cuda_pool_mutex_. Returns false if the slot was already checked out,
+  // which would indicate pool bookkeeping corruption.
+  if (slot_index < 0 || slot_index >= static_cast<int>(cuda_frame_pool_.size())) {
+    return false;
+  }
+  CudaGLPoolSlot &slot = cuda_frame_pool_[slot_index];
+  if (slot.in_use) {
+    qCritical() << "[CUDA-GL-Pool] Slot" << slot_index << "borrowed while already in use"
+                << "- pool bookkeeping corruption";
+    return false;
+  }
+  slot.in_use = true;
+  cuda_borrowed_count_++;
+  cuda_in_use_count_++;
+  return true;
+}
+
+int OpenGLRenderer::ReleaseCudaPoolSlotInternal(int slot_index)
+{
+  // Caller must hold cuda_pool_mutex_. Single choke point for returning a slot to the pool.
+  // This is the double-release tripwire: a slot released while already free means two owners
+  // believed they held it. Assertions are unusable here (Release builds define NDEBUG), so the
+  // detector reports through qCritical and refuses the release rather than corrupting the pool.
+  if (slot_index < 0 || slot_index >= static_cast<int>(cuda_frame_pool_.size())) {
+    return false;
+  }
+
+  CudaGLPoolSlot &slot = cuda_frame_pool_[slot_index];
+  if (!slot.in_use) {
+    qCritical() << "[CUDA-GL-Pool] DOUBLE RELEASE on slot" << slot_index
+                << "(tex" << slot.gl_tex_id << ") - ignoring to preserve pool integrity";
+    return false;
+  }
+
+  slot.in_use = false;
+  cuda_returned_count_++;
+  cuda_in_use_count_--;
+
+  if (cuda_borrowed_count_ != cuda_returned_count_ + cuda_in_use_count_) {
+    qCritical() << "[CUDA-GL-Pool] Ledger invariant violated: borrowed"
+                << cuda_borrowed_count_ << "!= returned" << cuda_returned_count_
+                << "+ in_use" << cuda_in_use_count_;
+  }
+
+  return true;
+}
+
 void OpenGLRenderer::ReleaseCudaPoolSlot(int slot_index)
 {
   QMutexLocker locker(&cuda_pool_mutex_);
-  if (slot_index >= 0 && slot_index < static_cast<int>(cuda_frame_pool_.size())) {
-    cuda_frame_pool_[slot_index].in_use = false;
-  }
+  ReleaseCudaPoolSlotInternal(slot_index);
 }
 
 bool OpenGLRenderer::ReleaseCudaPoolTexture(GLuint tid)
 {
   QMutexLocker locker(&cuda_pool_mutex_);
+
+  // Probe semantics: return true only if this texture belongs to our pool. A miss is the
+  // ordinary path for every non-pooled texture, so it must stay silent and side-effect free.
   for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
     if (cuda_frame_pool_[i].gl_tex_id == tid) {
-      cuda_frame_pool_[i].in_use = false;
+      ReleaseCudaPoolSlotInternal(static_cast<int>(i));
       return true;
     }
   }
@@ -395,6 +452,13 @@ bool OpenGLRenderer::ReleaseCudaPoolTexture(GLuint tid)
 void OpenGLRenderer::DestroyCudaFramePool()
 {
   QMutexLocker locker(&cuda_pool_mutex_);
+
+  // Teardown checkpoint: outstanding borrows here mean textures outlived the pool.
+  if (cuda_in_use_count_ != 0) {
+    qWarning() << "[CUDA-GL-Pool] Destroying pool with" << cuda_in_use_count_
+               << "slot(s) still checked out";
+  }
+
   for (auto &slot : cuda_frame_pool_) {
     if (slot.cuda_resource) {
       cudaGraphicsUnregisterResource(slot.cuda_resource);
@@ -407,6 +471,11 @@ void OpenGLRenderer::DestroyCudaFramePool()
     slot.in_use = false;
   }
   cuda_frame_pool_.clear();
+
+  // Pool is gone, so the ledger restarts from zero.
+  cuda_borrowed_count_ = 0;
+  cuda_returned_count_ = 0;
+  cuda_in_use_count_ = 0;
 }
 
 TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame)

@@ -286,20 +286,20 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (f->format == AV_PIX_FMT_CUDA) {
     // Direct GPU-resident path: only valid at full resolution and for progressive frames.
-    if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone) {
-      VideoParams params(f->width,
-                         f->height,
-                         PixelFormat::U8,
-                         VideoParams::kRGBAChannelCount,
-                         av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
-                         VideoParams::kInterlaceNone,
-                         p.divider);
-      params.set_opaque(true);
-      if (auto *gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
-        if (TexturePtr texture = gl_renderer->CreateTextureFromCudaFrame(params, f.get())) {
-          last_valid_texture_ = texture;
-          return texture;
-        }
+    if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone && instance_.hw_pipeline()) {
+      VideoParams hw_params(f->width,
+                            f->height,
+                            PixelFormat::U8,
+                            VideoParams::kRGBAChannelCount,
+                            av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
+                            VideoParams::kInterlaceNone,
+                            p.divider);
+      hw_params.set_opaque(true);
+
+      HardwareDecodedFrame hw_frame;
+      if (instance_.hw_pipeline()->ProcessHardwareFrame(f.get(), hw_params, hw_frame) && hw_frame.texture) {
+        last_valid_texture_ = hw_frame.texture;
+        return hw_frame.texture;
       }
     }
 

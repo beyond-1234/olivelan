@@ -147,11 +147,19 @@ private:
   std::vector<CudaGLPoolSlot> cuda_frame_pool_;
   QMutex cuda_pool_mutex_;
 
+  // Double-release detection ledger. All fields are guarded by cuda_pool_mutex_.
+  // Invariant: borrowed == returned + in_use.
+  int cuda_borrowed_count_ = 0;
+  int cuda_returned_count_ = 0;
+  int cuda_in_use_count_ = 0;
+
   int AcquireCudaPoolSlot(int width, int height);
   bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height);
   void ReleaseCudaPoolSlot(int slot_index);
   bool ReleaseCudaPoolTexture(GLuint tid);
   void DestroyCudaFramePool();
+  int MarkCudaSlotBorrowed(int slot_index);
+  int ReleaseCudaPoolSlotInternal(int slot_index);
 
   QHash<GLuint, cudaGraphicsResource_t> cuda_graphics_resources_;
 #endif

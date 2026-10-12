@@ -16,8 +16,8 @@ extern "C" {
 namespace olive {
 
 D3D11InteropPipeline::D3D11InteropPipeline(OpenGLRenderer* renderer)
-  : renderer_(renderer)
 {
+  Q_UNUSED(renderer);
 }
 
 D3D11InteropPipeline::~D3D11InteropPipeline()
@@ -58,27 +58,26 @@ bool D3D11InteropPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max
 #endif
 }
 
-bool D3D11InteropPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame)
+bool D3D11InteropPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame)
 {
 #if !defined(_WIN32) || !defined(OLIVE_ENABLE_D3D11_INTEROP)
   Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
   Q_UNUSED(out_frame);
   return false;
 #else
-  if (!hw_frame || hw_frame->format != AV_PIX_FMT_D3D11) {
-    return false;
+  Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
+  Q_UNUSED(out_frame);
+  // Not yet materialized: this backend advertises itself for routing purposes, but its texture
+  // transfer path still has to be written and validated against real D3D11 hardware. Reporting
+  // failure lets the caller choose another path instead of handing back a texture it cannot own.
+  static bool warned = false;
+  if (!warned) {
+    warned = true;
+    qWarning() << "[D3D11-HAL] ProcessHardwareFrame not yet implemented; refusing to claim the frame";
   }
-
-  out_frame.gl_texture_id = gl_texture_id_;
-  out_frame.width = hw_frame->width;
-  out_frame.height = hw_frame->height;
-  out_frame.coded_width = hw_frame->width;
-  out_frame.coded_height = hw_frame->height;
-  out_frame.uv_scale_x = 1.0f;
-  out_frame.uv_scale_y = 1.0f;
-  out_frame.pts = hw_frame->pts;
-
-  return true;
+  return false;
 #endif
 }
 

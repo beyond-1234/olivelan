@@ -18,8 +18,8 @@ extern "C" {
 namespace olive {
 
 VaapiDmaBufPipeline::VaapiDmaBufPipeline(OpenGLRenderer* renderer)
-  : renderer_(renderer)
 {
+  Q_UNUSED(renderer);
 }
 
 VaapiDmaBufPipeline::~VaapiDmaBufPipeline()
@@ -60,10 +60,11 @@ bool VaapiDmaBufPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_
 #endif
 }
 
-bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame)
+bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame)
 {
 #if !defined(__linux__) || !defined(OLIVE_ENABLE_VAAPI_DMABUF)
   Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
   Q_UNUSED(out_frame);
   return false;
 #else
@@ -112,45 +113,45 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecode
   static auto pfn_eglCreateImageKHR = pfn_eglGetProcAddress ? reinterpret_cast<void*(*)(void*, void*, unsigned int, void*, const intptr_t*)>(pfn_eglGetProcAddress("eglCreateImageKHR")) : nullptr;
   static auto pfn_glEGLImageTargetTexture2DOES = pfn_eglGetProcAddress ? reinterpret_cast<void(*)(unsigned int, void*)>(pfn_eglGetProcAddress("glEGLImageTargetTexture2DOES")) : nullptr;
 
-  if (pfn_eglCreateImageKHR && pfn_glEGLImageTargetTexture2DOES) {
-    const intptr_t attribs[] = {
-      EGL_WIDTH, static_cast<intptr_t>(prime_desc.width),
-      EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height),
-      EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[0].drm_format),
-      EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[0].fd),
-      EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[0].offset[0]),
-      EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[0].pitch[0]),
-      EGL_DMA_BUF_PLANE1_FD_EXT, static_cast<intptr_t>(prime_desc.objects[1].fd),
-      EGL_DMA_BUF_PLANE1_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
-      EGL_DMA_BUF_PLANE1_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
-      0x3038 // EGL_NONE
-    };
-
-    egl_image_ = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-    if (egl_image_) {
-      if (!resident_gl_texture_) {
-        glGenTextures(1, &resident_gl_texture_);
-      }
-      glBindTexture(GL_TEXTURE_2D, resident_gl_texture_);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
-    }
+  if (!pfn_eglCreateImageKHR || !pfn_glEGLImageTargetTexture2DOES) {
+    qWarning() << "[VAAPI-HAL] EGL DMA-BUF import unavailable; cannot import surface";
+    return false;
   }
 
-  // Set normalized UV dimensions for non-standard stride/padding
-  out_frame.gl_texture_id = resident_gl_texture_;
-  out_frame.width = hw_frame->width;
-  out_frame.height = hw_frame->height;
-  out_frame.coded_width = prime_desc.width;
-  out_frame.coded_height = prime_desc.height;
-  out_frame.uv_scale_x = (prime_desc.width > 0) ? static_cast<float>(hw_frame->width) / prime_desc.width : 1.0f;
-  out_frame.uv_scale_y = (prime_desc.height > 0) ? static_cast<float>(hw_frame->height) / prime_desc.height : 1.0f;
-  out_frame.pts = hw_frame->pts;
+  const intptr_t attribs[] = {
+    EGL_WIDTH, static_cast<intptr_t>(prime_desc.width),
+    EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height),
+    EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[0].drm_format),
+    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[0].fd),
+    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[0].offset[0]),
+    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[0].pitch[0]),
+    EGL_DMA_BUF_PLANE1_FD_EXT, static_cast<intptr_t>(prime_desc.objects[1].fd),
+    EGL_DMA_BUF_PLANE1_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
+    EGL_DMA_BUF_PLANE1_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
+    0x3038 // EGL_NONE
+  };
 
-  return true;
+  egl_image_ = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+  if (!egl_image_) {
+    qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for surface";
+    return false;
+  }
+
+  if (!resident_gl_texture_) {
+    glGenTextures(1, &resident_gl_texture_);
+  }
+  glBindTexture(GL_TEXTURE_2D, resident_gl_texture_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+
+  // NOTE: unlike the CUDA path there is no renderer pool slot backing this texture, so the
+  // frame cannot yet be handed over as an owning TexturePtr. This is the remaining wiring gap
+  // for Tier 2 on Linux: the renderer needs a pool that owns EGLImage-backed textures.
+  qWarning() << "[VAAPI-HAL] EGLImage imported, but no owning texture pool is wired yet; refusing the frame";
+  return false;
 #endif
 }
 

@@ -17,8 +17,8 @@ extern "C" {
 namespace olive {
 
 LibPlaceboPipeline::LibPlaceboPipeline(OpenGLRenderer* renderer)
-  : renderer_(renderer)
 {
+  Q_UNUSED(renderer);
 }
 
 LibPlaceboPipeline::~LibPlaceboPipeline()
@@ -47,26 +47,19 @@ bool LibPlaceboPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w
 #endif
 }
 
-bool LibPlaceboPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame)
+bool LibPlaceboPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame)
 {
 #if !defined(OLIVE_ENABLE_LIBPLACEBO)
   Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
   Q_UNUSED(out_frame);
   return false;
 #else
-  if (!hw_frame) {
-    return false;
-  }
-
-  out_frame.width = hw_frame->width;
-  out_frame.height = hw_frame->height;
-  out_frame.coded_width = hw_frame->width;
-  out_frame.coded_height = hw_frame->height;
-  out_frame.uv_scale_x = 1.0f;
-  out_frame.uv_scale_y = 1.0f;
-  out_frame.pts = hw_frame->pts;
-
-  return true;
+  Q_UNUSED(hw_frame);
+  Q_UNUSED(params);
+  Q_UNUSED(out_frame);
+  // Placeholder plugin: routing slot reserved, render path not yet materialized.
+  return false;
 #endif
 }
 

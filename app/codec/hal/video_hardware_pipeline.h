@@ -5,13 +5,15 @@
 #include <memory>
 #include <string>
 
+#include "render/texture.h"
+
 struct AVCodecContext;
 struct AVFrame;
 struct AVBufferRef;
 
 namespace olive {
 
-class OpenGLRenderer;
+class Renderer;
 
 enum class HardwareBackendType {
   CudaNvdec,          // Tier 1: Dedicated NVDEC + CUDA resident path (RTX/GTX)
@@ -22,10 +24,17 @@ enum class HardwareBackendType {
   LibPlaceboFallback  // Optional / Future plugin: libplacebo HDR tonemapper placeholder
 };
 
+/**
+ * @brief Result of processing one hardware frame.
+ *
+ * Carries an owning TexturePtr rather than a bare GL name on purpose: the pool slot behind a
+ * texture is returned exactly once, by Texture::~Texture() -> Renderer::DestroyTexture. If the
+ * pipeline handed out a naked `uint32_t` and the caller built its own Texture from it, two
+ * Texture objects would own the same slot and release it twice. Transferring the object keeps
+ * ownership unambiguous.
+ */
 struct HardwareDecodedFrame {
-  uint32_t gl_texture_id{0}; // Output OpenGL texture identifier
-  float uv_scale_x{1.0f};     // Sub-rectangle normalized U boundary in bounding box
-  float uv_scale_y{1.0f};     // Sub-rectangle normalized V boundary in bounding box
+  TexturePtr texture;        // Owning handle to the resulting OpenGL texture
   int64_t pts{0};            // Presentation timestamp
   int width{0};              // Active video frame width
   int height{0};             // Active video frame height
@@ -48,12 +57,17 @@ public:
   virtual bool ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w, int max_h) = 0;
 
   /**
-   * @brief Process an incoming hardware AVFrame into a standard OpenGL texture (< 1ms target).
+   * @brief Process an incoming hardware AVFrame into an owning OpenGL texture (< 1ms target).
+   *
+   * The caller supplies VideoParams because only the decoder holds the stream context needed
+   * to derive the pixel aspect ratio; the pipeline supplies the texture itself.
+   *
    * @param hw_frame Hardware AVFrame produced by avcodec_receive_frame.
-   * @param out_frame Out parameter populated with the GL texture ID and UV normalization scale.
+   * @param params   Output texture parameters (dimensions, pixel aspect ratio, divider, format).
+   * @param out_frame Populated with the owning TexturePtr and frame metadata on success.
    * @return true if mapping succeeded, false otherwise.
    */
-  virtual bool ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame) = 0;
+  virtual bool ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame) = 0;
 
   /**
    * @brief Tear down hardware pipeline, unregister OpenGL interop resources and release quota.
@@ -82,8 +96,11 @@ public:
    * the decoder is created during footage import, when no viewport renderer exists yet.
    * Only when a frame is actually pulled for display (RetrieveVideoInternal) is there a
    * live, thread-current renderer to bind. Pipelines that do not need it may ignore it.
+   *
+   * Takes the generic Renderer so callers need no backend-specific cast; a pipeline that
+   * requires OpenGL performs the narrowing itself, where the requirement actually lives.
    */
-  virtual void SetRenderer(OpenGLRenderer* renderer) { (void)renderer; }
+  virtual void SetRenderer(Renderer* renderer) { (void)renderer; }
 
   /**
    * @brief Return the active AVBufferRef hardware device context, or nullptr.

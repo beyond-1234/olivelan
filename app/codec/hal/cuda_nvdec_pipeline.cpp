@@ -79,7 +79,7 @@ bool CudaNvdecPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w,
 #endif
 }
 
-bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame)
+bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParams& params, HardwareDecodedFrame& out_frame)
 {
 #if !defined(OLIVE_ENABLE_CUDA_NVDEC)
   return false;
@@ -88,32 +88,28 @@ bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedF
     return false;
   }
 
-  VideoParams params(hw_frame->width,
-                     hw_frame->height,
-                     PixelFormat::U8,
-                     VideoParams::kRGBAChannelCount,
-                     rational(1, 1),
-                     VideoParams::kInterlaceNone,
-                     1);
-  params.set_opaque(true);
-
   TexturePtr tex = renderer_->CreateTextureFromCudaFrame(params, hw_frame);
   if (!tex) {
     return false;
   }
 
-  out_frame.gl_texture_id = tex->id().value<GLuint>();
+  out_frame.texture = tex;
   out_frame.width = hw_frame->width;
   out_frame.height = hw_frame->height;
   out_frame.coded_width = hw_frame->linesize[0];
   out_frame.coded_height = hw_frame->height;
   out_frame.pts = hw_frame->pts;
-  out_frame.uv_scale_x = 1.0f;
-  out_frame.uv_scale_y = 1.0f;
 
   frame_count_++;
   return true;
 #endif
+}
+
+void CudaNvdecPipeline::SetRenderer(Renderer* renderer)
+{
+  // This backend is CUDA-GL interop: it only ever works against the OpenGL renderer, so the
+  // narrowing happens here rather than making every caller perform it.
+  renderer_ = dynamic_cast<OpenGLRenderer*>(renderer);
 }
 
 void CudaNvdecPipeline::UpdatePriority(bool is_primary)
