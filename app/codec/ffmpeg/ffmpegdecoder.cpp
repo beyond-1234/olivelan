@@ -1187,28 +1187,30 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     }
     hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height);
     if (hw_pipeline_) {
-      codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
-        const bool dimensions_supported =
-            context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
-            context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
-        if (dimensions_supported) {
-          for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
-            if (*format == AV_PIX_FMT_CUDA) {
-              return AV_PIX_FMT_CUDA;
+      if (hw_pipeline_->GetType() != HardwareBackendType::SoftwareFallback) {
+        codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
+          const bool dimensions_supported =
+              context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
+              context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
+          if (dimensions_supported) {
+            for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+              if (*format == AV_PIX_FMT_CUDA) {
+                return AV_PIX_FMT_CUDA;
+              }
             }
           }
-        }
 
-        for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
-          const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
-          if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
-            return *format;
+          for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+            const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
+            if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+              return *format;
+            }
           }
-        }
 
-        return AV_PIX_FMT_NONE;
-      };
-      hw_pipeline_ready = true;
+          return AV_PIX_FMT_NONE;
+        };
+        hw_pipeline_ready = true;
+      }
       qInfo() << "[HAL-Pipeline] Activated" << hw_pipeline_->GetBackendName() << "for" << filename;
     }
   }
@@ -1217,7 +1219,7 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   // Set multithreading setting: throttle secondary software-fallback tracks adaptively
   // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (!hw_pipeline_ && is_video_stream) {
+  if (hw_pipeline_ && hw_pipeline_->GetType() == HardwareBackendType::SoftwareFallback && is_video_stream) {
     int fallback_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency() / 4), 2, 6);
     error_code = av_dict_set(&opts_, "threads", QByteArray::number(fallback_threads).constData(), 0);
     codec_ctx_->skip_frame = AVDISCARD_NONREF;

@@ -6,6 +6,8 @@
 #include "videotoolbox_pipeline.h"
 #include "d3d11_interop_pipeline.h"
 #include "libplacebo_pipeline.h"
+#include "reinforced_software_pipeline.h"
+#include "render/opengl/openglrenderer.h"
 
 #include <QDebug>
 
@@ -29,8 +31,10 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   // 0. Pre-filter: Prevent hardware allocation for codecs that perform better on CPU (ProRes, 4:2:2)
   if (!probe.ShouldUseHardwareDecode(codec_ctx->codec_id, codec_ctx->pix_fmt)) {
     qInfo() << "[HAL Factory] Codec" << avcodec_get_name(codec_ctx->codec_id)
-            << "or format is routed directly to CPU decoding (bypassing HW quota).";
-    return nullptr;
+            << "or format is routed directly to Tier 3 CPU decoding (bypassing HW quota).";
+    auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
+    sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
+    return sw_pipeline;
   }
 
   // 1. Tier 1: Dedicated NVIDIA CUDA-NVDEC path
@@ -84,10 +88,12 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
 #endif
 
   // 4. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
-  // When HW pipelines are saturated or unsupported (e.g. ProRes, 4:2:2, or over-budget),
+  // When HW pipelines are saturated or unsupported (e.g. over-budget),
   // routes to Olive's reinforced CPU decode pipeline protected by adaptive thread clamps and B-frame skipping.
   qInfo() << "[HAL Factory] Routing to Tier 3: Olive Native Reinforced Software Pipeline (Zero-Dependency).";
-  return nullptr;
+  auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
+  sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
+  return sw_pipeline;
 }
 
 } // namespace olive
