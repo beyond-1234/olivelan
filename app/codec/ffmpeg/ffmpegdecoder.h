@@ -123,6 +123,7 @@ private:
     AVDictionary* opts_;
     int cuda_frame_count_;
     int nvdec_quota_slot_{-1};
+    AVBufferRef* hw_device_ctx_{nullptr};
 
   };
 
@@ -181,6 +182,8 @@ private:
   bool cache_at_eof_;
 
   Instance instance_;
+
+  TexturePtr last_valid_texture_{nullptr};
 
 };
 

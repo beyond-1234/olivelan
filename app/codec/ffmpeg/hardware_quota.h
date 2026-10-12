@@ -1,7 +1,7 @@
 #ifndef HARDWARE_QUOTA_H
 #define HARDWARE_QUOTA_H
 
-#include <chrono>
+#include <algorithm>
 #include <cstddef>
 #include <mutex>
 #include <vector>
@@ -20,9 +20,11 @@ struct HardwareQuotaConfig {
   size_t vram_total_mb = 8192;
   int nvdec_engine_count = 1;
 
-  // Maximum concurrent NVDEC hardware decode sessions allowed before routing to software fallback.
-  // Benchmarked on RTX 4060 (290 FPS capacity / 8GB VRAM) to prevent driver ENOMEM (-542398533).
-  int max_nvdec_sessions = 4;
+  // Maximum concurrent NVDEC hardware decode sessions physically active in driver memory.
+  // Set to 3 (2 primary reserved + 1 secondary shared) on RTX 4060 (8GB) to reserve a 1.5GB
+  // elastic VRAM safety buffer against asynchronous cuCtxDestroy driver reclamation latency.
+  int max_physical_sessions = 3;
+  int primary_reserved_sessions = 2;
 
   // Maximum persistent CUDA-GL texture frame pool capacity.
   int frame_pool_capacity = 8;
@@ -30,16 +32,13 @@ struct HardwareQuotaConfig {
   // Bounding box dimensions for hardware resident pipeline.
   int max_frame_width = 4096;
   int max_frame_height = 4096;
-
-  // Idle timeout in milliseconds before an inactive session can be preempted by an active playing session.
-  int64_t idle_preemption_threshold_ms = 500;
 };
 
 class HardwareQuotaManager {
 public:
   struct SessionSlot {
-    void* owner = nullptr;
-    int64_t last_accessed_ms = 0;
+    bool in_use = false;
+    bool is_primary = false;
   };
 
   static const HardwareQuotaConfig& GetConfig() {
@@ -47,113 +46,89 @@ public:
     return config;
   }
 
-  static int GetMaxNvdecSessions() {
-    return GetConfig().max_nvdec_sessions;
+  static int GetMaxPhysicalSessions() {
+    return GetConfig().max_physical_sessions;
   }
 
-  static int GetActiveNvdecSessions() {
+  static int GetActiveSessionCount() {
     std::lock_guard<std::mutex> lock(GetMutex());
     int count = 0;
     for (const auto& slot : GetSessionSlots()) {
-      if (slot.owner != nullptr) {
+      if (slot.in_use) {
         count++;
       }
     }
     return count;
   }
 
-  // Atomically acquire or preempt an idle hardware decode session slot.
-  // Returns slot_index (>= 0) on success, or -1 if all sessions are actively busy (< 500ms).
-  static int AcquireOrPreemptNvdecQuota(void* owner) {
-    if (!owner) return -1;
+  // Strictly acquire a physical session slot.
+  // Primary tracks (viewport full-screen / main footage) get dedicated reserved capacity.
+  // Secondary tracks (PiP / thumbnails) can only occupy up to (max - primary_reserved) slots.
+  // Returns slot_index >= 0 on success, or -1 if capacity is saturated.
+  static int AcquireSlot(bool is_primary = true) {
     std::lock_guard<std::mutex> lock(GetMutex());
     auto& session_slots = GetSessionSlots();
-    const int max_sessions = GetMaxNvdecSessions();
-    const int64_t now = GetCurrentTimeMs();
+    const int max_physical = GetMaxPhysicalSessions();
+    const int primary_reserved = GetConfig().primary_reserved_sessions;
+    const int max_secondary = std::max(1, max_physical - primary_reserved);
 
-    // 1. If owner already holds a slot, refresh heartbeat and return it
-    for (int i = 0; i < static_cast<int>(session_slots.size()); ++i) {
-      if (session_slots[i].owner == owner) {
-        session_slots[i].last_accessed_ms = now;
-        return i;
+    // Count currently active sessions
+    int total_active = 0;
+    int secondary_active = 0;
+    for (const auto& slot : session_slots) {
+      if (slot.in_use) {
+        total_active++;
+        if (!slot.is_primary) {
+          secondary_active++;
+        }
       }
     }
 
-    // 2. Check for an empty/idle slot
-    for (int i = 0; i < static_cast<int>(session_slots.size()); ++i) {
-      if (session_slots[i].owner == nullptr) {
-        session_slots[i].owner = owner;
-        session_slots[i].last_accessed_ms = now;
-        return i;
+    if (is_primary) {
+      // Primary track: granted as long as total physically active sessions < max_physical
+      if (total_active >= max_physical) {
+        return -1;
+      }
+    } else {
+      // Secondary track: strictly throttled to prevent crowding out primary tracks
+      if (secondary_active >= max_secondary || total_active >= max_physical) {
+        return -1;
       }
     }
 
-    // 3. If under capacity, expand slots
-    if (static_cast<int>(session_slots.size()) < max_sessions) {
+    // Find first free slot
+    for (size_t i = 0; i < session_slots.size(); ++i) {
+      if (!session_slots[i].in_use) {
+        session_slots[i].in_use = true;
+        session_slots[i].is_primary = is_primary;
+        return static_cast<int>(i);
+      }
+    }
+
+    // Expand if under capacity
+    if (static_cast<int>(session_slots.size()) < max_physical) {
       SessionSlot slot;
-      slot.owner = owner;
-      slot.last_accessed_ms = now;
+      slot.in_use = true;
+      slot.is_primary = is_primary;
       session_slots.push_back(slot);
       return static_cast<int>(session_slots.size() - 1);
     }
 
-    // 4. Preemption pass: find the least recently accessed slot
-    int oldest_idx = -1;
-    int64_t oldest_time = now;
-    for (int i = 0; i < static_cast<int>(session_slots.size()); ++i) {
-      if (session_slots[i].last_accessed_ms < oldest_time) {
-        oldest_time = session_slots[i].last_accessed_ms;
-        oldest_idx = i;
-      }
-    }
-
-    const int64_t threshold = GetConfig().idle_preemption_threshold_ms;
-    if (oldest_idx >= 0 && (now - oldest_time) >= threshold) {
-      // Preempt the idle session!
-      session_slots[oldest_idx].owner = owner;
-      session_slots[oldest_idx].last_accessed_ms = now;
-      return oldest_idx;
-    }
-
-    // All slots are actively in use
     return -1;
   }
 
-  // Refresh heartbeat for the active slot
-  static void TouchNvdecQuota(int slot_index, void* owner) {
-    if (slot_index < 0 || !owner) return;
+  // Release slot strictly when driver resources have been freed via av_buffer_unref
+  static void ReleaseSlot(int slot_index) {
+    if (slot_index < 0) return;
     std::lock_guard<std::mutex> lock(GetMutex());
     auto& session_slots = GetSessionSlots();
-    if (slot_index < static_cast<int>(session_slots.size()) && session_slots[slot_index].owner == owner) {
-      session_slots[slot_index].last_accessed_ms = GetCurrentTimeMs();
+    if (slot_index < static_cast<int>(session_slots.size())) {
+      session_slots[slot_index].in_use = false;
+      session_slots[slot_index].is_primary = false;
     }
-  }
-
-  // Release slot back to pool
-  static void ReleaseNvdecQuota(int slot_index, void* owner) {
-    if (slot_index < 0 || !owner) return;
-    std::lock_guard<std::mutex> lock(GetMutex());
-    auto& session_slots = GetSessionSlots();
-    if (slot_index < static_cast<int>(session_slots.size()) && session_slots[slot_index].owner == owner) {
-      session_slots[slot_index].owner = nullptr;
-      session_slots[slot_index].last_accessed_ms = 0;
-    }
-  }
-
-  // Check if owner still holds the valid slot (or if it was preempted due to inactivity)
-  static bool IsSlotValid(int slot_index, void* owner) {
-    if (slot_index < 0 || !owner) return false;
-    std::lock_guard<std::mutex> lock(GetMutex());
-    const auto& session_slots = GetSessionSlots();
-    return (slot_index < static_cast<int>(session_slots.size()) && session_slots[slot_index].owner == owner);
   }
 
 private:
-  static int64_t GetCurrentTimeMs() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-  }
-
   static std::mutex& GetMutex() {
     static std::mutex m;
     return m;

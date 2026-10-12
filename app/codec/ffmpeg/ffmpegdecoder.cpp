@@ -238,66 +238,83 @@ TexturePtr FFmpegDecoder::ProcessFrameIntoTexture(AVFramePtr f, const RetrieveVi
 
 TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 {
-  if (AVFramePtr f = RetrieveFrame(p.time, p.cancelled)) {
+  AVFramePtr f = RetrieveFrame(p.time, p.cancelled);
+  if (!f) {
     if (p.cancelled && p.cancelled->IsCancelled()) {
       return nullptr;
     }
-
-    AVFramePtr original = f;
-    f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
-
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
-    if (f->format == AV_PIX_FMT_CUDA) {
-      // Direct GPU-resident path: only valid at full resolution and for progressive frames.
-      if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone) {
-        VideoParams params(f->width,
-                           f->height,
-                           PixelFormat::U8,
-                           VideoParams::kRGBAChannelCount,
-                           av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
-                           VideoParams::kInterlaceNone,
-                           p.divider);
-        params.set_opaque(true);
-        if (auto *gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
-          if (TexturePtr texture = gl_renderer->CreateTextureFromCudaFrame(params, f.get())) {
-            return texture;
-          }
-        }
-      }
-
-      // Any hardware frame that skipped the direct path (scaled preview, interlaced source, or a
-      // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
-      // swscale receives a device pointer and crashes.
-      AVFramePtr software_frame = CreateAVFramePtr();
-      int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
-      if (transfer_error < 0) {
-        qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
-        return nullptr;
-      }
-      av_frame_copy_props(software_frame.get(), f.get());
-      f = software_frame;
+    // [Anti-Stall Fallback] If frame retrieval failed, hold and reuse last valid texture
+    // to keep the audio/video presentation clock smooth and avoid 1-second UI freeze!
+    if (last_valid_texture_) {
+      return last_valid_texture_;
     }
-#endif
-
-    // Disregard "JPEG" pixel formats because we allow the user to override that
-    f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
-
-    // Perform any CPU processing required
-    f = PreProcessFrame(f, p);
-    if (!f) {
-      // Error occurred while software scaling
-      return nullptr;
-    }
-
-    // Finally, perform any GPU processing required
-    return ProcessFrameIntoTexture(f, p, original);
+    return nullptr;
   }
 
-  return nullptr;
+  AVFramePtr original = f;
+  f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (f->format == AV_PIX_FMT_CUDA) {
+    // Direct GPU-resident path: only valid at full resolution and for progressive frames.
+    if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone) {
+      VideoParams params(f->width,
+                         f->height,
+                         PixelFormat::U8,
+                         VideoParams::kRGBAChannelCount,
+                         av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
+                         VideoParams::kInterlaceNone,
+                         p.divider);
+      params.set_opaque(true);
+      if (auto *gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
+        if (TexturePtr texture = gl_renderer->CreateTextureFromCudaFrame(params, f.get())) {
+          last_valid_texture_ = texture;
+          return texture;
+        }
+      }
+    }
+
+    // Any hardware frame that skipped the direct path (scaled preview, interlaced source, or a
+    // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
+    // swscale receives a device pointer and crashes.
+    AVFramePtr software_frame = CreateAVFramePtr();
+    int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
+    if (transfer_error < 0) {
+      qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
+      if (last_valid_texture_) {
+        return last_valid_texture_;
+      }
+      return nullptr;
+    }
+    av_frame_copy_props(software_frame.get(), f.get());
+    f = software_frame;
+  }
+#endif
+
+  // Disregard "JPEG" pixel formats because we allow the user to override that
+  f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
+
+  // Perform any CPU processing required
+  f = PreProcessFrame(f, p);
+  if (!f) {
+    // Error occurred while software scaling
+    if (last_valid_texture_) {
+      return last_valid_texture_;
+    }
+    return nullptr;
+  }
+
+  // Finally, perform any GPU processing required
+  TexturePtr tex = ProcessFrameIntoTexture(f, p, original);
+  if (tex) {
+    last_valid_texture_ = tex;
+  }
+  return tex;
 }
 
 void FFmpegDecoder::CloseInternal()
 {
+  last_valid_texture_ = nullptr;
   if (working_packet_) {
     av_packet_free(&working_packet_);
     working_packet_ = nullptr;
@@ -1131,13 +1148,11 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   bool cuda_device_ready = false;
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
-  nvdec_quota_slot_ = is_video_stream ? HardwareQuotaManager::AcquireOrPreemptNvdecQuota(this) : -1;
+  nvdec_quota_slot_ = is_video_stream ? HardwareQuotaManager::AcquireSlot(true) : -1;
   if (nvdec_quota_slot_ >= 0) {
-    AVBufferRef* hw_device_ctx = nullptr;
-    error_code = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
+    error_code = av_hwdevice_ctx_create(&hw_device_ctx_, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
     if (error_code >= 0) {
-      codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx);
-      av_buffer_unref(&hw_device_ctx);
+      codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
       codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
         const bool nvdec_dimensions_supported =
             context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
@@ -1161,20 +1176,22 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
       };
       cuda_device_ready = true;
       qInfo() << "[NVDEC-Quota] Granted. Active:"
-              << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
-              << HardwareQuotaManager::GetMaxNvdecSessions()
+              << HardwareQuotaManager::GetActiveSessionCount() << "/"
+              << HardwareQuotaManager::GetMaxPhysicalSessions()
               << "(slot" << nvdec_quota_slot_ << ") for" << filename;
     } else {
-      if (hw_device_ctx) {
-        av_buffer_unref(&hw_device_ctx);
+      if (hw_device_ctx_) {
+        av_buffer_unref(&hw_device_ctx_);
+        hw_device_ctx_ = nullptr;
       }
-      HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+      HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
       nvdec_quota_slot_ = -1;
       qWarning() << "[NVDEC-Quota] CUDA device init failed; released quota & fallback to software:" << error_code;
     }
   } else if (is_video_stream) {
     qInfo() << "[NVDEC-Quota] Saturated ("
-            << HardwareQuotaManager::GetMaxNvdecSessions() << "sessions active); routing"
+            << HardwareQuotaManager::GetActiveSessionCount() << "/"
+            << HardwareQuotaManager::GetMaxPhysicalSessions() << "active); routing"
             << filename << "to software decode.";
   }
 #endif
@@ -1201,8 +1218,12 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
   if (error_code < 0 && cuda_device_ready) {
     qWarning() << "[CUDA-NVDEC] Hardware decoder initialization failed; retrying software decode:" << error_code;
+    if (hw_device_ctx_) {
+      av_buffer_unref(&hw_device_ctx_);
+      hw_device_ctx_ = nullptr;
+    }
     if (nvdec_quota_slot_ >= 0) {
-      HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+      HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
       nvdec_quota_slot_ = -1;
     }
     avcodec_free_context(&codec_ctx_);
@@ -1232,13 +1253,21 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
 void FFmpegDecoder::Instance::Close()
 {
+  if (codec_ctx_) {
+    avcodec_flush_buffers(codec_ctx_);
+  }
+
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (hw_device_ctx_) {
+    av_buffer_unref(&hw_device_ctx_);
+    hw_device_ctx_ = nullptr;
+  }
   if (nvdec_quota_slot_ >= 0) {
-    HardwareQuotaManager::ReleaseNvdecQuota(nvdec_quota_slot_, this);
+    HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
     nvdec_quota_slot_ = -1;
     qInfo() << "[NVDEC-Quota] Released. Active:"
-            << HardwareQuotaManager::GetActiveNvdecSessions() << "/"
-            << HardwareQuotaManager::GetMaxNvdecSessions();
+            << HardwareQuotaManager::GetActiveSessionCount() << "/"
+            << HardwareQuotaManager::GetMaxPhysicalSessions();
   }
 #endif
   if (opts_) {
@@ -1295,7 +1324,6 @@ int FFmpegDecoder::Instance::GetFrame(AVPacket *pkt, AVFrame *frame)
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (ret >= 0 && frame->format == AV_PIX_FMT_CUDA) {
-    HardwareQuotaManager::TouchNvdecQuota(nvdec_quota_slot_, this);
     ++cuda_frame_count_;
     if (cuda_frame_count_ == 1 || cuda_frame_count_ % 60 == 0) {
       qInfo() << "[CUDA-NVDEC] Received hardware frame" << cuda_frame_count_
