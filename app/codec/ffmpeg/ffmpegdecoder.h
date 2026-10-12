@@ -191,6 +191,9 @@ private:
   Instance instance_;
 
   TexturePtr last_valid_texture_{nullptr};
+  rational last_requested_time_{0, 1};
+  int64_t last_retrieve_time_ms_{0};
+  int64_t scrub_settle_time_ms_{0};
 
 };
 

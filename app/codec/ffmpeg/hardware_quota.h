@@ -242,6 +242,18 @@ public:
     return AcquireBudgetSlot(3840, 2160, 60.0, false, is_primary);
   }
 
+  // Update slot primary status dynamically based on active AABB viewport coverage
+  static bool UpdateSlotPriority(int slot_index, bool is_primary) {
+    if (slot_index < 0) return false;
+    std::lock_guard<std::mutex> lock(GetMutex());
+    auto& session_slots = GetSessionSlots();
+    if (slot_index >= static_cast<int>(session_slots.size()) || !session_slots[slot_index].in_use) {
+      return false;
+    }
+    session_slots[slot_index].is_primary = is_primary;
+    return true;
+  }
+
   // Release slot strictly when driver resources have been freed via av_buffer_unref
   static void ReleaseSlot(int slot_index) {
     if (slot_index < 0) return;

@@ -21,6 +21,9 @@ public:
   virtual HardwareBackendType GetType() const override { return HardwareBackendType::CudaNvdec; }
   virtual const char* GetBackendName() const override { return "CUDA-NVDEC (Tier 1)"; }
   virtual AVBufferRef* GetHwDeviceContext() const override { return hw_device_ctx_; }
+  virtual void UpdatePriority(bool is_primary) override;
+
+  int quota_slot() const { return quota_slot_; }
 
   void SetRenderer(OpenGLRenderer* renderer) { renderer_ = renderer; }
 

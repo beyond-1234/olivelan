@@ -74,6 +74,11 @@ public:
   virtual const char* GetBackendName() const = 0;
 
   /**
+   * @brief Dynamically adjust slot priority (primary vs secondary track) based on active viewport area.
+   */
+  virtual void UpdatePriority(bool is_primary) { (void)is_primary; }
+
+  /**
    * @brief Return the active AVBufferRef hardware device context, or nullptr.
    */
   virtual AVBufferRef* GetHwDeviceContext() const = 0;

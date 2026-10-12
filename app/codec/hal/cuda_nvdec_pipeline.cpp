@@ -125,6 +125,13 @@ void CudaNvdecPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
   }
 }
 
+void CudaNvdecPipeline::UpdatePriority(bool is_primary)
+{
+  if (quota_slot_ >= 0) {
+    HardwareQuotaManager::UpdateSlotPriority(quota_slot_, is_primary);
+  }
+}
+
 void CudaNvdecPipeline::Close()
 {
   if (hw_device_ctx_) {

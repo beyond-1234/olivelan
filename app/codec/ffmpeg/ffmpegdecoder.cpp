@@ -33,6 +33,7 @@ extern "C" {
 }
 
 #include <OpenImageIO/imagebuf.h>
+#include <QDateTime>
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
@@ -240,6 +241,27 @@ TexturePtr FFmpegDecoder::ProcessFrameIntoTexture(AVFramePtr f, const RetrieveVi
 
 TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 {
+  if (instance_.hw_pipeline()) {
+    instance_.hw_pipeline()->UpdatePriority(p.is_primary);
+  }
+
+  const int64_t now_ms = QDateTime::currentMSecsSinceEpoch();
+  const int64_t delta_ms = (last_retrieve_time_ms_ > 0) ? (now_ms - last_retrieve_time_ms_) : 1000;
+  last_retrieve_time_ms_ = now_ms;
+
+  rational time_step = p.time - last_requested_time_;
+  last_requested_time_ = p.time;
+  bool is_linear_step = (time_step > 0 && time_step <= rational(2, 24));
+  if (!is_linear_step && delta_ms < 60 && delta_ms > 0) {
+    scrub_settle_time_ms_ = now_ms + 150; // 150ms debounce window
+  }
+
+  // If this is a secondary / downscaled / PiP track and rapid scrubbing is active,
+  // immediately return last_valid_texture_ to keep the primary viewport buttery smooth!
+  if (!p.is_primary && (now_ms < scrub_settle_time_ms_) && last_valid_texture_) {
+    return last_valid_texture_;
+  }
+
   AVFramePtr f = RetrieveFrame(p.time, p.cancelled);
   if (!f) {
     if (p.cancelled && p.cancelled->IsCancelled()) {
