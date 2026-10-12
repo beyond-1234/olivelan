@@ -110,19 +110,10 @@ bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedF
   out_frame.pts = hw_frame->pts;
   out_frame.uv_scale_x = 1.0f;
   out_frame.uv_scale_y = 1.0f;
-  out_frame.backend_cookie = new TexturePtr(tex);
 
   frame_count_++;
   return true;
 #endif
-}
-
-void CudaNvdecPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
-{
-  if (frame.backend_cookie) {
-    auto* tex_holder = static_cast<TexturePtr*>(frame.backend_cookie);
-    delete tex_holder;
-  }
 }
 
 void CudaNvdecPipeline::UpdatePriority(bool is_primary)

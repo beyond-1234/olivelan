@@ -154,17 +154,6 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecode
 #endif
 }
 
-void VaapiDmaBufPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
-{
-  Q_UNUSED(frame);
-#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
-  if (dma_buf_fd_ >= 0) {
-    close(dma_buf_fd_);
-    dma_buf_fd_ = -1;
-  }
-#endif
-}
-
 void VaapiDmaBufPipeline::Close()
 {
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)

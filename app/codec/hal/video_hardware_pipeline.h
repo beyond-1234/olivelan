@@ -30,7 +30,6 @@ struct HardwareDecodedFrame {
   int coded_width{0};        // HW buffer padded width
   int coded_height{0};       // HW buffer padded height
   int pool_slot_index{-1};   // Internal frame pool slot index (-1 if non-pooled)
-  void* backend_cookie{nullptr};
 };
 
 class IVideoHardwarePipeline {
@@ -53,11 +52,6 @@ public:
    * @return true if mapping succeeded, false otherwise.
    */
   virtual bool ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecodedFrame& out_frame) = 0;
-
-  /**
-   * @brief Return the hardware frame slot / unmap texture for reuse.
-   */
-  virtual void ReleaseFrame(const HardwareDecodedFrame& frame) = 0;
 
   /**
    * @brief Tear down hardware pipeline, unregister OpenGL interop resources and release quota.

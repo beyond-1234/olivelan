@@ -82,11 +82,6 @@ bool D3D11InteropPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecod
 #endif
 }
 
-void D3D11InteropPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
-{
-  Q_UNUSED(frame);
-}
-
 void D3D11InteropPipeline::Close()
 {
   if (hw_device_ctx_) {

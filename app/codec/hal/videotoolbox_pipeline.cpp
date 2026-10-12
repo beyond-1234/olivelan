@@ -129,12 +129,6 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecod
 #endif
 }
 
-void VideoToolboxPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
-{
-  Q_UNUSED(frame);
-  active_iosurface_ = nullptr;
-}
-
 void VideoToolboxPipeline::Close()
 {
 #if defined(__APPLE__)

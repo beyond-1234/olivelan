@@ -70,11 +70,6 @@ bool LibPlaceboPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecoded
 #endif
 }
 
-void LibPlaceboPipeline::ReleaseFrame(const HardwareDecodedFrame& frame)
-{
-  Q_UNUSED(frame);
-}
-
 void LibPlaceboPipeline::Close()
 {
   if (hw_device_ctx_) {
