@@ -33,10 +33,17 @@ bool CudaNvdecPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w,
   max_width_ = max_w > 0 ? max_w : 4096;
   max_height_ = max_h > 0 ? max_h : 4096;
 
-  // 1. Acquire physical session admission slot
-  quota_slot_ = HardwareQuotaManager::AcquireSlot(true);
+  // 1. Acquire physical session admission slot via dynamic cost scoring
+  double fps = 60.0;
+  if (codec_ctx->framerate.num > 0 && codec_ctx->framerate.den > 0) {
+    fps = av_q2d(codec_ctx->framerate);
+  }
+  bool is_10bit = (codec_ctx->pix_fmt == AV_PIX_FMT_P010LE || codec_ctx->pix_fmt == AV_PIX_FMT_P010BE || codec_ctx->pix_fmt == AV_PIX_FMT_YUV420P10LE);
+  quota_slot_ = HardwareQuotaManager::AcquireBudgetSlot(codec_ctx->width, codec_ctx->height, fps, is_10bit, true);
   if (quota_slot_ < 0) {
-    qWarning() << "[CUDA-NVDEC HAL] Rejected: hardware session quota full";
+    qWarning() << "[CUDA-NVDEC HAL] Rejected: hardware session budget or capacity saturated ("
+               << HardwareQuotaManager::GetAllocatedPoints() << "/"
+               << HardwareQuotaManager::GetTotalBudgetPoints() << "points in use)";
     return false;
   }
 
@@ -64,7 +71,10 @@ bool CudaNvdecPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w,
     return false;
   }
 
-  qInfo() << "[CUDA-NVDEC HAL] Successfully initialized session (slot:" << quota_slot_ << ")";
+  qInfo() << "[CUDA-NVDEC HAL] Successfully initialized session (slot:" << quota_slot_
+          << "cost:" << HardwareQuotaManager::CalculateStreamCost(codec_ctx->width, codec_ctx->height, fps, is_10bit)
+          << "pts; active:" << HardwareQuotaManager::GetAllocatedPoints()
+          << "/" << HardwareQuotaManager::GetTotalBudgetPoints() << "pts)";
   return true;
 #endif
 }

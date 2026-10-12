@@ -1151,6 +1151,13 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
   if (is_video_stream) {
+    if (codec_ctx_->framerate.num <= 0 || codec_ctx_->framerate.den <= 0) {
+      if (avstream_->r_frame_rate.num > 0 && avstream_->r_frame_rate.den > 0) {
+        codec_ctx_->framerate = avstream_->r_frame_rate;
+      } else if (avstream_->avg_frame_rate.num > 0 && avstream_->avg_frame_rate.den > 0) {
+        codec_ctx_->framerate = avstream_->avg_frame_rate;
+      }
+    }
     hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height);
     if (hw_pipeline_) {
       codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
@@ -1180,11 +1187,12 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   }
 #endif
 
-  // Set multithreading setting: throttle secondary software-fallback tracks to 2 threads
+  // Set multithreading setting: throttle secondary software-fallback tracks adaptively
   // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (!hw_pipeline_ && is_video_stream) {
-    error_code = av_dict_set(&opts_, "threads", "2", 0);
+    int fallback_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency() / 4), 2, 6);
+    error_code = av_dict_set(&opts_, "threads", QByteArray::number(fallback_threads).constData(), 0);
     codec_ctx_->skip_frame = AVDISCARD_NONREF;
   } else {
     error_code = av_dict_set(&opts_, "threads", "auto", 0);
