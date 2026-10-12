@@ -11,6 +11,10 @@ struct AVCodecContext;
 struct AVFrame;
 struct AVBufferRef;
 
+// AVPixelFormat is needed by GetPreferredHwPixelFormat(); it is an enum (not forward-declarable)
+// so the pixfmt header must be included. The HAL layer is intrinsically FFmpeg-coupled.
+#include <libavutil/pixfmt.h>
+
 namespace olive {
 
 class Renderer;
@@ -106,6 +110,18 @@ public:
    * @brief Return the active AVBufferRef hardware device context, or nullptr.
    */
   virtual AVBufferRef* GetHwDeviceContext() const = 0;
+
+  /**
+   * @brief Return the FFmpeg hardware pixel format this pipeline negotiates for.
+   *
+   * FFmpeg queries the decoder's preferred output format through `AVCodecContext::get_format`,
+   * which is a non-capturing C function pointer that only receives the `AVCodecContext*`. The
+   * pipeline object is reached via `codec_ctx->opaque`, and this method lets the callback learn
+   * which HW format to request (e.g. AV_PIX_FMT_CUDA / VIDEOTOOLBOX / VAAPI) without re-deriving
+   * it from backend type. Software-fallback / not-yet-materialized backends return AV_PIX_FMT_NONE
+   * so the callback falls through to ordinary CPU pixel formats.
+   */
+  virtual AVPixelFormat GetPreferredHwPixelFormat() const { return AV_PIX_FMT_NONE; }
 };
 
 } // namespace olive

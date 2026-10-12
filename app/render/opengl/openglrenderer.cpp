@@ -33,6 +33,13 @@ extern "C" {
 #include "cuda_nv12_to_rgba.h"
 #endif
 
+#if defined(__APPLE__)
+#include <CoreVideo/CoreVideo.h>
+#include <IOSurface/IOSurface.h>
+#include <OpenGL/CGLIOSurface.h>
+#include <OpenGL/CGLCurrent.h>
+#endif
+
 #include "config/config.h"
 
 namespace olive {
@@ -178,6 +185,8 @@ void OpenGLRenderer::DestroyInternal()
     cuda_graphics_resources_.clear();
 #endif
 
+    DestroyNativeSurfacePool();
+
     // Delete framebuffer
     functions_->glDeleteFramebuffers(1, &framebuffer_);
     framebuffer_ = 0;
@@ -278,14 +287,17 @@ void OpenGLRenderer::DestroyNativeTexture(QVariant texture)
 
 void OpenGLRenderer::DestroyTexture(Texture *texture)
 {
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (texture) {
     const GLuint tid = texture->id().value<GLuint>();
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
     if (ReleaseCudaPoolTexture(tid)) {
       return;
     }
-  }
 #endif
+    if (ReleaseNativeSurfacePoolTexture(tid)) {
+      return;
+    }
+  }
   Renderer::DestroyTexture(texture);
 }
 
@@ -571,6 +583,234 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), params);
 }
 #endif
+
+int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum target, GLuint* out_texture_id)
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+  if (width <= 0 || height <= 0) return -1;
+
+  size_t chosen = 0;
+  bool found = false;
+
+  for (size_t i = 0; i < native_surface_pool_.size(); ++i) {
+    auto &slot = native_surface_pool_[i];
+    if (!slot.in_use && slot.width == width && slot.height == height) {
+      chosen = i;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    for (size_t i = 0; i < native_surface_pool_.size(); ++i) {
+      auto &slot = native_surface_pool_[i];
+      if (!slot.in_use) {
+        if (slot.gl_tex_id) {
+          functions_->glDeleteTextures(1, &slot.gl_tex_id);
+          slot.gl_tex_id = 0;
+        }
+        functions_->glGenTextures(1, &slot.gl_tex_id);
+        functions_->glBindTexture(target, slot.gl_tex_id);
+        functions_->glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        functions_->glBindTexture(target, 0);
+        slot.width = width;
+        slot.height = height;
+        slot.in_use = true;
+        chosen = i;
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found && static_cast<int>(native_surface_pool_.size()) < kNativeSurfacePoolCapacity) {
+    NativeSurfacePoolSlot new_slot;
+    functions_->glGenTextures(1, &new_slot.gl_tex_id);
+    functions_->glBindTexture(target, new_slot.gl_tex_id);
+    functions_->glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    functions_->glBindTexture(target, 0);
+    new_slot.width = width;
+    new_slot.height = height;
+    new_slot.in_use = true;
+    native_surface_pool_.push_back(new_slot);
+    chosen = native_surface_pool_.size() - 1;
+    found = true;
+  }
+
+  if (!found) return -1;
+
+  // Emit the texture id while still holding the lock (CR-13: callers must not read the pool vector
+  // outside the mutex).
+  if (out_texture_id) {
+    *out_texture_id = native_surface_pool_[chosen].gl_tex_id;
+  }
+
+  // Ledger bookkeeping, aligned with the CUDA pool's double-release guard (CR-12).
+  native_borrowed_count_++;
+  native_in_use_count_++;
+
+  return static_cast<int>(chosen);
+}
+
+bool OpenGLRenderer::ReleaseNativeSurfacePoolTexture(GLuint tid)
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+
+  for (auto &slot : native_surface_pool_) {
+    if (slot.gl_tex_id == tid) {
+      // Double-release tripwire, mirroring ReleaseCudaPoolSlotInternal (CR-08 / CR-12).
+      if (!slot.in_use) {
+        qCritical() << "[NativeSurface-Pool] DOUBLE RELEASE on texture" << tid
+                    << "- ignoring to preserve pool integrity";
+        return false;
+      }
+      slot.in_use = false;
+      native_returned_count_++;
+      native_in_use_count_--;
+      if (native_borrowed_count_ != native_returned_count_ + native_in_use_count_) {
+        qCritical() << "[NativeSurface-Pool] Ledger invariant violated: borrowed"
+                    << native_borrowed_count_ << "!= returned" << native_returned_count_
+                    << "+ in_use" << native_in_use_count_;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+void OpenGLRenderer::DestroyNativeSurfacePool()
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+
+  if (native_in_use_count_ != 0) {
+    qWarning() << "[NativeSurface-Pool] Destroying pool with" << native_in_use_count_
+               << "slot(s) still checked out";
+  }
+
+  for (auto &slot : native_surface_pool_) {
+    if (slot.gl_tex_id && context_) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    slot.in_use = false;
+  }
+  native_surface_pool_.clear();
+
+  native_borrowed_count_ = 0;
+  native_returned_count_ = 0;
+  native_in_use_count_ = 0;
+}
+
+TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height)
+{
+#if !defined(__APPLE__)
+  Q_UNUSED(params);
+  Q_UNUSED(iosurface);
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  return nullptr;
+#else
+  if (!iosurface || width <= 0 || height <= 0) return nullptr;
+
+  CGLContextObj cgl_ctx = CGLGetCurrentContext();
+  if (!cgl_ctx) return nullptr;
+
+  // IOSurface can only be bound as GL_TEXTURE_RECTANGLE (CGLTexImageIOSurface2D has no 2D target).
+  // Bind it to a scratch RECTANGLE texture, then blit into a pool-resident GL_TEXTURE_2D so the
+  // result is compatible with Olive's normalized-UV samplers (fixes CR-10: delivering RECTANGLE
+  // straight to the node graph would sample the wrong region / black screen).
+  GLuint rect_tex = 0;
+  glGenTextures(1, &rect_tex);
+  glBindTexture(GL_TEXTURE_RECTANGLE, rect_tex);
+  CGLError cgl_err = CGLTexImageIOSurface2D(cgl_ctx,
+                                           GL_TEXTURE_RECTANGLE,
+                                           GL_RGBA,
+                                           width,
+                                           height,
+                                           GL_BGRA,
+                                           GL_UNSIGNED_INT_8_8_8_8_REV,
+                                           reinterpret_cast<IOSurfaceRef>(iosurface),
+                                           0);
+  glBindTexture(GL_TEXTURE_RECTANGLE, 0);
+  if (cgl_err != kCGLNoError) {
+    qWarning() << "[VideoToolbox-Pool] CGLTexImageIOSurface2D failed:" << cgl_err;
+    glDeleteTextures(1, &rect_tex);
+    return nullptr;
+  }
+
+  GLuint target_2d = 0;
+  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, &target_2d);
+  if (slot_index < 0) {
+    glDeleteTextures(1, &rect_tex);
+    return nullptr;
+  }
+
+  auto* xf = context_->extraFunctions();
+  if (xf) {
+    GLuint fbo[2] = {0, 0};
+    xf->glGenFramebuffers(2, fbo);
+    xf->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[0]);
+    xf->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, rect_tex, 0);
+    xf->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[1]);
+    xf->glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target_2d, 0);
+    xf->glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    xf->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    xf->glDeleteFramebuffers(2, fbo);
+  } else {
+    qWarning() << "[VideoToolbox-Pool] extraFunctions() unavailable; cannot blit RECTANGLE to 2D";
+    ReleaseNativeSurfacePoolTexture(target_2d);
+    glDeleteTextures(1, &rect_tex);
+    return nullptr;
+  }
+
+  glDeleteTextures(1, &rect_tex);
+  return std::make_shared<Texture>(this, QVariant::fromValue(target_2d), params);
+#endif
+}
+
+TexturePtr OpenGLRenderer::CreateTextureFromEglImage(const VideoParams &params, void* egl_image, int width, int height)
+{
+#if !defined(__linux__)
+  Q_UNUSED(params);
+  Q_UNUSED(egl_image);
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  return nullptr;
+#else
+  if (!egl_image || width <= 0 || height <= 0) return nullptr;
+
+  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
+  // Resolve the extension pointer on every call: a static cache would freeze a nullptr if the
+  // first invocation ran without a current GL context (fixes CR-11: silent permanent failure).
+  QOpenGLContext* ctx = QOpenGLContext::currentContext();
+  if (!ctx) {
+    qWarning() << "[VAAPI-HAL] No current OpenGL context while resolving glEGLImageTargetTexture2DOES";
+    return nullptr;
+  }
+  auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+      ctx->getProcAddress("glEGLImageTargetTexture2DOES"));
+  if (!pfn_glEGLImageTargetTexture2DOES) {
+    qWarning() << "[VAAPI-HAL] glEGLImageTargetTexture2DOES not available";
+    return nullptr;
+  }
+
+  GLuint texture_id = 0;
+  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, &texture_id);
+  if (slot_index < 0) return nullptr;
+
+  functions_->glBindTexture(GL_TEXTURE_2D, texture_id);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
+  functions_->glBindTexture(GL_TEXTURE_2D, 0);
+
+  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), params);
+#endif
+}
 
 QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
 {

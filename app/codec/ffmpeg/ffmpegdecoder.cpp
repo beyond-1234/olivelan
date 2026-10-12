@@ -283,9 +283,17 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
   AVFramePtr original = f;
   f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (f->format == AV_PIX_FMT_CUDA) {
-    // Direct GPU-resident path: only valid at full resolution and for progressive frames.
+  // Any hardware-resident frame (CUDA / VideoToolbox / VA-API) is routed through the active
+  // pipeline's ProcessHardwareFrame. The direct GPU-resident path is only valid at full resolution
+  // and for progressive frames; anything that skips it (scaled preview, interlaced source, or a
+  // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
+  // swscale receives a device pointer and crashes. Previously this branch was gated behind
+  // OLIVE_ENABLE_CUDA_NVDEC, leaving the native Tier 2 backends (CR-09) permanently dead.
+  const AVPixelFormat fmt = static_cast<AVPixelFormat>(f->format);
+  const bool is_hw_frame = (fmt == AV_PIX_FMT_CUDA ||
+                            fmt == AV_PIX_FMT_VIDEOTOOLBOX ||
+                            fmt == AV_PIX_FMT_VAAPI);
+  if (is_hw_frame) {
     if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone && instance_.hw_pipeline()) {
       VideoParams hw_params(f->width,
                             f->height,
@@ -303,13 +311,11 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
       }
     }
 
-    // Any hardware frame that skipped the direct path (scaled preview, interlaced source, or a
-    // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
-    // swscale receives a device pointer and crashes.
+    // Host fallback: the last line of defence for frames that skipped the direct path.
     AVFramePtr software_frame = CreateAVFramePtr();
     int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
     if (transfer_error < 0) {
-      qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
+      qCritical() << "[HAL-Fallback] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
       if (last_valid_texture_) {
         return last_valid_texture_;
       }
@@ -318,7 +324,6 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
     av_frame_copy_props(software_frame.get(), f.get());
     f = software_frame;
   }
-#endif
 
   // Disregard "JPEG" pixel formats because we allow the user to override that
   f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
@@ -826,20 +831,22 @@ AVFramePtr FFmpegDecoder::PreProcessFrame(AVFramePtr f, const RetrieveVideoParam
   //   - If a divider is being used, scale down the image
   //   - If a pixel format is not compatible with the GLSL shader, convert it to RGBA ourselves
 
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
   // Last line of defence: a hardware frame must never reach swscale. Download it first.
-  if (f->format == AV_PIX_FMT_CUDA) {
-    qWarning() << "[CUDA-NVDEC] Hardware frame reached pre-processing; downloading to host memory";
+  // Covers any HW format (CUDA / VideoToolbox / VA-API) that bypassed the RetrieveVideoInternal
+  // direct path and any build where the GPU-resident branch was skipped. Previously gated behind
+  // OLIVE_ENABLE_CUDA_NVDEC, which let native Tier 2 frames crash swscale on non-NVIDIA builds.
+  const AVPixelFormat pre_fmt = static_cast<AVPixelFormat>(f->format);
+  if (pre_fmt == AV_PIX_FMT_CUDA || pre_fmt == AV_PIX_FMT_VIDEOTOOLBOX || pre_fmt == AV_PIX_FMT_VAAPI) {
+    qWarning() << "[HAL] Hardware frame reached pre-processing; downloading to host memory";
     AVFramePtr software_frame = CreateAVFramePtr();
     int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
     if (transfer_error < 0) {
-      qCritical() << "[CUDA-NVDEC] Failed to transfer hardware frame in pre-processing:" << FFmpegError(transfer_error);
+      qCritical() << "[HAL] Failed to transfer hardware frame in pre-processing:" << FFmpegError(transfer_error);
       return nullptr;
     }
     av_frame_copy_props(software_frame.get(), f.get());
     f = software_frame;
   }
-#endif
 
   if (p.divider == 1 && IsPixelFormatGLSLCompatible(static_cast<AVPixelFormat>(f->format))) {
     // No CPU processing required, the user wants this in full resolution and the pixel format can
@@ -1175,7 +1182,6 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   }
 
   bool hw_pipeline_ready = false;
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
   const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
   if (is_video_stream) {
     if (codec_ctx_->framerate.num <= 0 || codec_ctx_->framerate.den <= 0) {
@@ -1185,17 +1191,29 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
         codec_ctx_->framerate = avstream_->avg_frame_rate;
       }
     }
+    // NOTE: constructed outside any single-backend macro. The factory itself selects the correct
+    // Tier (CUDA / VideoToolbox / VA-API / D3D11 / Software) per platform & GPU, so Tier 2 native
+    // backends are reachable on non-NVIDIA builds (fixes CR-09: construction was previously gated
+    // behind OLIVE_ENABLE_CUDA_NVDEC).
     hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height);
     if (hw_pipeline_) {
       if (hw_pipeline_->GetType() != HardwareBackendType::SoftwareFallback) {
+        // get_format is a non-capturing C callback; reach the pipeline through codec_ctx->opaque.
+        codec_ctx_->opaque = this;
         codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
+          auto* self = static_cast<Instance*>(context->opaque);
+          AVPixelFormat target_hw_fmt = AV_PIX_FMT_NONE;
+          if (self && self->hw_pipeline()) {
+            target_hw_fmt = self->hw_pipeline()->GetPreferredHwPixelFormat();
+          }
+
           const bool dimensions_supported =
               context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
               context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
-          if (dimensions_supported) {
+          if (dimensions_supported && target_hw_fmt != AV_PIX_FMT_NONE) {
             for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
-              if (*format == AV_PIX_FMT_CUDA) {
-                return AV_PIX_FMT_CUDA;
+              if (*format == target_hw_fmt) {
+                return target_hw_fmt;
               }
             }
           }
@@ -1214,11 +1232,9 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
       qInfo() << "[HAL-Pipeline] Activated" << hw_pipeline_->GetBackendName() << "for" << filename;
     }
   }
-#endif
 
   // Set multithreading setting: throttle secondary software-fallback tracks adaptively
   // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
   if (hw_pipeline_ && hw_pipeline_->GetType() == HardwareBackendType::SoftwareFallback && is_video_stream) {
     int fallback_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency() / 4), 2, 6);
     error_code = av_dict_set(&opts_, "threads", QByteArray::number(fallback_threads).constData(), 0);
@@ -1226,9 +1242,6 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   } else {
     error_code = av_dict_set(&opts_, "threads", "auto", 0);
   }
-#else
-  error_code = av_dict_set(&opts_, "threads", "auto", 0);
-#endif
 
   // Handle failure to set multithreaded decoding
   if (error_code < 0) {

@@ -67,6 +67,10 @@ public:
   TexturePtr CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame);
 #endif
 
+  TexturePtr CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height);
+  TexturePtr CreateTextureFromEglImage(const VideoParams &params, void* egl_image, int width, int height);
+  bool ReleaseNativeSurfacePoolTexture(GLuint tid);
+
   virtual void UploadToTexture(const QVariant &handle, const VideoParams &params, const void* data, int linesize) override;
 
   virtual void DownloadFromTexture(const QVariant &handle, const VideoParams &params, void* data, int linesize) override;
@@ -163,6 +167,26 @@ private:
 
   QHash<GLuint, cudaGraphicsResource_t> cuda_graphics_resources_;
 #endif
+
+  struct NativeSurfacePoolSlot {
+    GLuint gl_tex_id = 0;
+    int width = 0;
+    int height = 0;
+    bool in_use = false;
+  };
+
+  static const int kNativeSurfacePoolCapacity = 8;
+  std::vector<NativeSurfacePoolSlot> native_surface_pool_;
+  QMutex native_surface_pool_mutex_;
+
+  // Double-release detection ledger, mirroring the CUDA pool (CR-08 / CR-12). Guarded by
+  // native_surface_pool_mutex_. Invariant: borrowed == returned + in_use.
+  int native_borrowed_count_ = 0;
+  int native_returned_count_ = 0;
+  int native_in_use_count_ = 0;
+
+  int AcquireNativeSurfaceSlot(int width, int height, GLenum target, GLuint* out_texture_id = nullptr);
+  void DestroyNativeSurfacePool();
 
   static const int kTextureCacheMaxSize;
 

@@ -18,13 +18,18 @@ extern "C" {
 namespace olive {
 
 VaapiDmaBufPipeline::VaapiDmaBufPipeline(OpenGLRenderer* renderer)
+  : renderer_(renderer)
 {
-  Q_UNUSED(renderer);
 }
 
 VaapiDmaBufPipeline::~VaapiDmaBufPipeline()
 {
   Close();
+}
+
+void VaapiDmaBufPipeline::SetRenderer(Renderer* renderer)
+{
+  renderer_ = dynamic_cast<OpenGLRenderer*>(renderer);
 }
 
 bool VaapiDmaBufPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w, int max_h)
@@ -109,9 +114,24 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   #endif
 
   typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
-  static auto pfn_eglGetProcAddress = reinterpret_cast<PFNEGLGETPROCADDRESS>(QOpenGLContext::currentContext() ? QOpenGLContext::currentContext()->getProcAddress("eglGetProcAddress") : nullptr);
-  static auto pfn_eglCreateImageKHR = pfn_eglGetProcAddress ? reinterpret_cast<void*(*)(void*, void*, unsigned int, void*, const intptr_t*)>(pfn_eglGetProcAddress("eglCreateImageKHR")) : nullptr;
-  static auto pfn_glEGLImageTargetTexture2DOES = pfn_eglGetProcAddress ? reinterpret_cast<void(*)(unsigned int, void*)>(pfn_eglGetProcAddress("glEGLImageTargetTexture2DOES")) : nullptr;
+  typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const intptr_t*);
+  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
+
+  // Resolve every extension pointer on each call. A one-time static cache would freeze nullptrs if
+  // the first invocation had no current GL context, permanently disabling DMA-BUF import afterwards
+  // (fixes CR-11). EGL functions are reached through the Qt GL context's proc-address resolver.
+  QOpenGLContext* ctx = QOpenGLContext::currentContext();
+  if (!ctx) {
+    qWarning() << "[VAAPI-HAL] No current OpenGL context while resolving EGL extensions";
+    return false;
+  }
+  auto pfn_eglGetProcAddress = reinterpret_cast<PFNEGLGETPROCADDRESS>(ctx->getProcAddress("eglGetProcAddress"));
+  if (!pfn_eglGetProcAddress) {
+    qWarning() << "[VAAPI-HAL] eglGetProcAddress unavailable; cannot import DMA-BUF surface";
+    return false;
+  }
+  auto pfn_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHR>(pfn_eglGetProcAddress("eglCreateImageKHR"));
+  auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(pfn_eglGetProcAddress("glEGLImageTargetTexture2DOES"));
 
   if (!pfn_eglCreateImageKHR || !pfn_glEGLImageTargetTexture2DOES) {
     qWarning() << "[VAAPI-HAL] EGL DMA-BUF import unavailable; cannot import surface";
@@ -137,21 +157,38 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
-  if (!resident_gl_texture_) {
-    glGenTextures(1, &resident_gl_texture_);
+  // CR-14: surface bit-depth telemetry. DRM_FORMAT_P010 indicates 10-bit; the EGLImage path can
+  // carry it, but the negotiated VideoParams is still delivered as 8-bit RGBA until the OLIVE
+  // shader chain is validated for >8-bit. We log once so the colour-management gap is visible
+  // rather than silently dropped (the capability matrix in CR-05 admits 10-bit; delivery must
+  // eventually match).
+#ifndef DRM_FORMAT_P010
+#define DRM_FORMAT_P010 0x30313050
+#endif
+  if (prime_desc.layers[0].drm_format == DRM_FORMAT_P010) {
+    static bool noted = false;
+    if (!noted) {
+      noted = true;
+      qInfo() << "[VAAPI-HAL] 10-bit (P010) surface detected; delivering as 8-bit RGBA pending shader validation";
+    }
   }
-  glBindTexture(GL_TEXTURE_2D, resident_gl_texture_);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
 
-  // NOTE: unlike the CUDA path there is no renderer pool slot backing this texture, so the
-  // frame cannot yet be handed over as an owning TexturePtr. This is the remaining wiring gap
-  // for Tier 2 on Linux: the renderer needs a pool that owns EGLImage-backed textures.
-  qWarning() << "[VAAPI-HAL] EGLImage imported, but no owning texture pool is wired yet; refusing the frame";
-  return false;
+  if (!renderer_) {
+    qWarning() << "[VAAPI-HAL] Renderer context not attached; cannot transfer frame";
+    return false;
+  }
+
+  TexturePtr tex = renderer_->CreateTextureFromEglImage(params, egl_image_, prime_desc.width, prime_desc.height);
+  if (!tex) {
+    qWarning() << "[VAAPI-HAL] Failed to create owning texture from EGLImage pool";
+    return false;
+  }
+
+  out_frame.texture = tex;
+  out_frame.pts = hw_frame->pts;
+  out_frame.width = hw_frame->width;
+  out_frame.height = hw_frame->height;
+  return true;
 #endif
 }
 
@@ -161,10 +198,6 @@ void VaapiDmaBufPipeline::Close()
   if (dma_buf_fd_ >= 0) {
     close(dma_buf_fd_);
     dma_buf_fd_ = -1;
-  }
-  if (resident_gl_texture_) {
-    glDeleteTextures(1, &resident_gl_texture_);
-    resident_gl_texture_ = 0;
   }
 #endif
   if (hw_device_ctx_) {

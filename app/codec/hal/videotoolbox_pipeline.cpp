@@ -19,13 +19,18 @@ extern "C" {
 namespace olive {
 
 VideoToolboxPipeline::VideoToolboxPipeline(OpenGLRenderer* renderer)
+  : renderer_(renderer)
 {
-  Q_UNUSED(renderer);
 }
 
 VideoToolboxPipeline::~VideoToolboxPipeline()
 {
   Close();
+}
+
+void VideoToolboxPipeline::SetRenderer(Renderer* renderer)
+{
+  renderer_ = dynamic_cast<OpenGLRenderer*>(renderer);
 }
 
 bool VideoToolboxPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max_w, int max_h)
@@ -90,50 +95,38 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
     return false;
   }
 
-  if (!resident_gl_texture_) {
-    glGenTextures(1, &resident_gl_texture_);
-  }
-
-  // Bind to GL_TEXTURE_RECTANGLE for native macOS IOSurface zero-copy mapping
-  glBindTexture(GL_TEXTURE_RECTANGLE, resident_gl_texture_);
-  glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-  CGLError cgl_err = CGLTexImageIOSurface2D(cgl_ctx,
-                                           GL_TEXTURE_RECTANGLE,
-                                           GL_RGBA,
-                                           hw_frame->width,
-                                           hw_frame->height,
-                                           GL_BGRA,
-                                           GL_UNSIGNED_INT_8_8_8_8_REV,
-                                           iosurface,
-                                           0);
-  if (cgl_err != kCGLNoError) {
-    qWarning() << "[VideoToolbox-HAL] CGLTexImageIOSurface2D failed with error:" << cgl_err;
+  if (!renderer_) {
+    qWarning() << "[VideoToolbox-HAL] Renderer context not attached; cannot transfer frame";
     return false;
   }
 
-  active_iosurface_ = iosurface;
+  TexturePtr tex = renderer_->CreateTextureFromIOSurface(params, iosurface, hw_frame->width, hw_frame->height);
+  if (!tex) {
+    qWarning() << "[VideoToolbox-HAL] Failed to create owning texture from IOSurface pool";
+    return false;
+  }
 
-  // NOTE: this texture is owned by the pipeline rather than a renderer pool, so it cannot yet be
-  // transferred as an owning TexturePtr without breaking the single-release contract (the texture
-  // outlives any one frame). That pool wiring is the remaining Tier 2 gap on macOS.
-  qWarning() << "[VideoToolbox-HAL] IOSurface bound, but no owning texture pool is wired yet; refusing the frame";
-  return false;
+  // CR-14: CGLTexImageIOSurface2D is physically limited to 8-bit RGBA. If the source carries
+  // >8-bit / HDR (BT.2020) metadata, it is collapsed here. Log once so the capability-matrix
+  // admission (CR-05) does not falsely imply 10-bit delivery on macOS.
+  if (hw_frame->color_range == AVCOL_RANGE_UNSPECIFIED && hw_frame->colorspace == AVCOL_SPC_BT2020_NCL) {
+    static bool noted = false;
+    if (!noted) {
+      noted = true;
+      qInfo() << "[VideoToolbox-HAL] BT.2020/HDR source present; macOS IOSurface path delivers 8-bit RGBA (downsampled)";
+    }
+  }
+
+  out_frame.texture = tex;
+  out_frame.pts = hw_frame->pts;
+  out_frame.width = hw_frame->width;
+  out_frame.height = hw_frame->height;
+  return true;
 #endif
 }
 
 void VideoToolboxPipeline::Close()
 {
-#if defined(__APPLE__)
-  if (resident_gl_texture_) {
-    glDeleteTextures(1, &resident_gl_texture_);
-    resident_gl_texture_ = 0;
-  }
-#endif
-  active_iosurface_ = nullptr;
   if (hw_device_ctx_) {
     av_buffer_unref(&hw_device_ctx_);
     hw_device_ctx_ = nullptr;

@@ -19,15 +19,15 @@ public:
   virtual HardwareBackendType GetType() const override { return HardwareBackendType::VideoToolboxInterop; }
   virtual const char* GetBackendName() const override { return "VideoToolbox IOSurface (Tier 2 macOS: AMD/Intel)"; }
   virtual AVBufferRef* GetHwDeviceContext() const override { return hw_device_ctx_; }
+  virtual AVPixelFormat GetPreferredHwPixelFormat() const override { return AV_PIX_FMT_VIDEOTOOLBOX; }
 
-  void SetRenderer(Renderer* renderer) override { (void)renderer; }
+  void SetRenderer(Renderer* renderer) override;
 
 private:
+  OpenGLRenderer* renderer_{nullptr};
   AVBufferRef* hw_device_ctx_{nullptr};
   int max_width_{0};
   int max_height_{0};
-  uint32_t resident_gl_texture_{0};
-  void* active_iosurface_{nullptr};
 };
 
 } // namespace olive
