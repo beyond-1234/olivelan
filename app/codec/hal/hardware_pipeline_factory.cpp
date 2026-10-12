@@ -3,6 +3,7 @@
 #include "codec/ffmpeg/hardware_quota.h"
 #include "cuda_nvdec_pipeline.h"
 #include "vaapi_dmabuf_pipeline.h"
+#include "videotoolbox_pipeline.h"
 #include "d3d11_interop_pipeline.h"
 #include "libplacebo_pipeline.h"
 
@@ -45,11 +46,19 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
 #endif
 
   // 2. Tier 2: Platform Native lightweight poly-morphic bypass
-#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+#if defined(__APPLE__)
+  if (probe.SupportsVideoToolbox()) {
+    auto pipeline = std::make_unique<VideoToolboxPipeline>(renderer);
+    if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
+      qInfo() << "[HAL Factory] Selected Tier 2 macOS:" << pipeline->GetBackendName();
+      return pipeline;
+    }
+  }
+#elif defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
   if (probe.SupportsVaapiDmaBuf()) {
     auto pipeline = std::make_unique<VaapiDmaBufPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
-      qInfo() << "[HAL Factory] Selected Tier 2:" << pipeline->GetBackendName();
+      qInfo() << "[HAL Factory] Selected Tier 2 Linux:" << pipeline->GetBackendName();
       return pipeline;
     }
   }
@@ -57,7 +66,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   if (probe.SupportsD3D11()) {
     auto pipeline = std::make_unique<D3D11InteropPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
-      qInfo() << "[HAL Factory] Selected Tier 2:" << pipeline->GetBackendName();
+      qInfo() << "[HAL Factory] Selected Tier 2 Windows:" << pipeline->GetBackendName();
       return pipeline;
     }
   }

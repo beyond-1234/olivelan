@@ -60,6 +60,7 @@ public:
   bool IsHybridTopology() const { return is_hybrid_topology_; }
   bool HasNvdecSupport() const { return has_nvdec_support_; }
   bool SupportsVaapiDmaBuf() const { return has_vaapi_dmabuf_support_; }
+  bool SupportsVideoToolbox() const { return has_videotoolbox_support_; }
   bool SupportsD3D11() const { return has_d3d11_support_; }
   bool SupportsLibPlacebo() const { return has_libplacebo_support_; }
 
@@ -90,6 +91,7 @@ private:
   bool is_hybrid_topology_{false};
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
+  bool has_videotoolbox_support_{false};
   bool has_d3d11_support_{false};
   bool has_libplacebo_support_{false};
   std::vector<GpuDeviceInfo> detected_devices_;

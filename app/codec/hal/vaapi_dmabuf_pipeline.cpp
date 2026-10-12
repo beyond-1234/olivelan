@@ -93,6 +93,53 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, HardwareDecode
   }
   dma_buf_fd_ = prime_desc.objects[0].fd;
 
+  // EGLImage creation and OpenGL texture binding
+  #ifndef EGL_LINUX_DMA_BUF_EXT
+  #define EGL_LINUX_DMA_BUF_EXT 0x3270
+  #define EGL_LINUX_DRM_FOURCC_EXT 0x3271
+  #define EGL_DMA_BUF_PLANE0_FD_EXT 0x3272
+  #define EGL_DMA_BUF_PLANE0_OFFSET_EXT 0x3273
+  #define EGL_DMA_BUF_PLANE0_PITCH_EXT 0x3274
+  #define EGL_DMA_BUF_PLANE1_FD_EXT 0x3275
+  #define EGL_DMA_BUF_PLANE1_OFFSET_EXT 0x3276
+  #define EGL_DMA_BUF_PLANE1_PITCH_EXT 0x3277
+  #define EGL_WIDTH 0x3057
+  #define EGL_HEIGHT 0x3056
+  #endif
+
+  typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
+  static auto pfn_eglGetProcAddress = reinterpret_cast<PFNEGLGETPROCADDRESS>(QOpenGLContext::currentContext() ? QOpenGLContext::currentContext()->getProcAddress("eglGetProcAddress") : nullptr);
+  static auto pfn_eglCreateImageKHR = pfn_eglGetProcAddress ? reinterpret_cast<void*(*)(void*, void*, unsigned int, void*, const intptr_t*)>(pfn_eglGetProcAddress("eglCreateImageKHR")) : nullptr;
+  static auto pfn_glEGLImageTargetTexture2DOES = pfn_eglGetProcAddress ? reinterpret_cast<void(*)(unsigned int, void*)>(pfn_eglGetProcAddress("glEGLImageTargetTexture2DOES")) : nullptr;
+
+  if (pfn_eglCreateImageKHR && pfn_glEGLImageTargetTexture2DOES) {
+    const intptr_t attribs[] = {
+      EGL_WIDTH, static_cast<intptr_t>(prime_desc.width),
+      EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height),
+      EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[0].drm_format),
+      EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[0].fd),
+      EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[0].offset[0]),
+      EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[0].pitch[0]),
+      EGL_DMA_BUF_PLANE1_FD_EXT, static_cast<intptr_t>(prime_desc.objects[1].fd),
+      EGL_DMA_BUF_PLANE1_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
+      EGL_DMA_BUF_PLANE1_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
+      0x3038 // EGL_NONE
+    };
+
+    egl_image_ = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+    if (egl_image_) {
+      if (!resident_gl_texture_) {
+        glGenTextures(1, &resident_gl_texture_);
+      }
+      glBindTexture(GL_TEXTURE_2D, resident_gl_texture_);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+    }
+  }
+
   // Set normalized UV dimensions for non-standard stride/padding
   out_frame.gl_texture_id = resident_gl_texture_;
   out_frame.width = hw_frame->width;
@@ -124,6 +171,10 @@ void VaapiDmaBufPipeline::Close()
   if (dma_buf_fd_ >= 0) {
     close(dma_buf_fd_);
     dma_buf_fd_ = -1;
+  }
+  if (resident_gl_texture_) {
+    glDeleteTextures(1, &resident_gl_texture_);
+    resident_gl_texture_ = 0;
   }
 #endif
   if (hw_device_ctx_) {

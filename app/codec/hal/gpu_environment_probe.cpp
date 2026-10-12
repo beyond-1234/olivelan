@@ -153,6 +153,12 @@ void GpuEnvironmentProbe::DetectBackendCapabilities()
   has_vaapi_dmabuf_support_ = false;
 #endif
 
+#if defined(__APPLE__)
+  has_videotoolbox_support_ = true;
+#else
+  has_videotoolbox_support_ = false;
+#endif
+
 #if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
   has_d3d11_support_ = true;
 #else
@@ -196,7 +202,7 @@ bool GpuEnvironmentProbe::ShouldUseHardwareDecode(AVCodecID codec_id, AVPixelFor
       codec_id == AV_CODEC_ID_HEVC ||
       codec_id == AV_CODEC_ID_VP9 ||
       codec_id == AV_CODEC_ID_AV1) {
-    return has_nvdec_support_ || has_vaapi_dmabuf_support_ || has_d3d11_support_ || has_libplacebo_support_;
+    return has_nvdec_support_ || has_vaapi_dmabuf_support_ || has_videotoolbox_support_ || has_d3d11_support_ || has_libplacebo_support_;
   }
 
   return false;
