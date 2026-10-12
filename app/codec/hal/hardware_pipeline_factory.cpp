@@ -63,19 +63,21 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   }
 #endif
 
-  // 3. Tier 3: Modern Ultimate Fallback (libplacebo)
+  // 3. Optional Plugin Placeholder (libplacebo for specialized external HDR tonemapping)
 #if defined(OLIVE_ENABLE_LIBPLACEBO)
-  if (probe.SupportsLibPlacebo() || probe.NeedsToneMapping(codec_ctx->colorspace, codec_ctx->color_trc)) {
+  if (probe.SupportsLibPlacebo() && probe.NeedsToneMapping(codec_ctx->colorspace, codec_ctx->color_trc)) {
     auto placebo = std::make_unique<LibPlaceboPipeline>(renderer);
     if (placebo->ProbeAndInitialize(codec_ctx, width, height)) {
-      qInfo() << "[HAL Factory] Selected Tier 3:" << placebo->GetBackendName();
+      qInfo() << "[HAL Factory] Selected Plugin:" << placebo->GetBackendName();
       return placebo;
     }
   }
 #endif
 
-  // 4. Ultimate graceful fallback to software decode
-  qInfo() << "[HAL Factory] No compatible hardware pipeline available; falling back to software decode.";
+  // 4. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
+  // When HW pipelines are saturated or unsupported (e.g. ProRes, 4:2:2, or over-budget),
+  // routes to Olive's reinforced CPU decode pipeline protected by adaptive thread clamps and B-frame skipping.
+  qInfo() << "[HAL Factory] Routing to Tier 3: Olive Native Reinforced Software Pipeline (Zero-Dependency).";
   return nullptr;
 }
 

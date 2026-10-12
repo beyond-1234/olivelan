@@ -15,8 +15,8 @@ enum class HardwareBackendType {
   CudaNvdec,          // Tier 1: Dedicated NVDEC + CUDA resident path (RTX/GTX)
   VaapiDmaBuf,        // Tier 2: Linux AMD/Intel native lightweight DMA-BUF
   D3D11Interop,       // Tier 2: Windows AMD/Intel native D3D11 shared texture
-  LibPlaceboFallback, // Tier 3: Cross-adapter / HDR tone mapping / generic fallback
-  SoftwareFallback    // Software decode (CPU) fallback
+  SoftwareFallback,   // Tier 3: Olive native reinforced CPU decode + texture upload (zero external dependency)
+  LibPlaceboFallback  // Optional / Future plugin: libplacebo HDR tonemapper placeholder
 };
 
 struct HardwareDecodedFrame {

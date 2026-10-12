@@ -18,7 +18,7 @@ public:
   virtual void Close() override;
 
   virtual HardwareBackendType GetType() const override { return HardwareBackendType::LibPlaceboFallback; }
-  virtual const char* GetBackendName() const override { return "libplacebo (Tier 3 Fallback)"; }
+  virtual const char* GetBackendName() const override { return "libplacebo Plugin (Optional / Placeholder)"; }
   virtual AVBufferRef* GetHwDeviceContext() const override { return hw_device_ctx_; }
 
   void SetRenderer(OpenGLRenderer* renderer) { renderer_ = renderer; }
