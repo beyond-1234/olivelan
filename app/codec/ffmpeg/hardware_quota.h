@@ -5,7 +5,15 @@
 #include <cmath>
 #include <cstddef>
 #include <mutex>
+#include <string>
 #include <vector>
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+#include <cuda_runtime_api.h>
+#endif
+
+#include <QDebug>
+#include <QString>
 
 namespace olive {
 
@@ -16,7 +24,7 @@ namespace olive {
  * Supports runtime dynamic adjustment from GpuEnvironmentProbe.
  */
 struct HardwareQuotaConfig {
-  const char* gpu_name = "NVIDIA GeForce RTX 4060 Laptop GPU";
+  std::string gpu_name = "NVIDIA GeForce RTX 4060 Laptop GPU";
   size_t vram_total_mb = 8192;
   int nvdec_engine_count = 1;
 
@@ -43,9 +51,67 @@ public:
     double fps = 60.0;
   };
 
+  static void AutoDetectHardwareTopologyInternal(HardwareQuotaConfig& config) {
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    int device_id = 0;
+    if (cudaGetDevice(&device_id) == cudaSuccess) {
+      cudaDeviceProp prop{};
+      if (cudaGetDeviceProperties(&prop, device_id) == cudaSuccess) {
+        config.gpu_name = prop.name;
+        // 1. Dynamic VRAM detection (bytes to MiB)
+        config.vram_total_mb = prop.totalGlobalMem / (1024 * 1024);
+
+        // 2. Dynamic NVDEC engine count deduction based on architecture & SMs:
+        // Ada Lovelace (sm_89): AD102 (4090/6000, SM >= 128), AD103 (4080, SM >= 76),
+        // AD104 (4070 Ti, SM >= 60) have 2 NVDEC engines.
+        // AD106 / AD107 (4060, SM < 60) have 1 NVDEC engine.
+        if (prop.major == 8 && prop.minor == 9) {
+          config.nvdec_engine_count = (prop.multiProcessorCount >= 60) ? 2 : 1;
+        } else if (prop.major >= 9) {
+          config.nvdec_engine_count = 2; // Hopper / Blackwell flagship cores default to 2+
+        } else {
+          config.nvdec_engine_count = 1;
+        }
+
+        // 3. Dynamic session cap & frame pool scaling
+        config.max_physical_sessions = std::min(8, config.nvdec_engine_count * 6);
+        if (config.vram_total_mb >= 20480) {
+          config.frame_pool_capacity = 16;
+        } else if (config.vram_total_mb >= 12288) {
+          config.frame_pool_capacity = 12;
+        } else {
+          config.frame_pool_capacity = 8;
+        }
+
+        const int vram_budget = (config.vram_total_mb > 1536) ? static_cast<int>((config.vram_total_mb - 1536) / 22) : 200;
+        const int total_budget_points = std::clamp(vram_budget, 200, config.nvdec_engine_count * 400);
+
+        qInfo() << "[HardwareQuota] Dynamic Hardware Topology Detected:"
+                << QString::fromStdString(config.gpu_name)
+                << "| VRAM:" << config.vram_total_mb << "MiB"
+                << "| NVDEC Engines:" << config.nvdec_engine_count
+                << "| SM Count:" << prop.multiProcessorCount
+                << "| Total Points Budget:" << total_budget_points
+                << "| Max Sessions Cap:" << config.max_physical_sessions;
+        return;
+      }
+    }
+#endif
+    qWarning() << "[HardwareQuota] Dynamic detection unavailable; using baseline profile:"
+               << QString::fromStdString(config.gpu_name) << "| VRAM:" << config.vram_total_mb << "MiB";
+  }
+
   static HardwareQuotaConfig& GetConfig() {
     static HardwareQuotaConfig config;
+    static std::once_flag s_probe_flag;
+    std::call_once(s_probe_flag, []() {
+      AutoDetectHardwareTopologyInternal(config);
+    });
     return config;
+  }
+
+  static void AutoDetectHardwareTopology() {
+    (void)GetConfig();
   }
 
   // Cost scoring model: 100 points = 1 standard 4K 60fps stream (3840x2160, 60fps, 8-bit)

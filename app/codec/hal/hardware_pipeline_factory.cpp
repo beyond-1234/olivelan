@@ -1,5 +1,6 @@
 #include "hardware_pipeline_factory.h"
 #include "gpu_environment_probe.h"
+#include "codec/ffmpeg/hardware_quota.h"
 #include "cuda_nvdec_pipeline.h"
 #include "vaapi_dmabuf_pipeline.h"
 #include "d3d11_interop_pipeline.h"
@@ -18,6 +19,9 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   if (!codec_ctx) {
     return nullptr;
   }
+
+  // Ensure hardware quota profile is probed and initialized from GPU driver
+  HardwareQuotaManager::AutoDetectHardwareTopology();
 
   auto& probe = GpuEnvironmentProbe::Instance();
 
