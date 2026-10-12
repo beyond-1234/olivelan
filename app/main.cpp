@@ -41,6 +41,8 @@ extern "C" {
 #include "core.h"
 #include "common/commandlineparser.h"
 #include "common/debug.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "dialog/hal/halbackenddialog.h"
 #include "node/project/serializer/serializer.h"
 #include "version.h"
 
@@ -176,6 +178,19 @@ int main(int argc, char *argv[])
       parser.AddOption({QStringLiteral("d"), QStringLiteral("-decompress")},
                        QCoreApplication::translate("main", "Decompress project file (No GUI)"));
 
+  auto hal_backend_option =
+      parser.AddOption({QStringLiteral("hal-backend")},
+                       QCoreApplication::translate("main",
+                          "Force a HAL decode backend for this session "
+                          "(auto|cuda|videotoolbox|vaapi|d3d11|software)"),
+                       true,
+                       QCoreApplication::translate("main", "backend"));
+
+  auto hal_dialog_option =
+      parser.AddOption({QStringLiteral("hal-dialog")},
+                       QCoreApplication::translate("main",
+                          "Show the HAL backend selection dialog with probe results on startup"));
+
 #ifdef _WIN32
   auto console_option =
       parser.AddOption({QStringLiteral("c"), QStringLiteral("-console")},
@@ -240,6 +255,18 @@ int main(int argc, char *argv[])
 
   if (crash_option->IsSet()) {
     startup_params.set_crash_on_startup(true);
+  }
+
+  // HAL backend forcing (phase5-07). Environment variable is the lowest-priority source;
+  // -hal-backend overrides it, and the -hal-dialog selection overrides both.
+  {
+    const QByteArray env_backend = qgetenv("OLIVE_HAL_BACKEND");
+    if (!env_backend.isEmpty()) {
+      olive::HardwarePipelineFactory::SetForcedBackend(QString::fromLocal8Bit(env_backend));
+    }
+    if (hal_backend_option->IsSet()) {
+      olive::HardwarePipelineFactory::SetForcedBackend(hal_backend_option->GetSetting());
+    }
   }
 
   startup_params.set_fullscreen(fullscreen_option->IsSet());
@@ -326,6 +353,18 @@ int main(int argc, char *argv[])
 #if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(7, 14, 100)
   avfilter_register_all();
 #endif
+
+  // HAL backend selection dialog (phase5-07). GUI mode only, shown before Core
+  // startup so the forced backend applies to every decoder instance. Cancelled
+  // dialog keeps whatever was set from -hal-backend / OLIVE_HAL_BACKEND.
+  if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
+      && hal_dialog_option->IsSet()
+      && dynamic_cast<QApplication*>(a.get())) {
+    olive::HALBackendDialog hal_dialog;
+    if (hal_dialog.exec() == QDialog::Accepted) {
+      olive::HardwarePipelineFactory::SetForcedBackend(hal_dialog.SelectedBackend());
+    }
+  }
 
   // Enable Google Crashpad if compiled with it
 #ifdef USE_CRASHPAD

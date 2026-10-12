@@ -2,6 +2,7 @@
 #define HARDWARE_PIPELINE_FACTORY_H
 
 #include <memory>
+#include <QString>
 #include "video_hardware_pipeline.h"
 
 namespace olive {
@@ -19,6 +20,14 @@ public:
       int width,
       int height,
       OpenGLRenderer* renderer = nullptr);
+
+  /**
+   * @brief Process-wide forced backend override (phase5-07). Empty string means
+   *        dynamic auto routing. Set from -hal-backend / -hal-dialog / OLIVE_HAL_BACKEND.
+   *        Valid values: "cuda", "videotoolbox", "vaapi", "d3d11", "software".
+   */
+  static void SetForcedBackend(const QString& name);
+  static const QString& GetForcedBackend();
 };
 
 } // namespace olive

@@ -67,6 +67,7 @@ public:
   DisplayServer GetDisplayServer() const { return display_server_; }
   const std::string& GetPrimaryGpuName() const { return primary_gpu_name_; }
   size_t GetTotalVramMb() const { return total_vram_mb_; }
+  const std::vector<GpuDeviceInfo>& GetDetectedDevices() const { return detected_devices_; }
 
   // Vendor convenience checks
   bool IsNvidiaGpu() const { return primary_vendor_ == GpuVendor::Nvidia; }

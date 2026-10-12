@@ -13,6 +13,60 @@
 
 namespace olive {
 
+namespace {
+
+// Process-wide forced backend (phase5-07). Empty = dynamic auto routing.
+QString& ForcedBackendRef()
+{
+  static QString forced_backend;
+  return forced_backend;
+}
+
+std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
+    const QString& name, AVCodecContext* codec_ctx, int width, int height, OpenGLRenderer* renderer)
+{
+  if (name == QStringLiteral("cuda")) {
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    return std::make_unique<CudaNvdecPipeline>(renderer);
+#else
+    qWarning() << "[HAL Factory] Forced backend 'cuda' not compiled in (OLIVE_ENABLE_CUDA_NVDEC off); ignoring.";
+#endif
+  } else if (name == QStringLiteral("videotoolbox")) {
+#if defined(__APPLE__)
+    return std::make_unique<VideoToolboxPipeline>(renderer);
+#else
+    qWarning() << "[HAL Factory] Forced backend 'videotoolbox' only exists on macOS; ignoring.";
+#endif
+  } else if (name == QStringLiteral("vaapi")) {
+#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+    return std::make_unique<VaapiDmaBufPipeline>(renderer);
+#else
+    qWarning() << "[HAL Factory] Forced backend 'vaapi' not compiled in (needs Linux + OLIVE_ENABLE_VAAPI_DMABUF); ignoring.";
+#endif
+  } else if (name == QStringLiteral("d3d11")) {
+#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
+    return std::make_unique<D3D11InteropPipeline>(renderer);
+#else
+    qWarning() << "[HAL Factory] Forced backend 'd3d11' not compiled in (needs Windows + OLIVE_ENABLE_D3D11_INTEROP); ignoring.";
+#endif
+  } else if (name == QStringLiteral("software")) {
+    return std::make_unique<ReinforcedSoftwarePipeline>(renderer);
+  }
+  return nullptr;
+}
+
+} // namespace
+
+void HardwarePipelineFactory::SetForcedBackend(const QString& name)
+{
+  ForcedBackendRef() = name.toLower().trimmed();
+}
+
+const QString& HardwarePipelineFactory::GetForcedBackend()
+{
+  return ForcedBackendRef();
+}
+
 std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     AVCodecContext* codec_ctx,
     int width,
@@ -27,6 +81,23 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   HardwareQuotaManager::AutoDetectHardwareTopology();
 
   auto& probe = GpuEnvironmentProbe::Instance();
+
+  // 0. Forced backend override (phase5-07): user explicitly requests a backend via
+  //    -hal-backend / -hal-dialog / OLIVE_HAL_BACKEND. Deliberately bypasses the
+  //    ShouldUseHardwareDecode pre-filter ("user knows best" semantics), but a failed
+  //    physical ProbeAndInitialize still falls back to the normal tiered routing.
+  const QString& forced = GetForcedBackend();
+  if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
+    auto forced_pipeline = CreateForcedPipeline(forced, codec_ctx, width, height, renderer);
+    if (forced_pipeline) {
+      if (forced_pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
+        qInfo() << "[HAL Factory] Forced backend selected:" << forced_pipeline->GetBackendName();
+        return forced_pipeline;
+      }
+      qWarning() << "[HAL Factory] Forced backend" << forced
+                << "failed physical initialization; falling back to auto routing.";
+    }
+  }
 
   // 0. Pre-filter: Prevent hardware allocation for codecs that perform better on CPU (ProRes, 4:2:2)
   if (!probe.ShouldUseHardwareDecode(codec_ctx->codec_id, codec_ctx->pix_fmt)) {
