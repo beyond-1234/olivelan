@@ -429,7 +429,7 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   }
 
   const auto *frames_context = reinterpret_cast<const AVHWFramesContext*>(frame->hw_frames_ctx->data);
-  if (!frames_context || frames_context->sw_format != AV_PIX_FMT_NV12) {
+  if (!frames_context || (frames_context->sw_format != AV_PIX_FMT_NV12 && frames_context->sw_format != AV_PIX_FMT_P010)) {
     return nullptr;
   }
 
@@ -459,15 +459,27 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   }
 
   if (error == cudaSuccess) {
-    error = OliveLaunchNv12ToRgbaSurface(frame->data[0],
-                                         frame->linesize[0],
-                                         frame->data[1],
-                                         frame->linesize[1],
-                                         surface,
-                                         frame->width,
-                                         frame->height,
-                                         frame->colorspace,
-                                         frame->color_range == AVCOL_RANGE_JPEG);
+    if (frames_context->sw_format == AV_PIX_FMT_P010) {
+      error = OliveLaunchP010ToRgbaSurface(reinterpret_cast<const uint16_t*>(frame->data[0]),
+                                           frame->linesize[0],
+                                           reinterpret_cast<const uint16_t*>(frame->data[1]),
+                                           frame->linesize[1],
+                                           surface,
+                                           frame->width,
+                                           frame->height,
+                                           frame->colorspace,
+                                           frame->color_range == AVCOL_RANGE_JPEG);
+    } else {
+      error = OliveLaunchNv12ToRgbaSurface(frame->data[0],
+                                           frame->linesize[0],
+                                           frame->data[1],
+                                           frame->linesize[1],
+                                           surface,
+                                           frame->width,
+                                           frame->height,
+                                           frame->colorspace,
+                                           frame->color_range == AVCOL_RANGE_JPEG);
+    }
   }
   if (error == cudaSuccess) {
     error = cudaDeviceSynchronize();

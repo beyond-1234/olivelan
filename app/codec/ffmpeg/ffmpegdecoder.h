@@ -37,6 +37,7 @@ extern "C" {
 #include <QWaitCondition>
 
 #include "codec/decoder.h"
+#include "codec/hal/video_hardware_pipeline.h"
 #include "common/ffmpegutils.h"
 
 namespace olive {
@@ -116,6 +117,11 @@ private:
       return avstream_;
     }
 
+    IVideoHardwarePipeline* hw_pipeline() const
+    {
+      return hw_pipeline_.get();
+    }
+
   private:
     AVFormatContext* fmt_ctx_;
     AVCodecContext* codec_ctx_;
@@ -124,6 +130,7 @@ private:
     int cuda_frame_count_;
     int nvdec_quota_slot_{-1};
     AVBufferRef* hw_device_ctx_{nullptr};
+    std::unique_ptr<IVideoHardwarePipeline> hw_pipeline_;
 
   };
 

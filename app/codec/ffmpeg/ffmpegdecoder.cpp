@@ -42,6 +42,8 @@ extern "C" {
 #include <QtConcurrent/QtConcurrent>
 
 #include "codec/planarfiledevice.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/gpu_environment_probe.h"
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
 #include "render/renderer.h"
@@ -1145,19 +1147,17 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     return false;
   }
 
-  bool cuda_device_ready = false;
+  bool hw_pipeline_ready = false;
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
-  nvdec_quota_slot_ = is_video_stream ? HardwareQuotaManager::AcquireSlot(true) : -1;
-  if (nvdec_quota_slot_ >= 0) {
-    error_code = av_hwdevice_ctx_create(&hw_device_ctx_, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
-    if (error_code >= 0) {
-      codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
+  if (is_video_stream) {
+    hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height);
+    if (hw_pipeline_) {
       codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
-        const bool nvdec_dimensions_supported =
+        const bool dimensions_supported =
             context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
             context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
-        if (nvdec_dimensions_supported) {
+        if (dimensions_supported) {
           for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
             if (*format == AV_PIX_FMT_CUDA) {
               return AV_PIX_FMT_CUDA;
@@ -1174,32 +1174,16 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
         return AV_PIX_FMT_NONE;
       };
-      cuda_device_ready = true;
-      qInfo() << "[NVDEC-Quota] Granted. Active:"
-              << HardwareQuotaManager::GetActiveSessionCount() << "/"
-              << HardwareQuotaManager::GetMaxPhysicalSessions()
-              << "(slot" << nvdec_quota_slot_ << ") for" << filename;
-    } else {
-      if (hw_device_ctx_) {
-        av_buffer_unref(&hw_device_ctx_);
-        hw_device_ctx_ = nullptr;
-      }
-      HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
-      nvdec_quota_slot_ = -1;
-      qWarning() << "[NVDEC-Quota] CUDA device init failed; released quota & fallback to software:" << error_code;
+      hw_pipeline_ready = true;
+      qInfo() << "[HAL-Pipeline] Activated" << hw_pipeline_->GetBackendName() << "for" << filename;
     }
-  } else if (is_video_stream) {
-    qInfo() << "[NVDEC-Quota] Saturated ("
-            << HardwareQuotaManager::GetActiveSessionCount() << "/"
-            << HardwareQuotaManager::GetMaxPhysicalSessions() << "active); routing"
-            << filename << "to software decode.";
   }
 #endif
 
   // Set multithreading setting: throttle secondary software-fallback tracks to 2 threads
   // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (nvdec_quota_slot_ < 0 && is_video_stream) {
+  if (!hw_pipeline_ && is_video_stream) {
     error_code = av_dict_set(&opts_, "threads", "2", 0);
     codec_ctx_->skip_frame = AVDISCARD_NONREF;
   } else {
@@ -1216,8 +1200,12 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   // Open codec
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
-  if (error_code < 0 && cuda_device_ready) {
-    qWarning() << "[CUDA-NVDEC] Hardware decoder initialization failed; retrying software decode:" << error_code;
+  if (error_code < 0 && hw_pipeline_ready) {
+    qWarning() << "[HAL-Pipeline] Hardware decoder initialization failed; retrying software decode:" << error_code;
+    if (hw_pipeline_) {
+      hw_pipeline_->Close();
+      hw_pipeline_.reset();
+    }
     if (hw_device_ctx_) {
       av_buffer_unref(&hw_device_ctx_);
       hw_device_ctx_ = nullptr;
@@ -1255,6 +1243,11 @@ void FFmpegDecoder::Instance::Close()
 {
   if (codec_ctx_) {
     avcodec_flush_buffers(codec_ctx_);
+  }
+
+  if (hw_pipeline_) {
+    hw_pipeline_->Close();
+    hw_pipeline_.reset();
   }
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)

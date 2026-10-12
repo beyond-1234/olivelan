@@ -84,6 +84,84 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
   surf2Dwrite(rgba, output_surface, write_x * sizeof(uchar4), write_y);
 }
 
+__global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
+                                        int y_pitch_bytes,
+                                        const uint16_t *uv_plane,
+                                        int uv_pitch_bytes,
+                                        cudaSurfaceObject_t output_surface,
+                                        int width,
+                                        int height,
+                                        int color_space,
+                                        bool full_range,
+                                        int dst_x,
+                                        int dst_y)
+{
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= width || y >= height) {
+    return;
+  }
+
+  const int y_stride = y_pitch_bytes / sizeof(uint16_t);
+  const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
+
+  // In P010, the 10-bit sample is MSB-aligned in a 16-bit container
+  const float sample_y = static_cast<float>(y_plane[y * y_stride + x] >> 6);
+
+  const int uv_x = (x >> 1) << 1;
+  const int uv_y = y >> 1;
+  const int safe_uv_x = (uv_x + 1 < uv_stride) ? uv_x : max(0, uv_stride - 2);
+
+  const float sample_u = static_cast<float>(uv_plane[uv_y * uv_stride + safe_uv_x] >> 6);
+  const float sample_v = static_cast<float>(uv_plane[uv_y * uv_stride + safe_uv_x + 1] >> 6);
+
+  float y_norm;
+  float u_norm;
+  float v_norm;
+
+  if (full_range) {
+    y_norm = sample_y * (255.0f / 1023.0f);
+    u_norm = (sample_u - 512.0f) * (255.0f / 1023.0f);
+    v_norm = (sample_v - 512.0f) * (255.0f / 1023.0f);
+  } else {
+    // 10-bit limited range: Y in [64, 940], UV in [64, 960]
+    y_norm = 1.164383f * (sample_y - 64.0f) * (255.0f / 876.0f);
+    u_norm = (sample_u - 512.0f) * (255.0f / 896.0f);
+    v_norm = (sample_v - 512.0f) * (255.0f / 896.0f);
+  }
+
+  float red_v;
+  float green_u;
+  float green_v;
+  float blue_u;
+
+  if (color_space == AVCOL_SPC_BT2020_NCL || color_space == AVCOL_SPC_BT2020_CL) {
+    red_v = 1.4746f;
+    green_u = 0.16455f;
+    green_v = 0.57135f;
+    blue_u = 1.8814f;
+  } else if (color_space == AVCOL_SPC_BT709) {
+    red_v = 1.5748f;
+    green_u = 0.187324f;
+    green_v = 0.468124f;
+    blue_u = 1.8556f;
+  } else {
+    red_v = 1.402f;
+    green_u = 0.344136f;
+    green_v = 0.714136f;
+    blue_u = 1.772f;
+  }
+
+  const float red = y_norm + red_v * v_norm;
+  const float green = y_norm - green_u * u_norm - green_v * v_norm;
+  const float blue = y_norm + blue_u * u_norm;
+  const uchar4 rgba = make_uchar4(ClampByte(red), ClampByte(green), ClampByte(blue), 255);
+
+  const int write_x = dst_x + x;
+  const int write_y = dst_y + y;
+  surf2Dwrite(rgba, output_surface, write_x * sizeof(uchar4), write_y);
+}
+
 }
 
 cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
@@ -109,6 +187,39 @@ cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
                                                y_pitch,
                                                uv_plane,
                                                uv_pitch,
+                                               output_surface,
+                                               width,
+                                               height,
+                                               color_space,
+                                               full_range,
+                                               dst_x,
+                                               dst_y);
+  return cudaGetLastError();
+}
+
+cudaError_t OliveLaunchP010ToRgbaSurface(const uint16_t *y_plane,
+                                         int y_pitch_bytes,
+                                         const uint16_t *uv_plane,
+                                         int uv_pitch_bytes,
+                                         cudaSurfaceObject_t output_surface,
+                                         int width,
+                                         int height,
+                                         int color_space,
+                                         bool full_range,
+                                         int dst_x,
+                                         int dst_y)
+{
+  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
+    return cudaErrorInvalidValue;
+  }
+
+  const dim3 threads(16, 16);
+  const dim3 blocks((width + threads.x - 1) / threads.x,
+                    (height + threads.y - 1) / threads.y);
+  P010ToRgbaSurfaceKernel<<<blocks, threads>>>(y_plane,
+                                               y_pitch_bytes,
+                                               uv_plane,
+                                               uv_pitch_bytes,
                                                output_surface,
                                                width,
                                                height,

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 add_subdirectory(ffmpeg)
+add_subdirectory(hal)
 add_subdirectory(oiio)
 
 set(OLIVE_SOURCES
