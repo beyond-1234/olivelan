@@ -41,6 +41,23 @@ struct GpuDeviceInfo {
   bool is_primary_display{false};
 };
 
+/**
+ * @brief Per-backend hardware decode capability (codec x bit-depth matrix).
+ *
+ * Replaces the previous coarse single-boolean gating: a GPU may decode H.264 but
+ * refuse AV1 (e.g. macOS AMD Radeon Pro 5300M has no AV1 decode engine), and a
+ * stream that "looks" hardware-decodable by codec alone would otherwise be routed
+ * to a backend that is guaranteed to fail at decode time.
+ */
+struct HardwareDecodeCapability {
+  bool h264{false};
+  bool hevc_8bit{false};
+  bool hevc_10bit{false};
+  bool vp9{false};
+  bool av1_8bit{false};
+  bool av1_10bit{false};
+};
+
 class GpuEnvironmentProbe {
 public:
   static GpuEnvironmentProbe& Instance();
@@ -68,6 +85,18 @@ public:
   // Prevents allocating hardware decoder slots for formats better handled by CPU (ProRes, 4:2:2).
   bool ShouldUseHardwareDecode(AVCodecID codec_id, AVPixelFormat sw_format) const;
 
+  /**
+   * @brief Runtime capability query: does the active hardware backend decode this stream?
+   *
+   * Consults the detected codec x bit-depth capability matrix. Use this to reject a stream
+   * during negotiation, rather than discovering the failure after the decode pipeline starts.
+   *
+   * @param codec_id  FFmpeg codec id.
+   * @param sw_format Software pixel format of the stream (bit depth derived from its descriptor).
+   * @return true if the active backend is known to support decoding this codec/bit-depth.
+   */
+  bool SupportsStream(AVCodecID codec_id, AVPixelFormat sw_format) const;
+
   // Decision helper: does this stream require complex HDR / BT.2020 tone mapping via Tier 3?
   bool NeedsToneMapping(AVColorSpace col_space, AVColorTransferCharacteristic col_trc) const;
 
@@ -83,6 +112,7 @@ private:
   void DetectDisplayServer();
   void DetectGpuTopology();
   void DetectBackendCapabilities();
+  void DetectDecodeCapabilityMatrix();
 
   GpuVendor primary_vendor_{GpuVendor::Unknown};
   DisplayServer display_server_{DisplayServer::Unknown};
@@ -94,6 +124,7 @@ private:
   bool has_videotoolbox_support_{false};
   bool has_d3d11_support_{false};
   bool has_libplacebo_support_{false};
+  HardwareDecodeCapability decode_capability_;
   std::vector<GpuDeviceInfo> detected_devices_;
 };
 

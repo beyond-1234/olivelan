@@ -11,6 +11,8 @@ struct AVBufferRef;
 
 namespace olive {
 
+class OpenGLRenderer;
+
 enum class HardwareBackendType {
   CudaNvdec,          // Tier 1: Dedicated NVDEC + CUDA resident path (RTX/GTX)
   VaapiDmaBuf,        // Tier 2: Linux AMD/Intel native lightweight DMA-BUF
@@ -72,6 +74,16 @@ public:
    * @brief Dynamically adjust slot priority (primary vs secondary track) based on active viewport area.
    */
   virtual void UpdatePriority(bool is_primary) { (void)is_primary; }
+
+  /**
+   * @brief Attach the render context that owns the live OpenGL context for this thread.
+   *
+   * This is an EXECUTION-TIME injection, deliberately separate from construction/probing:
+   * the decoder is created during footage import, when no viewport renderer exists yet.
+   * Only when a frame is actually pulled for display (RetrieveVideoInternal) is there a
+   * live, thread-current renderer to bind. Pipelines that do not need it may ignore it.
+   */
+  virtual void SetRenderer(OpenGLRenderer* renderer) { (void)renderer; }
 
   /**
    * @brief Return the active AVBufferRef hardware device context, or nullptr.

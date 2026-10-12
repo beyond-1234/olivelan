@@ -5,6 +5,10 @@
 #include <iostream>
 #include <sstream>
 
+extern "C" {
+#include <libavutil/pixdesc.h>
+}
+
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
 #include <cuda_runtime_api.h>
 #endif
@@ -33,6 +37,7 @@ void GpuEnvironmentProbe::Refresh()
   DetectDisplayServer();
   DetectGpuTopology();
   DetectBackendCapabilities();
+  DetectDecodeCapabilityMatrix();
 }
 
 void GpuEnvironmentProbe::DetectDisplayServer()
@@ -172,6 +177,90 @@ void GpuEnvironmentProbe::DetectBackendCapabilities()
 #endif
 }
 
+void GpuEnvironmentProbe::DetectDecodeCapabilityMatrix()
+{
+  decode_capability_ = HardwareDecodeCapability{};
+
+  // Capabilities are declared per active backend family. Where hardware support for a
+  // codec/profile is genuinely absent we must leave it false, so that negotiation rejects
+  // the stream instead of the decoder failing after the pipeline has already been built.
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (has_nvdec_support_ && primary_vendor_ == GpuVendor::Nvidia) {
+    // NVDEC (Turing and later): H.264, HEVC 8/10-bit, VP9, AV1 8/10-bit.
+    decode_capability_.h264 = true;
+    decode_capability_.hevc_8bit = true;
+    decode_capability_.hevc_10bit = true;
+    decode_capability_.vp9 = true;
+    decode_capability_.av1_8bit = true;
+    decode_capability_.av1_10bit = true;
+    return;
+  }
+#endif
+
+#if defined(__APPLE__)
+  if (has_videotoolbox_support_) {
+    // VideoToolbox: H.264 and HEVC 8/10-bit universally; VP9 partial (depends on SoC);
+    // AV1 decode exists only on Apple Silicon M3+ / recent AMD RX 7000, NOT on Radeon Pro 5300M.
+    decode_capability_.h264 = true;
+    decode_capability_.hevc_8bit = true;
+    decode_capability_.hevc_10bit = true;
+    decode_capability_.vp9 = (primary_vendor_ == GpuVendor::Apple);
+    decode_capability_.av1_8bit = false;
+    decode_capability_.av1_10bit = false;
+    return;
+  }
+#endif
+
+#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+  if (has_vaapi_dmabuf_support_) {
+    // VA-API: H.264 and HEVC 8/10-bit; VP9/AV1 vary by generation, kept conservative.
+    decode_capability_.h264 = true;
+    decode_capability_.hevc_8bit = true;
+    decode_capability_.hevc_10bit = true;
+    decode_capability_.vp9 = true;
+    decode_capability_.av1_8bit = false;
+    decode_capability_.av1_10bit = false;
+    return;
+  }
+#endif
+
+#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
+  if (has_d3d11_support_) {
+    decode_capability_.h264 = true;
+    decode_capability_.hevc_8bit = true;
+    decode_capability_.hevc_10bit = true;
+    decode_capability_.vp9 = true;
+    decode_capability_.av1_8bit = false;
+    decode_capability_.av1_10bit = false;
+    return;
+  }
+#endif
+
+  // No hardware backend: all capabilities remain false.
+}
+
+bool GpuEnvironmentProbe::SupportsStream(AVCodecID codec_id, AVPixelFormat sw_format) const
+{
+  // Derive bit depth from the pixel format descriptor rather than pattern-matching format enums.
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(sw_format);
+  const int bit_depth = desc ? desc->comp[0].depth : 8;
+  const bool is_10bit = (bit_depth > 8);
+
+  switch (codec_id) {
+    case AV_CODEC_ID_H264:
+      return decode_capability_.h264;
+    case AV_CODEC_ID_HEVC:
+      return is_10bit ? decode_capability_.hevc_10bit : decode_capability_.hevc_8bit;
+    case AV_CODEC_ID_VP9:
+      return decode_capability_.vp9;
+    case AV_CODEC_ID_AV1:
+      return is_10bit ? decode_capability_.av1_10bit : decode_capability_.av1_8bit;
+    default:
+      return false;
+  }
+}
+
 bool GpuEnvironmentProbe::ShouldUseHardwareDecode(AVCodecID codec_id, AVPixelFormat sw_format) const
 {
   // Known CPU-optimized intra / high-bitrate codecs:
@@ -197,15 +286,9 @@ bool GpuEnvironmentProbe::ShouldUseHardwareDecode(AVCodecID codec_id, AVPixelFor
     return false;
   }
 
-  // Common codecs supported by hardware decoders:
-  if (codec_id == AV_CODEC_ID_H264 ||
-      codec_id == AV_CODEC_ID_HEVC ||
-      codec_id == AV_CODEC_ID_VP9 ||
-      codec_id == AV_CODEC_ID_AV1) {
-    return has_nvdec_support_ || has_vaapi_dmabuf_support_ || has_videotoolbox_support_ || has_d3d11_support_ || has_libplacebo_support_;
-  }
-
-  return false;
+  // Format-level pre-filter complete; defer the codec/bit-depth decision to the
+  // capability matrix so both queries share a single source of truth.
+  return SupportsStream(codec_id, sw_format);
 }
 
 bool GpuEnvironmentProbe::NeedsToneMapping(AVColorSpace col_space, AVColorTransferCharacteristic col_trc) const

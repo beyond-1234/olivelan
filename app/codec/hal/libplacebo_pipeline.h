@@ -20,7 +20,7 @@ public:
   virtual const char* GetBackendName() const override { return "libplacebo Plugin (Optional / Placeholder)"; }
   virtual AVBufferRef* GetHwDeviceContext() const override { return hw_device_ctx_; }
 
-  void SetRenderer(OpenGLRenderer* renderer) { renderer_ = renderer; }
+  void SetRenderer(OpenGLRenderer* renderer) override { renderer_ = renderer; }
 
 private:
   OpenGLRenderer* renderer_{nullptr};

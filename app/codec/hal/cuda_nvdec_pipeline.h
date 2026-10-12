@@ -24,7 +24,7 @@ public:
 
   int quota_slot() const { return quota_slot_; }
 
-  void SetRenderer(OpenGLRenderer* renderer) { renderer_ = renderer; }
+  void SetRenderer(OpenGLRenderer* renderer) override { renderer_ = renderer; }
 
 private:
   OpenGLRenderer* renderer_{nullptr};

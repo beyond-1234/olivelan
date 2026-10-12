@@ -48,9 +48,7 @@ extern "C" {
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
 #include "render/renderer.h"
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
 #include "render/opengl/openglrenderer.h"
-#endif
 #include "render/subtitleparams.h"
 
 namespace olive {
@@ -243,6 +241,13 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 {
   if (instance_.hw_pipeline()) {
     instance_.hw_pipeline()->UpdatePriority(p.is_primary);
+
+    // Execution-time renderer injection: only here does a live, thread-current OpenGL
+    // renderer exist. Probing (Instance::Open) runs during footage import, before any
+    // viewport renderer is constructed, so the pipeline cannot hold one any earlier.
+    if (auto* gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
+      instance_.hw_pipeline()->SetRenderer(gl_renderer);
+    }
   }
 
   const int64_t now_ms = QDateTime::currentMSecsSinceEpoch();
