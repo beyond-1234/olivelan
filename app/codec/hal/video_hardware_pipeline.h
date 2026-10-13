@@ -24,8 +24,7 @@ enum class HardwareBackendType {
   VaapiDmaBuf,        // Tier 2: Linux AMD/Intel native lightweight DMA-BUF
   D3D11Interop,       // Tier 2: Windows AMD/Intel native D3D11 shared texture
   VideoToolboxInterop,// Tier 2: macOS AMD/Intel/Apple Silicon native VideoToolbox + IOSurface
-  SoftwareFallback,   // Tier 3: Olive native reinforced CPU decode + texture upload (zero external dependency)
-  LibPlaceboFallback  // Optional / Future plugin: libplacebo HDR tonemapper placeholder
+  SoftwareFallback    // Tier 3: Olive native reinforced CPU decode + texture upload (zero external dependency)
 };
 
 /**

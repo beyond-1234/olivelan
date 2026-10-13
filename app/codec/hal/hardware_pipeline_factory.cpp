@@ -5,7 +5,6 @@
 #include "vaapi_dmabuf_pipeline.h"
 #include "videotoolbox_pipeline.h"
 #include "d3d11_interop_pipeline.h"
-#include "libplacebo_pipeline.h"
 #include "reinforced_software_pipeline.h"
 #include "render/opengl/openglrenderer.h"
 
@@ -147,20 +146,10 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   }
 #endif
 
-  // 3. Optional Plugin Placeholder (libplacebo for specialized external HDR tonemapping)
-#if defined(OLIVE_ENABLE_LIBPLACEBO)
-  if (probe.SupportsLibPlacebo() && probe.NeedsToneMapping(codec_ctx->colorspace, codec_ctx->color_trc)) {
-    auto placebo = std::make_unique<LibPlaceboPipeline>(renderer);
-    if (placebo->ProbeAndInitialize(codec_ctx, width, height)) {
-      qInfo() << "[HAL Factory] Selected Plugin:" << placebo->GetBackendName();
-      return placebo;
-    }
-  }
-#endif
-
-  // 4. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
+  // 3. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
   // When HW pipelines are saturated or unsupported (e.g. over-budget),
   // routes to Olive's reinforced CPU decode pipeline protected by adaptive thread clamps and B-frame skipping.
+  // HDR/BT.2020 tonemapping is handled by Olive's existing OCIO color pipeline, not a separate decode backend.
   qInfo() << "[HAL Factory] Routing to Tier 3: Olive Native Reinforced Software Pipeline (Zero-Dependency).";
   auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);

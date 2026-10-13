@@ -137,7 +137,6 @@ void HALBackendDialog::PopulateProbeInfo()
   add_item(backends, QStringLiteral("VideoToolbox (Tier 2, macOS)"), probe.SupportsVideoToolbox() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), probe.SupportsVaapiDmaBuf() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("D3D11 Interop (Tier 2, Windows)"), probe.SupportsD3D11() ? tr("Available") : tr("Unavailable"));
-  add_item(backends, QStringLiteral("libplacebo (Plugin)"), probe.SupportsLibPlacebo() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("Reinforced Software (Tier 3)"), tr("Available"));
 
   auto* cap = new QTreeWidgetItem(probe_tree_, {tr("Decode capability matrix")});

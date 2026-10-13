@@ -80,7 +80,6 @@ public:
   bool SupportsVaapiDmaBuf() const { return has_vaapi_dmabuf_support_; }
   bool SupportsVideoToolbox() const { return has_videotoolbox_support_; }
   bool SupportsD3D11() const { return has_d3d11_support_; }
-  bool SupportsLibPlacebo() const { return has_libplacebo_support_; }
 
   // Decision helper: should this stream even attempt hardware acceleration?
   // Prevents allocating hardware decoder slots for formats better handled by CPU (ProRes, 4:2:2).
@@ -98,7 +97,8 @@ public:
    */
   bool SupportsStream(AVCodecID codec_id, AVPixelFormat sw_format) const;
 
-  // Decision helper: does this stream require complex HDR / BT.2020 tone mapping via Tier 3?
+  // Decision helper: does this stream require HDR / BT.2020 tone mapping?
+  // Drives Olive's OCIO color pipeline (not a separate decode backend).
   bool NeedsToneMapping(AVColorSpace col_space, AVColorTransferCharacteristic col_trc) const;
 
   // Refresh dynamic state (e.g. available VRAM)
@@ -124,7 +124,6 @@ private:
   bool has_vaapi_dmabuf_support_{false};
   bool has_videotoolbox_support_{false};
   bool has_d3d11_support_{false};
-  bool has_libplacebo_support_{false};
   HardwareDecodeCapability decode_capability_;
   std::vector<GpuDeviceInfo> detected_devices_;
 };

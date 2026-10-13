@@ -169,12 +169,6 @@ void GpuEnvironmentProbe::DetectBackendCapabilities()
 #else
   has_d3d11_support_ = false;
 #endif
-
-#if defined(OLIVE_ENABLE_LIBPLACEBO)
-  has_libplacebo_support_ = true;
-#else
-  has_libplacebo_support_ = false;
-#endif
 }
 
 void GpuEnvironmentProbe::DetectDecodeCapabilityMatrix()

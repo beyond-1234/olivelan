@@ -13,7 +13,7 @@ class HardwarePipelineFactory {
 public:
   /**
    * @brief Create and initialize the optimal hardware video pipeline according to the tiered routing policy:
-   *        Tier 1 (NVIDIA CUDA-NVDEC) -> Tier 2 (Platform Native DMA-BUF/D3D11) -> Tier 3 (libplacebo fallback) -> CPU.
+   *        Tier 1 (NVIDIA CUDA-NVDEC) -> Tier 2 (Platform Native DMA-BUF/D3D11) -> Tier 3 (Reinforced Software).
    */
   static std::unique_ptr<IVideoHardwarePipeline> CreatePipeline(
       AVCodecContext* codec_ctx,

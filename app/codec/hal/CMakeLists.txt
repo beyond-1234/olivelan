@@ -16,8 +16,6 @@ set(OLIVE_SOURCES
   codec/hal/videotoolbox_pipeline.cpp
   codec/hal/d3d11_interop_pipeline.h
   codec/hal/d3d11_interop_pipeline.cpp
-  codec/hal/libplacebo_pipeline.h
-  codec/hal/libplacebo_pipeline.cpp
   codec/hal/reinforced_software_pipeline.h
   codec/hal/reinforced_software_pipeline.cpp
   PARENT_SCOPE
