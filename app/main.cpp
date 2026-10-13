@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
                        QCoreApplication::translate("main", "Decompress project file (No GUI)"));
 
   auto hal_backend_option =
-      parser.AddOption({QStringLiteral("hal-backend")},
+      parser.AddOption({QStringLiteral("hal-backend"), QStringLiteral("-hal-backend")},
                        QCoreApplication::translate("main",
                           "Force a HAL decode backend for this session "
                           "(auto|cuda|videotoolbox|vaapi|d3d11|software)"),
@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
                        QCoreApplication::translate("main", "backend"));
 
   auto hal_dialog_option =
-      parser.AddOption({QStringLiteral("hal-dialog")},
+      parser.AddOption({QStringLiteral("hal-dialog"), QStringLiteral("-hal-dialog")},
                        QCoreApplication::translate("main",
                           "Show the HAL backend selection dialog with probe results on startup"));
 
