@@ -20,8 +20,10 @@ pixel_convert/convert_<SRC>_to_<DST>_c<CHANNELS>.bin
   251` ramps, see `Sample()` in `tests/codec/color-golden-tests.cpp`), so the
   snapshot depends only on the conversion code.
 
-Produced by `Frame::convert()` (currently OpenImageIO-backed). Consumed by
-`tests/codec/color-golden-tests.cpp`:
+Produced by `Frame::convert()`. The snapshots were originally recorded while that
+function was still OpenImageIO-backed, and patch 0031 rewrote it without OIIO
+against exactly these values, so they remain bit-identical and now pin the
+in-tree implementation. Consumed by `tests/codec/color-golden-tests.cpp`:
 
 ```bash
 # verify (default, run by ctest)

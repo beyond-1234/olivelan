@@ -15,20 +15,15 @@ ARG VFXPLATFORM_VERSION=2022
 ARG OCIO_VERSION=2.1.1
 ARG FFMPEG_VERSION=5.0
 ARG OTIO_VERSION=0.14.1
-ARG OIIO_VERSION=2.3.13.0
 
 FROM ${ASWF_PKG_ORG}/ci-package-qt:${VFXPLATFORM_VERSION} as ci-package-qt
 FROM ${ASWF_PKG_ORG}/ci-package-python:${VFXPLATFORM_VERSION} as ci-package-python
 FROM ${ASWF_PKG_ORG}/ci-package-boost:${VFXPLATFORM_VERSION} as ci-package-boost
+# OpenImageIO (and the OpenVDB/Blosc/TBB packages it required) is no longer part
+# of Olive's build (patches 0032/0033), so its stages are gone. Imath stays
+# because libOpenColorIO still depends on it at runtime; OpenEXR was removed
+# because nothing in the tree links it any more (verified with ldd).
 FROM ${ASWF_PKG_ORG}/ci-package-imath:${VFXPLATFORM_VERSION} as ci-package-imath
-FROM ${ASWF_PKG_ORG}/ci-package-openexr:${VFXPLATFORM_VERSION} as ci-package-openexr
-# A custom OIIO package without OpenVDB/Blosc/TBB would be smaller,
-# but it currently does not pick up libwebp for some reason.
-#FROM ${OLIVE_ORG}/ci-package-oiio:${OIIO_VERSION} as ci-package-oiio
-FROM ${ASWF_PKG_ORG}/ci-package-oiio:${VFXPLATFORM_VERSION} as ci-package-oiio
-FROM ${ASWF_PKG_ORG}/ci-package-openvdb:${VFXPLATFORM_VERSION} as ci-package-openvdb
-FROM ${ASWF_PKG_ORG}/ci-package-blosc:${VFXPLATFORM_VERSION} as ci-package-blosc
-FROM ${ASWF_PKG_ORG}/ci-package-tbb:${VFXPLATFORM_VERSION} as ci-package-tbb
 #FROM ${ASWF_PKG_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
 # Our package is compiled as RelWithDebInfo
 FROM ${OLIVE_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
@@ -60,12 +55,6 @@ COPY --from=ci-package-qt /. /usr/local/
 COPY --from=ci-package-python /. /usr/local/
 COPY --from=ci-package-boost /. /usr/local/
 COPY --from=ci-package-imath /. /usr/local/
-COPY --from=ci-package-openexr /. /usr/local/
-COPY --from=ci-package-oiio /. /usr/local/
-# The ASWF OIIO package requires OpenVDB, Blosc, and TBB
-COPY --from=ci-package-openvdb /. /usr/local/
-COPY --from=ci-package-blosc /. /usr/local/
-COPY --from=ci-package-tbb /. /usr/local/
 COPY --from=ci-package-ocio /. /usr/local/
 COPY --from=ci-package-ffmpeg /. /usr/local/
 COPY --from=ci-package-crashpad /. /usr/local/
