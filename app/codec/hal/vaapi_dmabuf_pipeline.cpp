@@ -17,6 +17,18 @@ extern "C" {
 
 namespace olive {
 
+void VaapiDmaBufPipeline::ReleaseExportedFds()
+{
+#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+  for (int fd : exported_fds_) {
+    if (fd >= 0) {
+      close(fd);
+    }
+  }
+#endif
+  exported_fds_.clear();
+}
+
 VaapiDmaBufPipeline::VaapiDmaBufPipeline(OpenGLRenderer* renderer)
   : renderer_(renderer)
 {
@@ -94,10 +106,22 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
-  if (dma_buf_fd_ >= 0) {
-    close(dma_buf_fd_);
+  // vaExportSurfaceHandle returned caller-owned fds on every call; drop the previous frame's
+  // set before adopting the new one. Only object[0] used to be tracked, leaking one fd per
+  // plane beyond the first (P010 and NV12 both export one object per plane here).
+  ReleaseExportedFds();
+  for (uint32_t i = 0; i < prime_desc.num_objects; ++i) {
+    exported_fds_.push_back(prime_desc.objects[i].fd);
   }
-  dma_buf_fd_ = prime_desc.objects[0].fd;
+
+  // The import below maps the Y plane to EGL plane 0 and the chroma plane to EGL plane 1, so
+  // a two-layer export is mandatory. Guard before touching layers[1] to avoid an out-of-bounds
+  // read on drivers that export a single combined layer.
+  if (prime_desc.num_layers < 2) {
+    qWarning() << "[VAAPI-HAL] Surface exported with" << prime_desc.num_layers
+               << "layer(s); two-plane YUV import requires 2, skipping frame";
+    return false;
+  }
 
   // EGLImage creation and OpenGL texture binding
   #ifndef EGL_LINUX_DMA_BUF_EXT
@@ -157,19 +181,27 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
-  // CR-14: surface bit-depth telemetry. DRM_FORMAT_P010 indicates 10-bit; the EGLImage path can
-  // carry it, but the negotiated VideoParams is still delivered as 8-bit RGBA until the OLIVE
-  // shader chain is validated for >8-bit. We log once so the colour-management gap is visible
-  // rather than silently dropped (the capability matrix in CR-05 admits 10-bit; delivery must
-  // eventually match).
+  // Surface bit-depth telemetry. With VA_EXPORT_SURFACE_SEPARATE_LAYERS a 10-bit source is
+  // reported either as a single DRM_FORMAT_P010 layer or, on most drivers, as an R16 luma layer
+  // plus a GR1616 chroma layer. Detect both so the precision of the imported planes is at least
+  // visible in the log rather than silently assumed.
 #ifndef DRM_FORMAT_P010
 #define DRM_FORMAT_P010 0x30313050
 #endif
-  if (prime_desc.layers[0].drm_format == DRM_FORMAT_P010) {
+#ifndef DRM_FORMAT_GR1616
+#define DRM_FORMAT_GR1616 0x32335247
+#endif
+  const bool is_10bit = (prime_desc.layers[0].drm_format == DRM_FORMAT_P010)
+                        || (prime_desc.layers[1].drm_format == DRM_FORMAT_GR1616);
+  if (is_10bit) {
     static bool noted = false;
     if (!noted) {
       noted = true;
-      qInfo() << "[VAAPI-HAL] 10-bit (P010) surface detected; delivering as 8-bit RGBA pending shader validation";
+      qInfo() << "[VAAPI-HAL] 10-bit surface detected (Y fourcc" << Qt::hex << prime_desc.layers[0].drm_format
+              << ", UV fourcc" << prime_desc.layers[1].drm_format << Qt::dec
+              << "); both 16-bit planes are imported intact. Carrying that precision through to the"
+                 " RGBA pipeline still needs a two-plane YUV->RGB shader and an F16 target, and must"
+                 " be validated on VA-API hardware.";
     }
   }
 
@@ -194,12 +226,8 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
 
 void VaapiDmaBufPipeline::Close()
 {
-#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
-  if (dma_buf_fd_ >= 0) {
-    close(dma_buf_fd_);
-    dma_buf_fd_ = -1;
-  }
-#endif
+  ReleaseExportedFds();
+
   if (hw_device_ctx_) {
     av_buffer_unref(&hw_device_ctx_);
     hw_device_ctx_ = nullptr;

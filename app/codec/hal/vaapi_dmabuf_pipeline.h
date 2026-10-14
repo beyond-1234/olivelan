@@ -3,6 +3,8 @@
 
 #include "video_hardware_pipeline.h"
 
+#include <vector>
+
 namespace olive {
 
 class OpenGLRenderer;
@@ -29,7 +31,14 @@ private:
   int max_width_{0};
   int max_height_{0};
   void* egl_image_{nullptr};
-  int dma_buf_fd_{-1};
+
+  // vaExportSurfaceHandle(DRM_PRIME_2) hands back fresh, *caller-owned* file descriptors on
+  // every call. A P010/NV12 surface can export more than one object (one per plane), so we
+  // must retain the whole set and close it before re-exporting, otherwise every plane beyond
+  // object[0] leaks one fd per decoded frame.
+  std::vector<int> exported_fds_;
+
+  void ReleaseExportedFds();
 };
 
 } // namespace olive
