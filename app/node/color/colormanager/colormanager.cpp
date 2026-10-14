@@ -29,6 +29,7 @@ namespace OCIO = OCIO_NAMESPACE;
 #include "common/define.h"
 #include "common/filefunctions.h"
 #include "common/ociobridge.h"
+#include "common/ocioutils.h"
 #include "config/config.h"
 #include "core.h"
 
@@ -61,7 +62,7 @@ void ColorManager::Init()
   // Set config to our built-in default
   impl_->config = ColorManagerOCIO::GetDefaultConfig();
   SetDefaultInputColorSpace(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT));
-  project()->SetColorReferenceSpace(OCIO::ROLE_SCENE_LINEAR);
+  project()->SetColorReferenceSpace(OCIOUtils::kReferenceSpaceSceneLinear);
 }
 
 QString ColorManager::GetConfigFilename() const

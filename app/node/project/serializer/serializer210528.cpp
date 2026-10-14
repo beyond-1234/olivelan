@@ -20,7 +20,7 @@
 
 #include "serializer210528.h"
 
-#include "common/ociobridge.h"
+#include "common/ocioutils.h"
 
 #include "config/config.h"
 #include "node/factory.h"
@@ -324,9 +324,9 @@ void ProjectSerializer210528::LoadColorManager(QXmlStreamReader *reader, Project
         } else if (id == QStringLiteral("reference_space")) {
           // Reference space
           if (value == QStringLiteral("1")) {
-            value = OCIO::ROLE_COMPOSITING_LOG;
+            value = OCIOUtils::kReferenceSpaceCompositingLog;
           } else {
-            value = OCIO::ROLE_SCENE_LINEAR;
+            value = OCIOUtils::kReferenceSpaceSceneLinear;
           }
           project->SetColorReferenceSpace(value);
         } else {

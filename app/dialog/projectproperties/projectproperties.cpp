@@ -30,6 +30,7 @@
 
 #include "common/filefunctions.h"
 #include "common/ociobridge.h"
+#include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
 #include "render/diskmanager.h"
 
@@ -78,8 +79,8 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
     color_layout->addWidget(new QLabel(tr("Reference Space:")), row, 0);
 
     reference_space_ = new QComboBox(this);
-    reference_space_->addItem(tr("Scene Linear"), OCIO::ROLE_SCENE_LINEAR);
-    reference_space_->addItem(tr("Compositing Log"), OCIO::ROLE_COMPOSITING_LOG);
+    reference_space_->addItem(tr("Scene Linear"), OCIOUtils::kReferenceSpaceSceneLinear);
+    reference_space_->addItem(tr("Compositing Log"), OCIOUtils::kReferenceSpaceCompositingLog);
     QtUtils::SetComboBoxData(reference_space_, p->GetColorReferenceSpace());
     color_layout->addWidget(reference_space_, row, 1, 1, 2);
 

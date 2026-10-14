@@ -25,6 +25,12 @@ namespace OCIO = OCIO_NAMESPACE;
 
 namespace olive {
 
+// Patch 0038: OCIO-free role names (see ocioutils.h). Kept in sync with the
+// `roles:` block of app/render/ocioconf/config.ocio.
+const QString OCIOUtils::kRoleDefault = QStringLiteral("default");
+const QString OCIOUtils::kReferenceSpaceSceneLinear = QStringLiteral("scene_linear");
+const QString OCIOUtils::kReferenceSpaceCompositingLog = QStringLiteral("compositing_log");
+
 int OCIOUtils::GetOCIOBitDepthFromPixelFormat(PixelFormat format)
 {
   switch (format) {

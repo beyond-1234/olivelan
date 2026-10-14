@@ -21,6 +21,8 @@
 #ifndef OCIOUTILS_H
 #define OCIOUTILS_H
 
+#include <QString>
+
 #include "render/videoparams.h"
 
 namespace olive {
@@ -37,6 +39,20 @@ public:
    * enum cast it back inside their own translation unit.
    */
   static int GetOCIOBitDepthFromPixelFormat(PixelFormat format);
+
+  /**
+   * @brief Reference-space role identifiers.
+   *
+   * Patch 0038: these are the OpenColorIO role names, but declared as plain
+   * strings so that project serialization and the colour-management UI can read
+   * and write legacy .ove files without including the OpenColorIO headers. That
+   * is what allows the tree to build with OLIVE_ENABLE_OCIO=OFF later in Phase 8.
+   * They must stay in sync with the `roles:` block of
+   * app/render/ocioconf/config.ocio.
+   */
+  static const QString kRoleDefault;                 // "default"
+  static const QString kReferenceSpaceSceneLinear;   // "scene_linear"
+  static const QString kReferenceSpaceCompositingLog; // "compositing_log"
 };
 
 }
