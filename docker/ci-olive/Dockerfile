@@ -12,7 +12,6 @@ ARG OLIVE_ORG=olivevideoeditor
 ARG ASWF_PKG_ORG=aswftesting
 ARG CI_COMMON_VERSION=2
 ARG VFXPLATFORM_VERSION=2022
-ARG OCIO_VERSION=2.1.1
 ARG FFMPEG_VERSION=5.0
 ARG OTIO_VERSION=0.14.1
 
@@ -20,13 +19,12 @@ FROM ${ASWF_PKG_ORG}/ci-package-qt:${VFXPLATFORM_VERSION} as ci-package-qt
 FROM ${ASWF_PKG_ORG}/ci-package-python:${VFXPLATFORM_VERSION} as ci-package-python
 FROM ${ASWF_PKG_ORG}/ci-package-boost:${VFXPLATFORM_VERSION} as ci-package-boost
 # OpenImageIO (and the OpenVDB/Blosc/TBB packages it required) is no longer part
-# of Olive's build (patches 0032/0033), so its stages are gone. Imath stays
-# because libOpenColorIO still depends on it at runtime; OpenEXR was removed
-# because nothing in the tree links it any more (verified with ldd).
+# of Olive's build (patches 0032/0033), and neither is OpenEXR. OpenColorIO is now
+# opt-in - the default build uses the built-in colour engine - so its package stage
+# is gone as well (patch 0043). Imath is still copied in because libOpenColorIO
+# depends on it at runtime, so it remains necessary for OCIO-enabled builds; the
+# default build does not link it (its ldd lists no Imath).
 FROM ${ASWF_PKG_ORG}/ci-package-imath:${VFXPLATFORM_VERSION} as ci-package-imath
-#FROM ${ASWF_PKG_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
-# Our package is compiled as RelWithDebInfo
-FROM ${OLIVE_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
 FROM ${OLIVE_ORG}/ci-package-ffmpeg:${FFMPEG_VERSION} as ci-package-ffmpeg
 FROM ${OLIVE_ORG}/ci-package-crashpad:latest as ci-package-crashpad
 FROM ${OLIVE_ORG}/ci-package-otio:${OTIO_VERSION} as ci-package-otio
@@ -55,7 +53,6 @@ COPY --from=ci-package-qt /. /usr/local/
 COPY --from=ci-package-python /. /usr/local/
 COPY --from=ci-package-boost /. /usr/local/
 COPY --from=ci-package-imath /. /usr/local/
-COPY --from=ci-package-ocio /. /usr/local/
 COPY --from=ci-package-ffmpeg /. /usr/local/
 COPY --from=ci-package-crashpad /. /usr/local/
 COPY --from=ci-package-otio /. /usr/local/

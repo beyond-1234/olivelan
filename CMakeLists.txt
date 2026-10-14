@@ -167,9 +167,18 @@ endif()
 find_package(OpenGL REQUIRED)
 list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 
-# OpenColorIO is optional. When disabled, Olive builds its own lightweight colour
-# engine instead (see app/render/colorprocessor.cpp and app/render/renderer.cpp).
-option(OLIVE_ENABLE_OCIO "Enable the full OpenColorIO colour backend" ON)
+# OpenColorIO is optional and is OFF by default: the default build uses Olive's
+# built-in colour engine (see app/render/colorprocessor.cpp and
+# app/render/renderer.cpp) and therefore pulls in no VFX colour dependency.
+# Configure with -DOLIVE_ENABLE_OCIO=ON to restore the full OpenColorIO backend,
+# which is also the reference the colour-equivalence gate compares against.
+#
+# HONESTY NOTE (patch 0043): the built-in engine has NOT yet been measured against
+# the OpenColorIO golden at the A-class gate (mean dE00 < 1.0, PSNR > 45 dB) - that
+# requires a GPU session. This default therefore selects an engine whose
+# equivalence to the OCIO backend is still unquantified. It is a deliberate flip of
+# the default pending that measurement, not a claim that the two backends match.
+option(OLIVE_ENABLE_OCIO "Enable the full OpenColorIO colour backend" OFF)
 
 if(OLIVE_ENABLE_OCIO)
   find_package(OpenColorIO 2.1.1 REQUIRED)
