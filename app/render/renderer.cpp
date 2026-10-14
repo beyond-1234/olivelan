@@ -20,6 +20,8 @@
 
 #include "renderer.h"
 
+#include "common/ociobridge.h"
+
 #include <QDateTime>
 #include <QThread>
 #include <QTimer>
@@ -186,7 +188,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     shader_desc->setResourcePrefix("ocio_");
 
     // Generate shader
-    color_job.GetColorProcessor()->GetProcessor()->getDefaultGPUProcessor()->extractGpuShaderInfo(shader_desc);
+    ColorProcessorOCIO::GetProcessor(color_job.GetColorProcessor().get())->getDefaultGPUProcessor()->extractGpuShaderInfo(shader_desc);
 
     ShaderCode code;
     if (const Node *shader_src = color_job.CustomShaderSource()) {

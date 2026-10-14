@@ -21,8 +21,9 @@
 #ifndef COLORPROCESSOR_H
 #define COLORPROCESSOR_H
 
+#include <memory>
+
 #include "codec/frame.h"
-#include "common/ocioutils.h"
 #include "render/colortransform.h"
 
 namespace olive {
@@ -41,29 +42,29 @@ public:
   };
 
   ColorProcessor(ColorManager* config, const QString& input, const ColorTransform& dest_space, Direction direction = kNormal);
-  ColorProcessor(OCIO::ConstProcessorRcPtr processor);
+  ~ColorProcessor();
 
   DISABLE_COPY_MOVE(ColorProcessor)
 
   static ColorProcessorPtr Create(ColorManager* config, const QString& input, const ColorTransform& dest_space, Direction direction = kNormal);
-  static ColorProcessorPtr Create(OCIO::ConstProcessorRcPtr processor);
-
-  OCIO::ConstProcessorRcPtr GetProcessor();
 
   void ConvertFrame(FramePtr f);
   void ConvertFrame(Frame* f);
 
   Color ConvertColor(const Color &in);
 
-  const char *id() const
-  {
-    return processor_->getCacheID();
-  }
+  const char *id() const;
 
 private:
-  OCIO::ConstProcessorRcPtr processor_;
+  ColorProcessor();
 
-  OCIO::ConstCPUProcessorRcPtr cpu_processor_;
+  struct Impl;
+
+  std::unique_ptr<Impl> impl_;
+
+  // Patch 0037: the OCIO-typed constructor/accessor live in common/ociobridge.h,
+  // which only the translation units that actually touch OpenColorIO include.
+  friend struct ColorProcessorOCIO;
 
 };
 

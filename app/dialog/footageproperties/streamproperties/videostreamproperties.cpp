@@ -26,7 +26,7 @@
 #include <QLabel>
 #include <QMessageBox>
 
-#include "common/ocioutils.h"
+#include "common/ociobridge.h"
 #include "core.h"
 #include "undo/undostack.h"
 
@@ -64,7 +64,7 @@ VideoStreamProperties::VideoStreamProperties(Footage *footage, int video_index) 
   video_layout->addWidget(new QLabel(tr("Color Space:")), row, 0);
 
   video_color_space_ = new QComboBox();
-  OCIO::ConstConfigRcPtr config = footage_->project()->color_manager()->GetConfig();
+  OCIO::ConstConfigRcPtr config = ColorManagerOCIO::GetConfig(footage_->project()->color_manager());
   int number_of_colorspaces = config->getNumColorSpaces();
 
   video_color_space_->addItem(tr("Default (%1)").arg(footage_->project()->color_manager()->GetDefaultInputColorSpace()));

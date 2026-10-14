@@ -22,7 +22,7 @@
 
 #include <iostream>
 
-#include "common/ocioutils.h"
+#include "common/ociobridge.h"
 #include "node/project.h"
 #include "render/colorprocessor.h"
 #include "widget/slider/floatslider.h"
@@ -146,7 +146,7 @@ void OCIOGradingTransformLinearNode::GenerateProcessor()
     gp->setDirection(OCIO::TransformDirection::TRANSFORM_DIR_FORWARD);
 
     try {
-      set_processor(ColorProcessor::Create(manager()->GetConfig()->getProcessor(gp)));
+      set_processor(ColorProcessorOCIO::Create(ColorManagerOCIO::GetConfig(manager())->getProcessor(gp)));
     } catch (const OCIO::Exception &e) {
       std::cerr << std::endl << e.what() << std::endl;
     }

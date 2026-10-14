@@ -21,9 +21,6 @@
 #ifndef OCIOUTILS_H
 #define OCIOUTILS_H
 
-#include <OpenColorIO/OpenColorIO.h>
-namespace OCIO = OCIO_NAMESPACE;
-
 #include "render/videoparams.h"
 
 namespace olive {
@@ -31,7 +28,15 @@ namespace olive {
 class OCIOUtils
 {
 public:
-  static OCIO::BitDepth GetOCIOBitDepthFromPixelFormat(PixelFormat format);
+  /**
+   * @brief Map an Olive PixelFormat to an OpenColorIO bit-depth code.
+   *
+   * Patch 0037: the OpenColorIO headers are deliberately NOT included here any
+   * more, so this header no longer drags them through every includer. The return
+   * value is the numeric OCIO::BitDepth value; the few call sites that need the
+   * enum cast it back inside their own translation unit.
+   */
+  static int GetOCIOBitDepthFromPixelFormat(PixelFormat format);
 };
 
 }

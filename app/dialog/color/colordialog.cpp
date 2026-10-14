@@ -20,6 +20,8 @@
 
 #include "colordialog.h"
 
+#include "common/ociobridge.h"
+
 #include <QDialogButtonBox>
 #include <QSplitter>
 #include <QVBoxLayout>

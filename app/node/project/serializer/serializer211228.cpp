@@ -20,6 +20,8 @@
 
 #include "serializer211228.h"
 
+#include "common/ociobridge.h"
+
 #include "config/config.h"
 #include "node/factory.h"
 #include "node/group/group.h"

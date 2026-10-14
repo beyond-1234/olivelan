@@ -20,11 +20,15 @@
 
 #include "colormanager.h"
 
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+
 #include <QDir>
 #include <QStandardPaths>
 
 #include "common/define.h"
 #include "common/filefunctions.h"
+#include "common/ociobridge.h"
 #include "config/config.h"
 #include "core.h"
 
@@ -32,30 +36,32 @@ namespace olive {
 
 #define super Node
 
-OCIO::ConstConfigRcPtr ColorManager::default_config_ = nullptr;
+// Patch 0037: the OCIO config moved into an opaque Impl so the public header
+// stays free of OpenColorIO. The process-wide default config lives here instead
+// of in a static class member.
+struct ColorManager::Impl
+{
+  OCIO::ConstConfigRcPtr config;
+};
+
+namespace {
+OCIO::ConstConfigRcPtr default_config;
+}
 
 ColorManager::ColorManager(Project *project) :
   QObject(project),
-  config_(nullptr)
+  impl_(std::make_unique<Impl>())
 {
 }
+
+ColorManager::~ColorManager() = default;
 
 void ColorManager::Init()
 {
   // Set config to our built-in default
-  config_ = GetDefaultConfig();
-  SetDefaultInputColorSpace(config_->getCanonicalName(OCIO::ROLE_DEFAULT));
+  impl_->config = ColorManagerOCIO::GetDefaultConfig();
+  SetDefaultInputColorSpace(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT));
   project()->SetColorReferenceSpace(OCIO::ROLE_SCENE_LINEAR);
-}
-
-OCIO::ConstConfigRcPtr ColorManager::GetConfig() const
-{
-  return config_;
-}
-
-OCIO::ConstConfigRcPtr ColorManager::CreateConfigFromFile(const QString &filename)
-{
-  return OCIO::Config::CreateFromFile(filename.toUtf8());
 }
 
 QString ColorManager::GetConfigFilename() const
@@ -63,17 +69,12 @@ QString ColorManager::GetConfigFilename() const
   return project()->GetColorConfigFilename();
 }
 
-OCIO::ConstConfigRcPtr ColorManager::GetDefaultConfig()
-{
-  return default_config_;
-}
-
 void ColorManager::SetUpDefaultConfig()
 {
   if (!qEnvironmentVariableIsEmpty("OCIO")) {
     // Attempt to set config from "OCIO" environment variable
     try {
-      default_config_ = OCIO::Config::CreateFromEnv();
+      default_config = OCIO::Config::CreateFromEnv();
 
       return;
     } catch (OCIO::Exception& e) {
@@ -90,7 +91,7 @@ void ColorManager::SetUpDefaultConfig()
 
   qDebug() << "Extracting default OCIO config to" << dir;
 
-  default_config_ = CreateConfigFromFile(QDir(dir).filePath(QStringLiteral("config.ocio")));
+  default_config = ColorManagerOCIO::CreateConfigFromFile(QDir(dir).filePath(QStringLiteral("config.ocio")));
 }
 
 void ColorManager::SetConfigFilename(const QString &filename)
@@ -102,10 +103,10 @@ QStringList ColorManager::ListAvailableDisplays()
 {
   QStringList displays;
 
-  int number_of_displays = config_->getNumDisplays();
+  int number_of_displays = impl_->config->getNumDisplays();
 
   for (int i=0;i<number_of_displays;i++) {
-    displays.append(config_->getDisplay(i));
+    displays.append(impl_->config->getDisplay(i));
   }
 
   return displays;
@@ -113,17 +114,17 @@ QStringList ColorManager::ListAvailableDisplays()
 
 QString ColorManager::GetDefaultDisplay()
 {
-  return config_->getDefaultDisplay();
+  return impl_->config->getDefaultDisplay();
 }
 
 QStringList ColorManager::ListAvailableViews(QString display)
 {
   QStringList views;
 
-  int number_of_views = config_->getNumViews(display.toUtf8());
+  int number_of_views = impl_->config->getNumViews(display.toUtf8());
 
   for (int i=0;i<number_of_views;i++) {
-    views.append(config_->getView(display.toUtf8(), i));
+    views.append(impl_->config->getView(display.toUtf8(), i));
   }
 
   return views;
@@ -131,17 +132,17 @@ QStringList ColorManager::ListAvailableViews(QString display)
 
 QString ColorManager::GetDefaultView(const QString &display)
 {
-  return config_->getDefaultView(display.toUtf8());
+  return impl_->config->getDefaultView(display.toUtf8());
 }
 
 QStringList ColorManager::ListAvailableLooks()
 {
   QStringList looks;
 
-  int number_of_looks = config_->getNumLooks();
+  int number_of_looks = impl_->config->getNumLooks();
 
   for (int i=0;i<number_of_looks;i++) {
-    looks.append(config_->getLookNameByIndex(i));
+    looks.append(impl_->config->getLookNameByIndex(i));
   }
 
   return looks;
@@ -149,7 +150,7 @@ QStringList ColorManager::ListAvailableLooks()
 
 QStringList ColorManager::ListAvailableColorspaces() const
 {
-  return ListAvailableColorspaces(config_);
+  return ColorManagerOCIO::ListAvailableColorspaces(impl_->config);
 }
 
 QString ColorManager::GetDefaultInputColorSpace() const
@@ -214,24 +215,9 @@ ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transf
   }
 }
 
-QStringList ColorManager::ListAvailableColorspaces(OCIO::ConstConfigRcPtr config)
-{
-  QStringList spaces;
-
-  if (config) {
-    int number_of_colorspaces = config->getNumColorSpaces();
-
-    for (int i=0;i<number_of_colorspaces;i++) {
-      spaces.append(config->getColorSpaceNameByIndex(i));
-    }
-  }
-
-  return spaces;
-}
-
 void ColorManager::GetDefaultLumaCoefs(double *rgb) const
 {
-  config_->getDefaultLumaCoefs(rgb);
+  impl_->config->getDefaultLumaCoefs(rgb);
 }
 
 Project *ColorManager::project() const
@@ -245,7 +231,7 @@ void ColorManager::UpdateConfigFromFilename()
     QString config_filename = GetConfigFilename();
     QString old_default_cs = GetDefaultInputColorSpace();
 
-    config_ = OCIO::Config::CreateFromFile(config_filename.toUtf8());
+    impl_->config = OCIO::Config::CreateFromFile(config_filename.toUtf8());
 
     // Set new default colorspace appropriately
     QString new_default = old_default_cs;
@@ -261,6 +247,38 @@ void ColorManager::UpdateConfigFromFilename()
 
     emit ConfigChanged(config_filename);
   } catch (OCIO::Exception&) {}
+}
+
+// Patch 0037: OCIO bridge implementations (see common/ociobridge.h).
+
+OCIO::ConstConfigRcPtr ColorManagerOCIO::GetConfig(const ColorManager *manager)
+{
+  return manager->impl_->config;
+}
+
+OCIO::ConstConfigRcPtr ColorManagerOCIO::CreateConfigFromFile(const QString &filename)
+{
+  return OCIO::Config::CreateFromFile(filename.toUtf8());
+}
+
+OCIO::ConstConfigRcPtr ColorManagerOCIO::GetDefaultConfig()
+{
+  return default_config;
+}
+
+QStringList ColorManagerOCIO::ListAvailableColorspaces(OCIO::ConstConfigRcPtr config)
+{
+  QStringList spaces;
+
+  if (config) {
+    int number_of_colorspaces = config->getNumColorSpaces();
+
+    for (int i=0;i<number_of_colorspaces;i++) {
+      spaces.append(config->getColorSpaceNameByIndex(i));
+    }
+  }
+
+  return spaces;
 }
 
 }

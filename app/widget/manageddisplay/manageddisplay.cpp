@@ -20,6 +20,8 @@
 
 #include "manageddisplay.h"
 
+#include "common/ociobridge.h"
+
 #include <QHBoxLayout>
 #include <QMessageBox>
 

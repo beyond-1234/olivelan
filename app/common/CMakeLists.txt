@@ -37,6 +37,7 @@ set(OLIVE_SOURCES
   common/jobtime.h
   common/lerp.h
   common/memorypool.h
+  common/ociobridge.h
   common/ocioutils.cpp
   common/ocioutils.h
   common/otioutils.h

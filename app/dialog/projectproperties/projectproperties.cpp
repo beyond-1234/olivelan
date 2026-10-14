@@ -29,6 +29,7 @@
 #include <QPushButton>
 
 #include "common/filefunctions.h"
+#include "common/ociobridge.h"
 #include "node/color/colormanager/colormanager.h"
 #include "render/diskmanager.h"
 
@@ -226,16 +227,16 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
     OCIO::ConstConfigRcPtr c;
 
     if (ocio_filename_->text().isEmpty()) {
-      c = ColorManager::GetDefaultConfig();
+      c = ColorManagerOCIO::GetDefaultConfig();
     } else {
-      c = ColorManager::CreateConfigFromFile(ocio_filename_->text());
+      c = ColorManagerOCIO::CreateConfigFromFile(ocio_filename_->text());
     }
 
     ocio_filename_->setStyleSheet(QString());
     ocio_config_is_valid_ = true;
 
     // List input color spaces
-    QStringList input_cs = ColorManager::ListAvailableColorspaces(c);
+    QStringList input_cs = ColorManagerOCIO::ListAvailableColorspaces(c);
 
     foreach (QString cs, input_cs) {
       default_input_colorspace_->addItem(cs);

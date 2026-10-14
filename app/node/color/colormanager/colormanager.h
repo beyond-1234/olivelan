@@ -35,16 +35,11 @@ class ColorManager : public QObject
   Q_OBJECT
 public:
   ColorManager(Project *project);
+  ~ColorManager();
 
   void Init();
 
-  OCIO::ConstConfigRcPtr GetConfig() const;
-
-  static OCIO::ConstConfigRcPtr CreateConfigFromFile(const QString& filename);
-
   QString GetConfigFilename() const;
-
-  static OCIO::ConstConfigRcPtr GetDefaultConfig();
 
   static void SetUpDefaultConfig();
 
@@ -72,8 +67,6 @@ public:
 
   ColorTransform GetCompliantColorSpace(const ColorTransform& transform, bool force_display = false);
 
-  static QStringList ListAvailableColorspaces(OCIO::ConstConfigRcPtr config);
-
   void GetDefaultLumaCoefs(double *rgb) const;
 
   Project *project() const;
@@ -88,9 +81,14 @@ signals:
   void DefaultInputChanged(const QString &s);
 
 private:
-  OCIO::ConstConfigRcPtr config_;
+  struct Impl;
 
-  static OCIO::ConstConfigRcPtr default_config_;
+  std::unique_ptr<Impl> impl_;
+
+  // Patch 0037: the OCIO-typed accessors (GetConfig/CreateConfigFromFile/
+  // GetDefaultConfig/ListAvailableColorspaces) live in common/ociobridge.h so
+  // this header stays free of <OpenColorIO/OpenColorIO.h>.
+  friend struct ColorManagerOCIO;
 
 };
 
