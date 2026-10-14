@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 
-project(olive-editor VERSION 0.2.0 LANGUAGES CXX)
+project(olive-editor VERSION 0.2.0 LANGUAGES C CXX)
 
 option(BUILD_QT6 "Build with Qt 6 over 5 (experimental)" OFF)
 option(BUILD_DOXYGEN "Build Doxygen documentation" OFF)
@@ -180,6 +180,9 @@ list(APPEND OLIVE_INCLUDE_DIRS ${OPENEXR_INCLUDES})
 # Link Olive
 list(APPEND OLIVE_LIBRARIES olivecore)
 list(APPEND OLIVE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext/core/include)
+
+# Link vendored LZ4 (used by the frame cache container)
+list(APPEND OLIVE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4)
 
 # Link Qt
 set(QT_LIBRARIES

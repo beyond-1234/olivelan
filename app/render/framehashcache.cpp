@@ -20,23 +20,56 @@
 
 #include "framehashcache.h"
 
-#include <OpenEXR/ImfFloatAttribute.h>
-#include <OpenEXR/ImfFrameBuffer.h>
-#include <OpenEXR/ImfHeader.h>
-#include <OpenEXR/ImfInputFile.h>
-#include <OpenEXR/ImfIntAttribute.h>
-#include <OpenEXR/ImfOutputFile.h>
-#include <OpenEXR/ImfChannelList.h>
+#include <cstring>
+
+#include <QDataStream>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 
 #include "codec/frame.h"
 #include "common/filefunctions.h"
 #include "render/diskmanager.h"
 
+#include "lz4.h"
+
 namespace olive {
 
 #define super PlaybackCache
+
+namespace {
+
+// Patch 0034: the on-disk frame cache is a small self-describing container
+// instead of an OpenEXR file. It starts with this magic so legacy caches (and
+// anything else that isn't ours) are treated as a miss rather than misread.
+const char kCacheMagic[4] = {'O', 'L', 'V', 'C'};
+const quint32 kCacheVersion = 1;
+const char kCacheExtension[] = ".olvcache";
+
+bool IsValidCacheFormat(PixelFormat::Format format)
+{
+  switch (format) {
+  case PixelFormat::U8:
+  case PixelFormat::U16:
+  case PixelFormat::F16:
+  case PixelFormat::F32:
+    return true;
+  case PixelFormat::INVALID:
+  case PixelFormat::COUNT:
+    return false;
+  }
+
+  return false;
+}
+
+void DeleteCorruptCacheFile(const QString &fn)
+{
+  if (DiskManager::instance()) {
+    QMetaObject::invokeMethod(DiskManager::instance(), "DeleteSpecificFile", Q_ARG(QString, fn));
+  }
+}
+
+} // namespace
 
 FrameHashCache::FrameHashCache(QObject *parent) :
   super(parent)
@@ -143,101 +176,95 @@ FramePtr FrameHashCache::LoadCacheFrame(const int64_t &hash) const
 
 FramePtr FrameHashCache::LoadCacheFrame(const QString &fn)
 {
-  FramePtr frame = nullptr;
+  if (fn.isEmpty() || !QFileInfo::exists(fn)) {
+    return nullptr;
+  }
 
-  if (!fn.isEmpty() && QFileInfo::exists(fn)) {
-    try {
-      Imf::InputFile file(fn.toUtf8(), 0);
+  QFile file(fn);
+  if (!file.open(QFile::ReadOnly)) {
+    return nullptr;
+  }
 
-      // Deduced so the app does not spell an Imath type directly; the OpenEXR
-      // header still brings Imath in transitively until OpenEXR itself is removed.
-      auto dw = file.header().dataWindow();
-      Imf::PixelType pix_type = file.header().channels().begin().channel().type;
-      int width = dw.max.x - dw.min.x + 1;
-      int height = dw.max.y - dw.min.y + 1;
-      bool has_alpha = file.header().channels().findChannel("A");
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
 
-      int div = qMax(1, static_cast<const Imf::IntAttribute&>(file.header()["oliveDivider"]).value());
+  char magic[4];
+  quint32 version = 0;
+  quint32 width = 0, height = 0, pixel_format = 0, channel_count = 0, divider = 0, par_num = 0, par_den = 0;
+  quint64 raw_size = 0;
+  quint32 compressed_size = 0;
 
-      PixelFormat image_format;
-      if (pix_type == Imf::HALF) {
-        image_format = PixelFormat::F16;
-      } else {
-        image_format = PixelFormat::F32;
-      }
+  if (stream.readRawData(magic, 4) != 4 || memcmp(magic, kCacheMagic, 4) != 0) {
+    // Not one of our cache files (e.g. a legacy EXR/JPEG cache). Treat it as a
+    // miss and let the disk manager reclaim it.
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-      int channel_count = has_alpha ? VideoParams::kRGBAChannelCount : VideoParams::kRGBChannelCount;
+  stream >> version;
 
-      frame = Frame::Create();
-      frame->set_video_params(VideoParams(width * div,
-                                          height * div,
-                                          image_format,
-                                          channel_count,
-                                          rational::fromDouble(file.header().pixelAspectRatio()),
-                                          VideoParams::kInterlaceNone,
-                                          div));
+  if (version != kCacheVersion) {
+    qWarning() << "Cache frame" << fn << "has unsupported version" << version;
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-      frame->allocate();
+  stream >> width >> height >> pixel_format >> channel_count >> divider >> par_num >> par_den >> raw_size >> compressed_size;
 
-      int bpc = VideoParams::GetBytesPerChannel(image_format);
+  const PixelFormat image_format(static_cast<PixelFormat::Format>(pixel_format));
 
-      size_t xs = channel_count * bpc;
-      size_t ys = frame->linesize_bytes();
+  if (stream.status() != QDataStream::Ok
+      || !IsValidCacheFormat(image_format)
+      || width == 0 || height == 0
+      || divider == 0
+      || channel_count < 1 || channel_count > VideoParams::kRGBAChannelCount
+      || par_num == 0 || par_den == 0) {
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-      Imf::FrameBuffer framebuffer;
-      framebuffer.insert("R", Imf::Slice(pix_type, frame->data(), xs, ys));
-      framebuffer.insert("G", Imf::Slice(pix_type, frame->data() + bpc, xs, ys));
-      framebuffer.insert("B", Imf::Slice(pix_type, frame->data() + 2*bpc, xs, ys));
-      if (has_alpha) {
-        framebuffer.insert("A", Imf::Slice(pix_type, frame->data() + 3*bpc, xs, ys));
-      }
+  // Validate the header against the payload size before allocating anything, so
+  // a corrupt header can't make us allocate an absurd buffer.
+  const int bpc = VideoParams::GetBytesPerChannel(image_format);
+  const quint64 expected_raw_size = quint64(width) * quint64(height) * quint64(channel_count) * quint64(bpc);
+  if (raw_size != expected_raw_size) {
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-      file.setFrameBuffer(framebuffer);
+  QByteArray compressed(static_cast<int>(compressed_size), Qt::Uninitialized);
+  if (stream.readRawData(compressed.data(), static_cast<int>(compressed_size)) != static_cast<int>(compressed_size)) {
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-      file.readPixels(dw.min.y, dw.max.y);
-    } catch (const std::exception &e) {
-      // Not an EXR, maybe it's a JPEG?
-      QImage img;
+  QByteArray raw(static_cast<int>(raw_size), Qt::Uninitialized);
+  const int decompressed = LZ4_decompress_safe(compressed.constData(),
+                                               raw.data(),
+                                               static_cast<int>(compressed_size),
+                                               static_cast<int>(raw_size));
 
-      if (img.load(fn, "jpg")) {
+  if (decompressed < 0 || quint64(decompressed) != raw_size) {
+    qCritical() << "Failed to decompress cache frame" << fn;
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
 
-        // FIXME: Hardcoded
-        const int div = 1;
-        const PixelFormat image_format = PixelFormat::U8;
-        const int channel_count = 4;
-        const rational par(1, 1);
+  FramePtr frame = Frame::Create();
+  frame->set_video_params(VideoParams(static_cast<int>(width) * static_cast<int>(divider),
+                                      static_cast<int>(height) * static_cast<int>(divider),
+                                      image_format,
+                                      static_cast<int>(channel_count),
+                                      rational(static_cast<int>(par_num), static_cast<int>(par_den)),
+                                      VideoParams::kInterlaceNone,
+                                      static_cast<int>(divider)));
+  frame->allocate();
 
-        // Convert to frame (FIXME: might be slow? may be a better way to do this on the GPU)
-        img.convertTo(QImage::Format_RGBA8888_Premultiplied);
-
-        frame = Frame::Create();
-        frame->set_video_params(VideoParams(img.width() * div,
-                                            img.height() * div,
-                                            image_format,
-                                            channel_count,
-                                            par,
-                                            VideoParams::kInterlaceNone,
-                                            div));
-
-        frame->allocate();
-
-        for (int i=0; i<img.height(); i++) {
-          memcpy(frame->data() + frame->linesize_bytes() * i,
-                 img.bits() + img.bytesPerLine() * i,
-                 frame->width() * frame->video_params().GetBytesPerPixel());
-        }
-
-      } else {
-        qCritical() << "Failed to read cache frame:" << e.what();
-
-        // Clear frame to signal that nothing was loaded
-        frame = nullptr;
-
-        // Assume this frame is corrupt in some way and delete it
-        QMetaObject::invokeMethod(DiskManager::instance(), "DeleteSpecificFile", Q_ARG(QString, fn));
-      }
-    }
-
+  const int row_bytes = static_cast<int>(width) * static_cast<int>(channel_count) * bpc;
+  for (quint32 y = 0; y < height; y++) {
+    memcpy(frame->data() + static_cast<size_t>(y) * frame->linesize_bytes(),
+           raw.constData() + static_cast<size_t>(y) * row_bytes,
+           row_bytes);
   }
 
   return frame;
@@ -297,7 +324,7 @@ void FrameHashCache::HashDeleted(const QString& path, const QString &filename)
     return;
   }
 
-  int64_t timestamp = info.fileName().toLongLong();
+  int64_t timestamp = info.completeBaseName().toLongLong();
   Invalidate(TimeRange(ToTime(timestamp), ToTime(timestamp + 1)));
 }
 
@@ -320,7 +347,7 @@ QString FrameHashCache::CachePathName(const rational &time) const
 
 QString FrameHashCache::CachePathName(const QString &cache_path, const QUuid &cache_id, const int64_t &time)
 {
-  QString filename = GetThisCacheDirectory(cache_path, cache_id).filePath(QString::number(time));
+  QString filename = GetThisCacheDirectory(cache_path, cache_id).filePath(QString::number(time) + QString::fromLatin1(kCacheExtension));
 
   // Register that in some way this hash has been accessed
   if (DiskManager::instance()) {
@@ -343,86 +370,66 @@ bool FrameHashCache::SaveCacheFrame(const QString &filename, const FramePtr fram
     return false;
   }
 
-  if (VideoParams::FormatIsFloat(frame->format())) {
-    // Floating point types are stored in EXR
-    Imf::PixelType pix_type;
+  const PixelFormat format = frame->format();
 
-    if (frame->format() == PixelFormat::F16) {
-      pix_type = Imf::HALF;
-    } else {
-      pix_type = Imf::FLOAT;
-    }
-
-    Imf::Header header(frame->width(), frame->height());
-    header.channels().insert("R", Imf::Channel(pix_type));
-    header.channels().insert("G", Imf::Channel(pix_type));
-    header.channels().insert("B", Imf::Channel(pix_type));
-    if (frame->channel_count() == VideoParams::kRGBAChannelCount) {
-      header.channels().insert("A", Imf::Channel(pix_type));
-    }
-
-    header.compression() = Imf::DWAA_COMPRESSION;
-    header.insert("dwaCompressionLevel", Imf::FloatAttribute(200.0f));
-    header.pixelAspectRatio() = frame->video_params().pixel_aspect_ratio().toDouble();
-
-    header.insert("oliveDivider", Imf::IntAttribute(frame->video_params().divider()));
-
-    try {
-      Imf::OutputFile out(filename.toUtf8(), header, 0);
-
-      int bpc = VideoParams::GetBytesPerChannel(frame->format());
-
-      size_t xs = frame->channel_count() * bpc;
-      size_t ys = frame->linesize_bytes();
-
-      Imf::FrameBuffer framebuffer;
-      framebuffer.insert("R", Imf::Slice(pix_type, frame->data(), xs, ys));
-      framebuffer.insert("G", Imf::Slice(pix_type, frame->data() + bpc, xs, ys));
-      framebuffer.insert("B", Imf::Slice(pix_type, frame->data() + 2*bpc, xs, ys));
-      if (frame->channel_count() == VideoParams::kRGBAChannelCount) {
-        framebuffer.insert("A", Imf::Slice(pix_type, frame->data() + 3*bpc, xs, ys));
-      }
-      out.setFrameBuffer(framebuffer);
-
-      out.writePixels(frame->height());
-
-      return true;
-    } catch (const std::exception &e) {
-      qCritical() << "Failed to write cache frame:" << e.what();
-
-      return false;
-    }
-  } else {
-    QImage::Format fmt = QImage::Format_Invalid;
-
-    switch (frame->format()) {
-    case PixelFormat::U8:
-      if (frame->channel_count() == VideoParams::kRGBAChannelCount){
-        fmt = QImage::Format_RGBA8888_Premultiplied;
-      } else if (frame->channel_count() == VideoParams::kRGBChannelCount){
-        fmt = QImage::Format_RGB888;
-      }
-      break;
-    case PixelFormat::U16:
-      if (frame->channel_count() == VideoParams::kRGBAChannelCount){
-        fmt = QImage::Format_RGBA64_Premultiplied;
-      }
-      break;
-    case PixelFormat::F16:
-    case PixelFormat::F32:
-    case PixelFormat::COUNT:
-    case PixelFormat::INVALID:
-      break;
-    }
-
-    if (fmt == QImage::Format_Invalid) {
-      return false;
-    }
-
-    QImage img(reinterpret_cast<const uchar*>(frame->data()), frame->width(), frame->height(), frame->linesize_bytes(), fmt);
-
-    return img.save(filename, "jpg");
+  if (!IsValidCacheFormat(format)) {
+    return false;
   }
+
+  const int width = frame->width();
+  const int height = frame->height();
+  const int channel_count = frame->channel_count();
+  const int bpc = VideoParams::GetBytesPerChannel(format);
+  const int row_bytes = width * channel_count * bpc;
+  const quint64 raw_size = quint64(row_bytes) * quint64(height);
+
+  // Pack the (possibly row-padded) frame into a contiguous buffer. Only the
+  // meaningful pixels are stored, so the cache file is portable across builds
+  // with different alignment/padding.
+  QByteArray raw(static_cast<int>(raw_size), Qt::Uninitialized);
+  for (int y = 0; y < height; y++) {
+    memcpy(raw.data() + static_cast<size_t>(y) * row_bytes,
+           frame->const_data() + static_cast<size_t>(y) * frame->linesize_bytes(),
+           row_bytes);
+  }
+
+  // LZ4-compress the pixels. Unlike the old EXR/DWA (float) and JPEG (integer)
+  // caches, this is lossless, so a saved frame reads back bit-exact.
+  const int compress_bound = LZ4_compressBound(static_cast<int>(raw_size));
+  QByteArray compressed(compress_bound, Qt::Uninitialized);
+  const int compressed_size = LZ4_compress_default(raw.constData(),
+                                                   compressed.data(),
+                                                   static_cast<int>(raw_size),
+                                                   compress_bound);
+
+  if (compressed_size <= 0) {
+    qCritical() << "Failed to compress cache frame";
+    return false;
+  }
+
+  QFile file(filename);
+  if (!file.open(QFile::WriteOnly)) {
+    qCritical() << "Failed to open cache frame for writing:" << filename;
+    return false;
+  }
+
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
+
+  stream.writeRawData(kCacheMagic, 4);
+  stream << kCacheVersion;
+  stream << quint32(width);
+  stream << quint32(height);
+  stream << quint32(format);
+  stream << quint32(channel_count);
+  stream << quint32(frame->video_params().divider());
+  stream << quint32(frame->video_params().pixel_aspect_ratio().numerator());
+  stream << quint32(frame->video_params().pixel_aspect_ratio().denominator());
+  stream << quint64(raw_size);
+  stream << quint32(compressed_size);
+  stream.writeRawData(compressed.constData(), compressed_size);
+
+  return stream.status() == QDataStream::Ok;
 }
 
 }

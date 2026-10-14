@@ -16,6 +16,7 @@
 
 olive_add_test(Codec color-golden-tests color-golden-tests.cpp)
 olive_add_test(Codec image-export-tests image-export-tests.cpp)
+olive_add_test(Codec frame-cache-tests frame-cache-tests.cpp)
 
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.

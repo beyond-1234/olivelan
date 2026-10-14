@@ -18,6 +18,12 @@
 set(OLIVE_SOURCES
   core.h
   core.cpp
+  # Vendored LZ4 (third-party, warning-clean but built with -w to keep -Werror happy)
+  ${CMAKE_SOURCE_DIR}/third_party/lz4/lz4.c
+)
+
+set_source_files_properties(${CMAKE_SOURCE_DIR}/third_party/lz4/lz4.c
+  PROPERTIES COMPILE_OPTIONS "$<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-w>"
 )
 
 #set(OLIVE_RESOURCES)
