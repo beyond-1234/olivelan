@@ -52,7 +52,10 @@ bool ReinforcedSoftwarePipeline::ProcessHardwareFrame(AVFrame* hw_frame, const V
   if (hw_frame->format == AV_PIX_FMT_RGBA || hw_frame->format == AV_PIX_FMT_BGRA) {
     TexturePtr tex = renderer_->CreateTexture(params);
     if (tex) {
-      tex->Upload(hw_frame->data[0], hw_frame->linesize[0]);
+      // UploadToTexture() consumes the row length in *pixels* (it maps to
+      // GL_UNPACK_ROW_LENGTH), whereas AVFrame::linesize is in bytes.
+      const int bytes_per_pixel = params.GetBytesPerPixel();
+      tex->Upload(hw_frame->data[0], bytes_per_pixel > 0 ? hw_frame->linesize[0] / bytes_per_pixel : hw_frame->linesize[0]);
       out_frame.texture = tex;
       out_frame.pts = hw_frame->pts;
       out_frame.width = hw_frame->width;

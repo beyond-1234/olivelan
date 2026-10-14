@@ -188,6 +188,18 @@ private:
   int AcquireNativeSurfaceSlot(int width, int height, GLenum target, GLuint* out_texture_id = nullptr);
   void DestroyNativeSurfacePool();
 
+  // Phase 6 (patch 0026): double-buffered Pixel Unpack Buffer ring for asynchronous
+  // CPU->GPU streaming uploads. Frame N is memcpy'd into the next PBO while the GPU
+  // DMA engine may still be consuming the previous one via glTexSubImage2D, hiding the
+  // main-thread stall that a client-memory glTexSubImage2D would otherwise pay. Only
+  // engaged for tightly-strided 2D streams; every other path keeps the old behaviour.
+  static const int kUploadPboRingSize = 2;
+  GLuint upload_pbos_[kUploadPboRingSize] = {0, 0};
+  int upload_pbo_index_ = 0;
+
+  bool UploadToTextureViaPbo(const VideoParams &params, const void *data, int linesize);
+  void DestroyUploadPboRing();
+
   static const int kTextureCacheMaxSize;
 
 };

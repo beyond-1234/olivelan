@@ -21,8 +21,11 @@
 #include "openglrenderer.h"
 
 #include <iostream>
+#include <cstring>
+#include <cstdlib>
 #include <QDateTime>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 
@@ -186,6 +189,8 @@ void OpenGLRenderer::DestroyInternal()
 #endif
 
     DestroyNativeSurfacePool();
+
+    DestroyUploadPboRing();
 
     // Delete framebuffer
     functions_->glDeleteFramebuffers(1, &framebuffer_);
@@ -871,7 +876,15 @@ void OpenGLRenderer::UploadToTexture(const QVariant &handle, const VideoParams &
 
   functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize);
 
-  {
+  // Phase 6 (patch 0026): stream the frame through the async PBO ring when possible.
+  // On failure we transparently fall back to the original client-memory upload.
+  bool uploaded = false;
+
+  if (!is_3d) {
+    uploaded = UploadToTextureViaPbo(p, data, linesize);
+  }
+
+  if (!uploaded) {
     PRINT_GL_ERRORS;
 
     if (!is_3d) {
@@ -890,6 +903,125 @@ void OpenGLRenderer::UploadToTexture(const QVariant &handle, const VideoParams &
   functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
   functions_->glBindTexture(tex_type, current_tex);
+}
+
+bool OpenGLRenderer::UploadToTextureViaPbo(const VideoParams &params, const void *data, int linesize)
+{
+  if (!data || !context_) {
+    return false;
+  }
+
+  QOpenGLExtraFunctions* xf = context_->extraFunctions();
+  if (!xf) {
+    return false;
+  }
+
+  const int bytes_per_pixel = params.GetBytesPerPixel();
+  const int width = params.effective_width();
+  const int height = params.effective_height();
+
+  if (bytes_per_pixel <= 0 || width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const GLsizeiptr payload = static_cast<GLsizeiptr>(width) * bytes_per_pixel * height;
+  const int source_row_pixels = (linesize > 0) ? linesize : width;
+
+  // Ping-pong across the ring: we fill the next PBO while the GPU may still be
+  // draining the slot used by the previous frame.
+  const int slot = upload_pbo_index_;
+  upload_pbo_index_ = (upload_pbo_index_ + 1) % kUploadPboRingSize;
+
+  if (upload_pbos_[slot] == 0) {
+    xf->glGenBuffers(1, &upload_pbos_[slot]);
+    if (upload_pbos_[slot] == 0) {
+      return false;
+    }
+  }
+
+  bool profiled = qEnvironmentVariableIsSet("OLIVE_PBO_PROFILE");
+  QElapsedTimer timer;
+  if (profiled) {
+    timer.start();
+  }
+
+  xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[slot]);
+
+  // Orphan the store every frame: a fresh backing allocation means the driver never
+  // has to stall waiting for the previous frame's DMA before handing us a pointer.
+  xf->glBufferData(GL_PIXEL_UNPACK_BUFFER, payload, nullptr, GL_STREAM_DRAW);
+
+  void* mapped = xf->glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, payload,
+                                      GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+  if (!mapped) {
+    xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    return false;
+  }
+
+  const size_t dst_stride = static_cast<size_t>(width) * bytes_per_pixel;
+  if (source_row_pixels == width) {
+    std::memcpy(mapped, data, static_cast<size_t>(payload));
+  } else {
+    const size_t src_stride = static_cast<size_t>(source_row_pixels) * bytes_per_pixel;
+    const unsigned char* src = static_cast<const unsigned char*>(data);
+    unsigned char* dst = static_cast<unsigned char*>(mapped);
+    for (int y = 0; y < height; ++y) {
+      std::memcpy(dst + static_cast<size_t>(y) * dst_stride,
+                  src + static_cast<size_t>(y) * src_stride,
+                  dst_stride);
+    }
+  }
+
+  xf->glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
+  // The PBO holds tightly packed rows, so the effective row length is the frame width
+  // and no alignment padding applies (unlike the caller's possibly padded source).
+  GLint prev_alignment = 4;
+  functions_->glGetIntegerv(GL_UNPACK_ALIGNMENT, &prev_alignment);
+  functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, width);
+  functions_->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+  {
+    PRINT_GL_ERRORS;
+    functions_->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                                GetPixelFormat(params.channel_count()), GetPixelType(params.format()),
+                                nullptr);
+  }
+
+  functions_->glPixelStorei(GL_UNPACK_ALIGNMENT, prev_alignment);
+  functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize);
+
+  xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+  if (profiled) {
+    static qint64 total_ns = 0;
+    static int frame_count = 0;
+    total_ns += timer.nsecsElapsed();
+    ++frame_count;
+    if (frame_count % 240 == 0) {
+      qInfo() << "[PBO-Async] streaming upload main-thread cost avg"
+              << static_cast<double>(total_ns) / 1000.0 / frame_count << "us over"
+              << frame_count << "frames";
+    }
+  }
+
+  return true;
+}
+
+void OpenGLRenderer::DestroyUploadPboRing()
+{
+  if (!functions_) {
+    return;
+  }
+
+  for (int i = 0; i < kUploadPboRingSize; ++i) {
+    if (upload_pbos_[i] != 0) {
+      functions_->glDeleteBuffers(1, &upload_pbos_[i]);
+      upload_pbos_[i] = 0;
+    }
+  }
+
+  upload_pbo_index_ = 0;
 }
 
 void OpenGLRenderer::DownloadFromTexture(const QVariant &id, const VideoParams &p, void *data, int linesize)
