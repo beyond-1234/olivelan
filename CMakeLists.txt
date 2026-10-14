@@ -167,10 +167,16 @@ endif()
 find_package(OpenGL REQUIRED)
 list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 
-# Link OpenColorIO
-find_package(OpenColorIO 2.1.1 REQUIRED)
-list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
-list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+# OpenColorIO is optional. When disabled, Olive builds its own lightweight colour
+# engine instead (see app/render/colorprocessor.cpp and app/render/renderer.cpp).
+option(OLIVE_ENABLE_OCIO "Enable the full OpenColorIO colour backend" ON)
+
+if(OLIVE_ENABLE_OCIO)
+  find_package(OpenColorIO 2.1.1 REQUIRED)
+  list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
+  list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+  list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_OCIO)
+endif()
 
 # Link Olive
 list(APPEND OLIVE_LIBRARIES olivecore)

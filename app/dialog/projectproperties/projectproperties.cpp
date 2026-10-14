@@ -224,6 +224,7 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
 {
   default_input_colorspace_->clear();
 
+#ifdef OLIVE_ENABLE_OCIO
   try {
     OCIO::ConstConfigRcPtr c;
 
@@ -251,6 +252,22 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
     ocio_filename_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
     ocio_config_error_ = e.what();
   }
+#else
+  // Patch 0039: the built-in engine has a fixed colour space list and no config
+  // file to validate, so the filename field is treated as always valid.
+  ocio_filename_->setStyleSheet(QString());
+  ocio_config_is_valid_ = true;
+
+  const QStringList input_cs = working_project_->color_manager()->ListAvailableColorspaces();
+
+  foreach (const QString &cs, input_cs) {
+    default_input_colorspace_->addItem(cs);
+
+    if (cs == working_project_->color_manager()->GetDefaultInputColorSpace()) {
+      default_input_colorspace_->setCurrentIndex(default_input_colorspace_->count()-1);
+    }
+  }
+#endif
 }
 
 void ProjectPropertiesDialog::OpenDiskCacheSettings()

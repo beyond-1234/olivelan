@@ -20,8 +20,10 @@
 
 #include "ocioutils.h"
 
+#ifdef OLIVE_ENABLE_OCIO
 #include <OpenColorIO/OpenColorIO.h>
 namespace OCIO = OCIO_NAMESPACE;
+#endif
 
 namespace olive {
 
@@ -33,6 +35,7 @@ const QString OCIOUtils::kReferenceSpaceCompositingLog = QStringLiteral("composi
 
 int OCIOUtils::GetOCIOBitDepthFromPixelFormat(PixelFormat format)
 {
+#ifdef OLIVE_ENABLE_OCIO
   switch (format) {
   case PixelFormat::U8:
     return static_cast<int>(OCIO::BIT_DEPTH_UINT8);
@@ -51,6 +54,13 @@ int OCIOUtils::GetOCIOBitDepthFromPixelFormat(PixelFormat format)
   }
 
   return static_cast<int>(OCIO::BIT_DEPTH_UNKNOWN);
+#else
+  // Patch 0039: the built-in colour engine operates on Frame data directly and
+  // has no notion of OCIO's bit-depth codes, so this helper is unused. It is
+  // kept only so the header stays identical between both configurations.
+  Q_UNUSED(format);
+  return 0;
+#endif
 }
 
 }

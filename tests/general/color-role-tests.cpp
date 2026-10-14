@@ -61,6 +61,9 @@ OLIVE_ADD_TEST(ColorRoleMapping)
     return __LINE__;
   }
 
+#ifdef OLIVE_ENABLE_OCIO
+  // The bundled config is only present in an OCIO build (patch 0039 excludes it
+  // from the built-in-engine build), so this half of the probe is conditional.
   QFile config(QStringLiteral(":/ocioconf/config.ocio"));
   if (!config.open(QFile::ReadOnly)) {
     std::cout << " - could not open the bundled :/ocioconf/config.ocio";
@@ -83,6 +86,7 @@ OLIVE_ADD_TEST(ColorRoleMapping)
     std::cout << " - bundled config.ocio does not define the default role";
     return __LINE__;
   }
+#endif
 
   OLIVE_TEST_END;
 }

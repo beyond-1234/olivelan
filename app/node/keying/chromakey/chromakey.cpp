@@ -123,12 +123,20 @@ ShaderCode ChromaKeyNode::GetShaderCode(const ShaderRequest &request) const
 void ChromaKeyNode::GenerateProcessor()
 {
   if (manager()){
+#ifdef OLIVE_ENABLE_OCIO
     try {
       ColorTransform transform("cie_xyz_d65_interchange");
       set_processor(ColorProcessor::Create(manager(), manager()->GetReferenceColorSpace(), transform));
     } catch (const OCIO::Exception &e) {
       std::cerr << std::endl << e.what() << std::endl;
     }
+#else
+    // Patch 0039: the built-in engine has no exceptions to catch. The GPU-side
+    // Rec.709 -> CIE XYZ matrix is emitted by Renderer::GetColorContext as
+    // SceneLinearToCIEXYZ_d65.
+    ColorTransform transform(QStringLiteral("cie_xyz_d65_interchange"));
+    set_processor(ColorProcessor::Create(manager(), manager()->GetReferenceColorSpace(), transform));
+#endif
   }
 }
 

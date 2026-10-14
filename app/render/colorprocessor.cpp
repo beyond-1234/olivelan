@@ -20,15 +20,24 @@
 
 #include "colorprocessor.h"
 
-#include <OpenColorIO/OpenColorIO.h>
-namespace OCIO = OCIO_NAMESPACE;
+#include <cmath>
+#include <string>
 
 #include "common/define.h"
 #include "common/ociobridge.h"
 #include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
 
+#ifdef OLIVE_ENABLE_OCIO
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+#else
+#include <olive/core/util/half.h>
+#endif
+
 namespace olive {
+
+#ifdef OLIVE_ENABLE_OCIO
 
 // Patch 0037: the OCIO members live in an opaque Impl so that colorprocessor.h
 // (and everything that includes it) no longer needs <OpenColorIO/OpenColorIO.h>.
@@ -161,5 +170,270 @@ OCIO::ConstProcessorRcPtr ColorProcessorOCIO::GetProcessor(const ColorProcessor 
 {
   return processor->impl_->processor;
 }
+
+#else // OLIVE_ENABLE_OCIO
+
+// ============================================================================
+// Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
+//
+// This is the first, deliberately narrow, step of the built-in engine. It
+// implements a single ingest -> working (scene-linear) -> display transfer
+// function pipeline over a small set of named colour spaces, and nothing else:
+//
+//   * no matrix / gamut conversion (all spaces are treated as Rec.709 primaries),
+//   * no 3D LUT, no looks, no HLG/PQ,
+//   * unknown colour spaces fall back to "already linear".
+//
+// The remaining pieces (gamut matrices, .cube LUTs, Lift/Gamma/Gain grading,
+// HLG/PQ transfer functions) land in the follow-up patches. The engine is
+// therefore NOT expected to match the OCIO backend numerically; its acceptance
+// gate is that the tree builds and links with zero OpenColorIO symbols, with the
+// colour-equivalence gates tracked separately.
+// ============================================================================
+
+namespace {
+
+enum TransferFunction
+{
+  kTransferLinear,
+  kTransferSrgb,
+  kTransferRec709,
+  kTransferBt1886,
+  kTransferData
+};
+
+TransferFunction GetTransferFunction(const QString &name)
+{
+  if (name == QStringLiteral("Linear")
+      || name == QStringLiteral("scene_linear")
+      || name == QStringLiteral("Linear Raw")) {
+    return kTransferLinear;
+  }
+
+  if (name == QStringLiteral("sRGB OETF") || name == QStringLiteral("sRGB")) {
+    return kTransferSrgb;
+  }
+
+  if (name == QStringLiteral("Rec.709 OETF")) {
+    return kTransferRec709;
+  }
+
+  if (name == QStringLiteral("BT.1886 EOTF")) {
+    return kTransferBt1886;
+  }
+
+  if (name == QStringLiteral("Non-Colour Data")) {
+    return kTransferData;
+  }
+
+  return kTransferLinear;
+}
+
+double PowSigned(double base, double exponent)
+{
+  // Transfer functions are extended to negative values symmetrically, which is
+  // what OCIO's built-in transfer functions do too.
+  return base < 0.0 ? -std::pow(-base, exponent) : std::pow(base, exponent);
+}
+
+double ToLinear(double v, TransferFunction tf)
+{
+  switch (tf) {
+  case kTransferSrgb:
+    return (v <= 0.04045) ? v / 12.92 : PowSigned((v + 0.055) / 1.055, 2.4);
+  case kTransferRec709:
+    return (v < 0.081) ? v / 4.5 : PowSigned((v + 0.099) / 1.099, 1.0 / 0.45);
+  case kTransferBt1886:
+    return PowSigned(v, 2.4);
+  case kTransferLinear:
+  case kTransferData:
+    break;
+  }
+
+  return v;
+}
+
+double FromLinear(double v, TransferFunction tf)
+{
+  switch (tf) {
+  case kTransferSrgb:
+    return (v <= 0.0031308) ? v * 12.92 : 1.055 * PowSigned(v, 1.0 / 2.4) - 0.055;
+  case kTransferRec709:
+    return (v < 0.018) ? 4.5 * v : 1.099 * PowSigned(v, 0.45) - 0.099;
+  case kTransferBt1886:
+    return PowSigned(v, 1.0 / 2.4);
+  case kTransferLinear:
+  case kTransferData:
+    break;
+  }
+
+  return v;
+}
+
+float FromStorage(const char *p, PixelFormat::Format f)
+{
+  switch (f) {
+  case PixelFormat::U8:
+    return float(*reinterpret_cast<const uint8_t *>(p)) / 255.0f;
+  case PixelFormat::U16:
+    return float(*reinterpret_cast<const uint16_t *>(p)) / 65535.0f;
+  case PixelFormat::F16:
+    return core::half_to_float(*reinterpret_cast<const uint16_t *>(p));
+  case PixelFormat::F32:
+    return *reinterpret_cast<const float *>(p);
+  case PixelFormat::INVALID:
+  case PixelFormat::COUNT:
+    break;
+  }
+
+  return 0.0f;
+}
+
+void ToStorage(char *p, PixelFormat::Format f, float v)
+{
+  switch (f) {
+  case PixelFormat::U8:
+    *reinterpret_cast<uint8_t *>(p) = uint8_t(qBound(0.0f, v, 1.0f) * 255.0f + 0.5f);
+    break;
+  case PixelFormat::U16:
+    *reinterpret_cast<uint16_t *>(p) = uint16_t(qBound(0.0f, v, 1.0f) * 65535.0f + 0.5f);
+    break;
+  case PixelFormat::F16:
+    *reinterpret_cast<uint16_t *>(p) = core::float_to_half(v);
+    break;
+  case PixelFormat::F32:
+    *reinterpret_cast<float *>(p) = v;
+    break;
+  case PixelFormat::INVALID:
+  case PixelFormat::COUNT:
+    break;
+  }
+}
+
+}
+
+struct ColorProcessor::Impl
+{
+  QString input;
+  QString output;
+  bool is_display = false;
+  QString display_name;
+  QString view;
+  Direction direction = kNormal;
+  std::string id;
+};
+
+ColorProcessor::ColorProcessor() :
+  impl_(std::make_unique<Impl>())
+{
+}
+
+ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const ColorTransform &transform, Direction direction) :
+  impl_(std::make_unique<Impl>())
+{
+  impl_->input = input;
+  impl_->direction = direction;
+
+  if (transform.is_display()) {
+    impl_->is_display = true;
+    impl_->display_name = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
+    impl_->view = (transform.view().isEmpty()) ? config->GetDefaultView(impl_->display_name) : transform.view();
+
+    // The built-in engine has no config to resolve a view to a colour space, so
+    // it treats the view name as the destination colour space. In the bundled
+    // config the two happen to share a name (e.g. view "sRGB OETF" maps to
+    // colour space "sRGB OETF").
+    impl_->output = impl_->view;
+  } else {
+    impl_->output = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
+  }
+
+  impl_->id = QStringLiteral("builtin|%1|%2|%3|%4")
+                .arg(impl_->input,
+                     impl_->output,
+                     impl_->view,
+                     (direction == kNormal) ? QStringLiteral("fwd") : QStringLiteral("inv"))
+                .toStdString();
+}
+
+ColorProcessor::~ColorProcessor() = default;
+
+void ColorProcessor::ConvertFrame(Frame *f)
+{
+  const PixelFormat::Format fmt = f->format();
+
+  if (fmt == PixelFormat::INVALID || fmt == PixelFormat::COUNT) {
+    qCritical() << "Tried to color convert frame with no format";
+    return;
+  }
+
+  TransferFunction src = GetTransferFunction(impl_->input);
+  TransferFunction dst = GetTransferFunction(impl_->output);
+
+  if (impl_->direction == kInverse) {
+    std::swap(src, dst);
+  }
+
+  // "Non-Colour Data" is passed through untouched, matching the bundled config
+  // where the corresponding view is a no-op.
+  if (src == kTransferData || dst == kTransferData) {
+    return;
+  }
+
+  const int bytes = f->format().byte_count();
+  const int channels = f->channel_count();
+  const int color_channels = (channels >= 4) ? 3 : channels;
+
+  for (int y = 0; y < f->height(); y++) {
+    char *row = f->data() + y * f->linesize_bytes();
+
+    for (int x = 0; x < f->width(); x++) {
+      char *pixel = row + x * bytes * channels;
+
+      for (int c = 0; c < color_channels; c++) {
+        char *p = pixel + c * bytes;
+        float v = FromStorage(p, fmt);
+        v = float(FromLinear(ToLinear(double(v), src), dst));
+        ToStorage(p, fmt, v);
+      }
+    }
+  }
+}
+
+Color ColorProcessor::ConvertColor(const Color& in)
+{
+  TransferFunction src = GetTransferFunction(impl_->input);
+  TransferFunction dst = GetTransferFunction(impl_->output);
+
+  if (impl_->direction == kInverse) {
+    std::swap(src, dst);
+  }
+
+  if (src == kTransferData || dst == kTransferData) {
+    return in;
+  }
+
+  return Color(FromLinear(ToLinear(in.red(), src), dst),
+               FromLinear(ToLinear(in.green(), src), dst),
+               FromLinear(ToLinear(in.blue(), src), dst),
+               in.alpha());
+}
+
+const char *ColorProcessor::id() const
+{
+  return impl_->id.c_str();
+}
+
+ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)
+{
+  return std::make_shared<ColorProcessor>(config, input, transform, direction);
+}
+
+void ColorProcessor::ConvertFrame(FramePtr f)
+{
+  ConvertFrame(f.get());
+}
+
+#endif // OLIVE_ENABLE_OCIO
 
 }

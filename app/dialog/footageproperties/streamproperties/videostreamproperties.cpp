@@ -64,14 +64,14 @@ VideoStreamProperties::VideoStreamProperties(Footage *footage, int video_index) 
   video_layout->addWidget(new QLabel(tr("Color Space:")), row, 0);
 
   video_color_space_ = new QComboBox();
-  OCIO::ConstConfigRcPtr config = ColorManagerOCIO::GetConfig(footage_->project()->color_manager());
-  int number_of_colorspaces = config->getNumColorSpaces();
 
   video_color_space_->addItem(tr("Default (%1)").arg(footage_->project()->color_manager()->GetDefaultInputColorSpace()));
 
-  for (int i=0;i<number_of_colorspaces;i++) {
-    QString colorspace = config->getColorSpaceNameByIndex(i);
+  // Patch 0039: route through ColorManager instead of pulling the OCIO config
+  // directly, so this dialog also works with the built-in colour engine.
+  const QStringList colorspaces = footage_->project()->color_manager()->ListAvailableColorspaces();
 
+  for (const QString &colorspace : colorspaces) {
     video_color_space_->addItem(colorspace);
   }
 

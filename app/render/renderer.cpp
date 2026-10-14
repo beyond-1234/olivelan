@@ -175,6 +175,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     color_ctx = color_cache_.value(proc_id);
     return true;
   } else {
+#ifdef OLIVE_ENABLE_OCIO
     // Create shader description
     QString ocio_func_name;
     if (color_job.GetFunctionName().isEmpty()) {
@@ -199,6 +200,46 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       code = FileFunctions::ReadFileAsString(QStringLiteral(":shaders/colormanage.frag"));
       code.set_frag_code(code.frag_code().arg(shader_desc->getShaderText()));
     }
+#else
+    // Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
+    //
+    // There is no OCIO shader generator, so this snippet provides the functions
+    // the colour-managed shaders expect:
+    //   * OCIODisplay()             - scene-linear -> sRGB OETF display transform,
+    //                                 used by the generic colormanage.frag path;
+    //   * SceneLinearToCIEXYZ_d65() - Rec.709 scene-linear -> CIE XYZ (D65),
+    //                                 used by ChromaKeyNode.
+    // This is the first, deliberately narrow, step of the built-in engine; gamut
+    // matrices, .cube LUTs, looks and HLG/PQ land in the follow-up patches.
+    const QString builtin_shader_text = QStringLiteral(
+      "vec3 ove_linear_to_srgb(vec3 c) {\n"
+      "  vec3 s = sign(c);\n"
+      "  vec3 a = abs(c);\n"
+      "  vec3 lo = a * 12.92;\n"
+      "  vec3 hi = 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055;\n"
+      "  return s * mix(lo, hi, step(vec3(0.0031308), a));\n"
+      "}\n"
+      "vec4 OCIODisplay(vec4 in) {\n"
+      "  return vec4(ove_linear_to_srgb(in.rgb), in.a);\n"
+      "}\n"
+      "vec4 SceneLinearToCIEXYZ_d65(vec4 in) {\n"
+      "  return vec4(\n"
+      "    dot(in.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
+      "    dot(in.rgb, vec3(0.21263900587151036, 0.7151686787677559, 0.07219231536073371)),\n"
+      "    dot(in.rgb, vec3(0.01933081871559185, 0.11919477979462599, 0.9505321522496607)),\n"
+      "    in.a);\n"
+      "}\n");
+
+    ShaderCode code;
+    if (const Node *shader_src = color_job.CustomShaderSource()) {
+      // Use shader code from associated node
+      code = shader_src->GetShaderCode({color_job.CustomShaderID(), builtin_shader_text});
+    } else {
+      // Generate shader code using our built-in stub
+      code = FileFunctions::ReadFileAsString(QStringLiteral(":shaders/colormanage.frag"));
+      code.set_frag_code(code.frag_code().arg(builtin_shader_text));
+    }
+#endif
 
     // Try to compile shader
     color_ctx.compiled_shader = CreateNativeShader(code);
@@ -207,6 +248,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       return false;
     }
 
+#ifdef OLIVE_ENABLE_OCIO
     color_ctx.lut3d_textures.resize(shader_desc->getNum3DTextures());
     for (unsigned int i=0; i<shader_desc->getNum3DTextures(); i++) {
       const char* tex_name = nullptr;
@@ -265,6 +307,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       color_ctx.lut1d_textures[i].name = sampler_name;
       color_ctx.lut1d_textures[i].interpolation = (interpolation == OCIO::INTERP_NEAREST) ? Texture::kNearest : Texture::kLinear;
     }
+#endif // OLIVE_ENABLE_OCIO
 
     color_cache_.insert(proc_id, color_ctx);
 

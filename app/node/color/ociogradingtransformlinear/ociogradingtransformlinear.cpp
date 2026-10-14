@@ -141,6 +141,7 @@ void OCIOGradingTransformLinearNode::InputValueChangedEvent(const QString &input
 void OCIOGradingTransformLinearNode::GenerateProcessor()
 {
   if (manager()) {
+#ifdef OLIVE_ENABLE_OCIO
     OCIO::GradingPrimaryTransformRcPtr gp = OCIO::GradingPrimaryTransform::Create(OCIO::GRADING_LIN);
     gp->makeDynamic();
     gp->setDirection(OCIO::TransformDirection::TRANSFORM_DIR_FORWARD);
@@ -150,12 +151,19 @@ void OCIOGradingTransformLinearNode::GenerateProcessor()
     } catch (const OCIO::Exception &e) {
       std::cerr << std::endl << e.what() << std::endl;
     }
+#else
+    // Patch 0039: the built-in engine does not implement Lift/Gamma/Gain grading
+    // yet (that lands in patch 0040). Value() forwards its input unchanged in
+    // this mode, so no processor is required.
+    set_processor(nullptr);
+#endif
   }
 }
 
 void OCIOGradingTransformLinearNode::Value(const NodeValueRow &value, const NodeGlobals &globals, NodeValueTable *table) const
 {
   if (TexturePtr tex = value[kTextureInput].toTexture()) {
+#ifdef OLIVE_ENABLE_OCIO
     if (processor()) {
       ColorTransformJob job(value);
 
@@ -199,6 +207,11 @@ void OCIOGradingTransformLinearNode::Value(const NodeValueRow &value, const Node
 
       table->Push(NodeValue::kTexture, tex->toJob(job), this);
     }
+#else
+    // Patch 0039: the built-in engine has no grading processor yet, so this node
+    // forwards its input texture unchanged (Lift/Gamma/Gain lands in patch 0040).
+    table->Push(NodeValue::kTexture, tex, this);
+#endif
   }
 }
 

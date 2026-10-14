@@ -403,6 +403,7 @@ void ManagedDisplayWidget::SetupColorProcessor()
   color_service_ = nullptr;
 
   if (color_manager_) {
+#ifdef OLIVE_ENABLE_OCIO
     // (Re)create color processor
     try {
       color_service_ = ColorProcessor::Create(color_manager_,
@@ -414,6 +415,12 @@ void ManagedDisplayWidget::SetupColorProcessor()
                             tr("Failed to set color configuration: %1").arg(e.what()),
                             QMessageBox::Ok);
     }
+#else
+    // Patch 0039: the built-in engine does not throw.
+    color_service_ = ColorProcessor::Create(color_manager_,
+                                            color_manager_->GetReferenceColorSpace(),
+                                            color_transform_);
+#endif
   } else {
     color_service_ = nullptr;
   }

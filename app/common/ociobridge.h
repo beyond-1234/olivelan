@@ -32,16 +32,23 @@
  * This is the ONE header that still includes OpenColorIO, and it is only
  * included by the translation units that genuinely touch OCIO. Anything that
  * merely holds a ColorProcessorPtr keeps including the plain headers.
+ *
+ * Patch 0039 (Phase 8): the whole OCIO section is compiled out when
+ * OLIVE_ENABLE_OCIO is OFF, so including this header is harmless in a build
+ * without OpenColorIO. Call sites that need the OCIO-typed API are themselves
+ * guarded and fall back to the built-in engine.
  */
+
+#include "node/color/colormanager/colormanager.h"
+#include "render/colorprocessor.h"
+
+#ifdef OLIVE_ENABLE_OCIO
 
 #include <QString>
 #include <QStringList>
 
 #include <OpenColorIO/OpenColorIO.h>
 namespace OCIO = OCIO_NAMESPACE;
-
-#include "node/color/colormanager/colormanager.h"
-#include "render/colorprocessor.h"
 
 namespace olive {
 
@@ -70,5 +77,7 @@ struct ColorProcessorOCIO
 };
 
 }
+
+#endif // OLIVE_ENABLE_OCIO
 
 #endif // OCIOBRIDGE_H

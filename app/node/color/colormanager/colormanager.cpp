@@ -20,9 +20,6 @@
 
 #include "colormanager.h"
 
-#include <OpenColorIO/OpenColorIO.h>
-namespace OCIO = OCIO_NAMESPACE;
-
 #include <QDir>
 #include <QStandardPaths>
 
@@ -33,9 +30,16 @@ namespace OCIO = OCIO_NAMESPACE;
 #include "config/config.h"
 #include "core.h"
 
+#ifdef OLIVE_ENABLE_OCIO
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+#endif
+
 namespace olive {
 
 #define super Node
+
+#ifdef OLIVE_ENABLE_OCIO
 
 // Patch 0037: the OCIO config moved into an opaque Impl so the public header
 // stays free of OpenColorIO. The process-wide default config lives here instead
@@ -281,5 +285,200 @@ QStringList ColorManagerOCIO::ListAvailableColorspaces(OCIO::ConstConfigRcPtr co
 
   return spaces;
 }
+
+#else // OLIVE_ENABLE_OCIO
+
+// ============================================================================
+// Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
+//
+// Without OCIO there is no external config, so the manager reports a fixed set
+// of colour spaces / displays / views. The colour space names deliberately match
+// the ones the bundled config.ocio defines (and that the project serializers
+// decode legacy files into), so old .ove projects still resolve.
+// ============================================================================
+
+namespace {
+
+const QStringList kBuiltinColorspaces = {
+  QStringLiteral("Linear"),
+  QStringLiteral("Filmic Log Encoding"),
+  QStringLiteral("sRGB OETF"),
+  QStringLiteral("Apple DCI-P3 D65"),
+  QStringLiteral("AppleP3 sRGB OETF"),
+  QStringLiteral("BT.1886 EOTF"),
+  QStringLiteral("AppleP3 Filmic Log Encoding"),
+  QStringLiteral("BT.1886 Filmic Log Encoding"),
+  QStringLiteral("Fuji F-Log OETF"),
+  QStringLiteral("Fuji F-Log F-Gamut"),
+  QStringLiteral("Panasonic V-Log V-Gamut"),
+  QStringLiteral("Arri Wide Gamut / LogC EI 800"),
+  QStringLiteral("Arri Wide Gamut / LogC EI 400"),
+  QStringLiteral("Blackmagic Film Wide Gamut (Gen 5)"),
+  QStringLiteral("Rec.709 OETF"),
+  QStringLiteral("Rec.2020 HLG"),
+  QStringLiteral("Rec.2020 PQ"),
+  QStringLiteral("Non-Colour Data"),
+};
+
+const QStringList kBuiltinViews = {
+  QStringLiteral("sRGB OETF"),
+  QStringLiteral("Non-Colour Data"),
+  QStringLiteral("Linear Raw"),
+  QStringLiteral("Filmic Log Encoding"),
+};
+
+}
+
+struct ColorManager::Impl
+{
+};
+
+ColorManager::ColorManager(Project *project) :
+  QObject(project),
+  impl_(std::make_unique<Impl>())
+{
+}
+
+ColorManager::~ColorManager() = default;
+
+void ColorManager::Init()
+{
+  // Without a config there is no role to resolve, so seed the project with the
+  // built-in defaults. These mirror the bundled config's roles: the `default`
+  // role points at Rec.709 OETF and `scene_linear` at Linear.
+  SetDefaultInputColorSpace(QStringLiteral("Rec.709 OETF"));
+  project()->SetColorReferenceSpace(OCIOUtils::kReferenceSpaceSceneLinear);
+}
+
+QString ColorManager::GetConfigFilename() const
+{
+  return project()->GetColorConfigFilename();
+}
+
+void ColorManager::SetUpDefaultConfig()
+{
+  // The built-in engine has no external configuration to load.
+}
+
+void ColorManager::SetConfigFilename(const QString &filename)
+{
+  project()->SetColorConfigFilename(filename);
+}
+
+QStringList ColorManager::ListAvailableDisplays()
+{
+  return { QStringLiteral("sRGB") };
+}
+
+QString ColorManager::GetDefaultDisplay()
+{
+  return QStringLiteral("sRGB");
+}
+
+QStringList ColorManager::ListAvailableViews(QString display)
+{
+  Q_UNUSED(display);
+  return kBuiltinViews;
+}
+
+QString ColorManager::GetDefaultView(const QString &display)
+{
+  Q_UNUSED(display);
+  return QStringLiteral("sRGB OETF");
+}
+
+QStringList ColorManager::ListAvailableLooks()
+{
+  return {};
+}
+
+QStringList ColorManager::ListAvailableColorspaces() const
+{
+  return kBuiltinColorspaces;
+}
+
+QString ColorManager::GetDefaultInputColorSpace() const
+{
+  return project()->GetDefaultInputColorSpace();
+}
+
+void ColorManager::SetDefaultInputColorSpace(const QString &s)
+{
+  project()->SetDefaultInputColorSpace(s);
+}
+
+QString ColorManager::GetReferenceColorSpace() const
+{
+  return project()->GetColorReferenceSpace();
+}
+
+QString ColorManager::GetCompliantColorSpace(const QString &s)
+{
+  if (ListAvailableColorspaces().contains(s)) {
+    return s;
+  } else {
+    return GetDefaultInputColorSpace();
+  }
+}
+
+ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transform, bool force_display)
+{
+  if (transform.is_display() || force_display) {
+    // Get display information
+    QString display = transform.display();
+    QString view = transform.view();
+    QString look = transform.look();
+
+    // Check if display still exists in config
+    if (!ListAvailableDisplays().contains(display)) {
+      display = GetDefaultDisplay();
+    }
+
+    // Check if view still exists in display
+    if (!ListAvailableViews(display).contains(view)) {
+      view = GetDefaultView(display);
+    }
+
+    // Check if looks still exists
+    if (!ListAvailableLooks().contains(look)) {
+      look.clear();
+    }
+
+    return ColorTransform(display, view, look);
+
+  } else {
+
+    QString output = transform.output();
+
+    if (!ListAvailableColorspaces().contains(output)) {
+      output = GetDefaultInputColorSpace();
+    }
+
+    return ColorTransform(output);
+
+  }
+}
+
+void ColorManager::GetDefaultLumaCoefs(double *rgb) const
+{
+  // Rec.709 / sRGB luma coefficients, matching the bundled config.
+  rgb[0] = 0.2126;
+  rgb[1] = 0.7152;
+  rgb[2] = 0.0722;
+}
+
+Project *ColorManager::project() const
+{
+  return static_cast<Project*>(parent());
+}
+
+void ColorManager::UpdateConfigFromFilename()
+{
+  // The built-in engine has no config file to reload, but the project may still
+  // reference one; re-broadcast so dependent nodes refresh.
+  emit ConfigChanged(GetConfigFilename());
+}
+
+#endif // OLIVE_ENABLE_OCIO
 
 }
