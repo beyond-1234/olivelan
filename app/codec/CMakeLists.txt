@@ -16,7 +16,6 @@
 
 add_subdirectory(ffmpeg)
 add_subdirectory(hal)
-add_subdirectory(oiio)
 
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}

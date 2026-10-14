@@ -32,7 +32,6 @@
 
 #include "codec/frame.h"
 #include "common/filefunctions.h"
-#include "common/oiioutils.h"
 #include "render/diskmanager.h"
 
 namespace olive {

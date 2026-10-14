@@ -24,7 +24,6 @@
 
 #include "common/xmlutils.h"
 #include "ffmpeg/ffmpegencoder.h"
-#include "oiio/oiioencoder.h"
 
 namespace olive {
 
@@ -288,8 +287,6 @@ Encoder* Encoder::CreateFromID(Type id, const EncodingParams& params)
     break;
   case kEncoderTypeFFmpeg:
     return new FFmpegEncoder(params);
-  case kEncoderTypeOIIO:
-    return new OIIOEncoder(params);
   }
 
   return nullptr;

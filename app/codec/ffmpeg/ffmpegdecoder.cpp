@@ -32,7 +32,6 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
-#include <OpenImageIO/imagebuf.h>
 #include <QDateTime>
 #include <QDebug>
 #include <QFile>

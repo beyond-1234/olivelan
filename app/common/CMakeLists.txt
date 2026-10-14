@@ -39,8 +39,6 @@ set(OLIVE_SOURCES
   common/memorypool.h
   common/ocioutils.cpp
   common/ocioutils.h
-  common/oiioutils.cpp
-  common/oiioutils.h
   common/otioutils.h
   common/qtutils.cpp
   common/qtutils.h

@@ -182,8 +182,7 @@ public:
 
   enum Type {
     kEncoderTypeNone = -1,
-    kEncoderTypeFFmpeg,
-    kEncoderTypeOIIO
+    kEncoderTypeFFmpeg
   };
 
   /**

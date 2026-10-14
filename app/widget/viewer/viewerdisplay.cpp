@@ -20,7 +20,6 @@
 
 #include "viewerdisplay.h"
 
-#include <OpenImageIO/imagebuf.h>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QFileInfo>
