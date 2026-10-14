@@ -69,6 +69,7 @@ function(olive_add_test GROUP NAME SOURCE)
 endif()
 endfunction()
 
+add_subdirectory(codec)
 add_subdirectory(compositing)
 add_subdirectory(general)
 add_subdirectory(timeline)
