@@ -141,6 +141,7 @@ private:
     cudaGraphicsResource_t cuda_resource = nullptr;
     int width = 0;
     int height = 0;
+    PixelFormat format = PixelFormat::U8;
     bool in_use = false;
   };
 
@@ -157,8 +158,8 @@ private:
   int cuda_returned_count_ = 0;
   int cuda_in_use_count_ = 0;
 
-  int AcquireCudaPoolSlot(int width, int height);
-  bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height);
+  int AcquireCudaPoolSlot(int width, int height, PixelFormat format);
+  bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format);
   void ReleaseCudaPoolSlot(int slot_index);
   bool ReleaseCudaPoolTexture(GLuint tid);
   void DestroyCudaFramePool();

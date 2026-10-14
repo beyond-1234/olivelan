@@ -307,7 +307,7 @@ void OpenGLRenderer::DestroyTexture(Texture *texture)
 }
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
+int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height, PixelFormat format)
 {
   QMutexLocker locker(&cuda_pool_mutex_);
 
@@ -316,10 +316,11 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
     return -1;
   }
 
-  // 1. Exact match pass: find a free slot with identical resolution
+  // 1. Exact match pass: find a free slot with identical resolution *and* precision
   for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
     auto &slot = cuda_frame_pool_[i];
-    if (!slot.in_use && slot.width == width && slot.height == height && slot.gl_tex_id != 0 && slot.cuda_resource != nullptr) {
+    if (!slot.in_use && slot.width == width && slot.height == height && slot.format == format
+        && slot.gl_tex_id != 0 && slot.cuda_resource != nullptr) {
       if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
         return -1;
       }
@@ -331,7 +332,7 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
   for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
     auto &slot = cuda_frame_pool_[i];
     if (!slot.in_use) {
-      if (!AllocateOrResizePoolSlot(slot, width, height)) {
+      if (!AllocateOrResizePoolSlot(slot, width, height, format)) {
         return -1;
       }
       if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
@@ -344,7 +345,7 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
   // 3. Growth pass: append a new slot if under capacity
   if (static_cast<int>(cuda_frame_pool_.size()) < kCudaFramePoolCapacity) {
     CudaGLPoolSlot new_slot;
-    if (AllocateOrResizePoolSlot(new_slot, width, height)) {
+    if (AllocateOrResizePoolSlot(new_slot, width, height, format)) {
       cuda_frame_pool_.push_back(new_slot);
       int new_index = static_cast<int>(cuda_frame_pool_.size() - 1);
       if (!MarkCudaSlotBorrowed(new_index)) {
@@ -358,7 +359,7 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height)
   return -1;
 }
 
-bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height)
+bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format)
 {
   if (slot.cuda_resource) {
     cudaGraphicsUnregisterResource(slot.cuda_resource);
@@ -369,13 +370,22 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
     slot.gl_tex_id = 0;
   }
 
+  // Patch 0027: 8-bit SDR streams keep the cheap GL_RGBA8 slot; 10-bit (P010) streams are
+  // promoted to GL_RGBA16F so the extra two bits survive instead of being truncated.
+  GLint internal_format = GL_RGBA8;
+  GLenum upload_type = GL_UNSIGNED_BYTE;
+  if (format == PixelFormat::F16 || format == PixelFormat::F32) {
+    internal_format = GL_RGBA16F;
+    upload_type = GL_HALF_FLOAT;
+  }
+
   functions_->glGenTextures(1, &slot.gl_tex_id);
   functions_->glBindTexture(GL_TEXTURE_2D, slot.gl_tex_id);
   functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  functions_->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  functions_->glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
   functions_->glBindTexture(GL_TEXTURE_2D, 0);
 
   const cudaError_t reg_err = cudaGraphicsGLRegisterImage(&slot.cuda_resource,
@@ -393,6 +403,7 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
 
   slot.width = width;
   slot.height = height;
+  slot.format = format;
   return true;
 }
 
@@ -519,7 +530,12 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
     return nullptr;
   }
 
-  const int slot_index = AcquireCudaPoolSlot(frame->width, frame->height);
+  // Patch 0027: 10-bit P010 sources get a GL_RGBA16F slot and the full-precision kernel so
+  // the two extra bits are preserved instead of being truncated at the kernel exit.
+  const bool is_10bit = (frames_context->sw_format == AV_PIX_FMT_P010);
+  const PixelFormat slot_format = is_10bit ? PixelFormat::F16 : PixelFormat::U8;
+
+  const int slot_index = AcquireCudaPoolSlot(frame->width, frame->height, slot_format);
   if (slot_index < 0) {
     return nullptr;
   }
@@ -545,16 +561,16 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   }
 
   if (error == cudaSuccess) {
-    if (frames_context->sw_format == AV_PIX_FMT_P010) {
-      error = OliveLaunchP010ToRgbaSurface(reinterpret_cast<const uint16_t*>(frame->data[0]),
-                                           frame->linesize[0],
-                                           reinterpret_cast<const uint16_t*>(frame->data[1]),
-                                           frame->linesize[1],
-                                           surface,
-                                           frame->width,
-                                           frame->height,
-                                           frame->colorspace,
-                                           frame->color_range == AVCOL_RANGE_JPEG);
+    if (is_10bit) {
+      error = OliveLaunchP010ToRgba16fSurface(reinterpret_cast<const uint16_t*>(frame->data[0]),
+                                              frame->linesize[0],
+                                              reinterpret_cast<const uint16_t*>(frame->data[1]),
+                                              frame->linesize[1],
+                                              surface,
+                                              frame->width,
+                                              frame->height,
+                                              frame->colorspace,
+                                              frame->color_range == AVCOL_RANGE_JPEG);
     } else {
       error = OliveLaunchNv12ToRgbaSurface(frame->data[0],
                                            frame->linesize[0],
@@ -585,7 +601,11 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   }
 
   // Return Texture with this as renderer so IsDummy() is false and Texture::~Texture() routes to DestroyTexture
-  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), params);
+  VideoParams texture_params = params;
+  if (is_10bit) {
+    texture_params.set_format(PixelFormat::F16);
+  }
+  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), texture_params);
 }
 #endif
 

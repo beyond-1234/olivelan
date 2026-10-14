@@ -29,4 +29,18 @@ cudaError_t OliveLaunchP010ToRgbaSurface(const uint16_t *y_plane,
                                          int dst_x = 0,
                                          int dst_y = 0);
 
+// Patch 0027: full-precision 10-bit conversion writing IEEE-754 binary16 RGBA into a
+// GL_RGBA16F surface (no 8-bit truncation at the kernel exit).
+cudaError_t OliveLaunchP010ToRgba16fSurface(const uint16_t *y_plane,
+                                            int y_pitch_bytes,
+                                            const uint16_t *uv_plane,
+                                            int uv_pitch_bytes,
+                                            cudaSurfaceObject_t output_surface,
+                                            int width,
+                                            int height,
+                                            int color_space,
+                                            bool full_range,
+                                            int dst_x = 0,
+                                            int dst_y = 0);
+
 #endif

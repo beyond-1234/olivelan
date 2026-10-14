@@ -1,5 +1,7 @@
 #include "cuda_nv12_to_rgba.h"
 
+#include <cuda_fp16.h>
+
 extern "C" {
 #include <libavutil/pixfmt.h>
 }
@@ -9,6 +11,13 @@ namespace {
 __device__ __forceinline__ unsigned char ClampByte(float value)
 {
   return static_cast<unsigned char>(fminf(fmaxf(value, 0.0f), 255.0f));
+}
+
+// Pack a normalised [0,1] float into the exact IEEE-754 binary16 bit pattern a
+// GL_RGBA16F surface expects.
+__device__ __forceinline__ unsigned short ClampHalfBits(float value)
+{
+  return __half_as_ushort(__float2half_rn(fminf(fmaxf(value, 0.0f), 1.0f)));
 }
 
 __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
@@ -84,27 +93,21 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
   surf2Dwrite(rgba, output_surface, write_x * sizeof(uchar4), write_y);
 }
 
-__global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
-                                        int y_pitch_bytes,
-                                        const uint16_t *uv_plane,
-                                        int uv_pitch_bytes,
-                                        cudaSurfaceObject_t output_surface,
-                                        int width,
-                                        int height,
-                                        int color_space,
-                                        bool full_range,
-                                        int dst_x,
-                                        int dst_y)
+// Shared 10-bit (P010) YUV -> RGB evaluation. The RGBA8 and RGBA16F kernels both
+// route through this single definition so the colour math can never drift between
+// them. Returns RGB scaled to the 0..255 range; the 16F kernel normalises below.
+__device__ __forceinline__ void P010SampleToRgb(const uint16_t *y_plane,
+                                                int y_stride,
+                                                const uint16_t *uv_plane,
+                                                int uv_stride,
+                                                int x,
+                                                int y,
+                                                int color_space,
+                                                bool full_range,
+                                                float &red,
+                                                float &green,
+                                                float &blue)
 {
-  const int x = blockIdx.x * blockDim.x + threadIdx.x;
-  const int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
-    return;
-  }
-
-  const int y_stride = y_pitch_bytes / sizeof(uint16_t);
-  const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
-
   // In P010, the 10-bit sample is MSB-aligned in a 16-bit container
   const float sample_y = static_cast<float>(y_plane[y * y_stride + x] >> 6);
 
@@ -152,14 +155,82 @@ __global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
     blue_u = 1.772f;
   }
 
-  const float red = y_norm + red_v * v_norm;
-  const float green = y_norm - green_u * u_norm - green_v * v_norm;
-  const float blue = y_norm + blue_u * u_norm;
+  red = y_norm + red_v * v_norm;
+  green = y_norm - green_u * u_norm - green_v * v_norm;
+  blue = y_norm + blue_u * u_norm;
+}
+
+__global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
+                                        int y_pitch_bytes,
+                                        const uint16_t *uv_plane,
+                                        int uv_pitch_bytes,
+                                        cudaSurfaceObject_t output_surface,
+                                        int width,
+                                        int height,
+                                        int color_space,
+                                        bool full_range,
+                                        int dst_x,
+                                        int dst_y)
+{
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= width || y >= height) {
+    return;
+  }
+
+  const int y_stride = y_pitch_bytes / sizeof(uint16_t);
+  const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
+
+  float red;
+  float green;
+  float blue;
+  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, x, y, color_space, full_range, red, green, blue);
+
   const uchar4 rgba = make_uchar4(ClampByte(red), ClampByte(green), ClampByte(blue), 255);
 
   const int write_x = dst_x + x;
   const int write_y = dst_y + y;
   surf2Dwrite(rgba, output_surface, write_x * sizeof(uchar4), write_y);
+}
+
+// Full-precision variant (patch 0027): writes IEEE-754 binary16 RGBA to a GL_RGBA16F
+// surface, preserving the full 10-bit input precision that the RGBA8 kernel truncates
+// to 8 bits. Values are normalised to [0,1] as GL expects for floating-point colour.
+__global__ void P010ToRgba16fSurfaceKernel(const uint16_t *y_plane,
+                                           int y_pitch_bytes,
+                                           const uint16_t *uv_plane,
+                                           int uv_pitch_bytes,
+                                           cudaSurfaceObject_t output_surface,
+                                           int width,
+                                           int height,
+                                           int color_space,
+                                           bool full_range,
+                                           int dst_x,
+                                           int dst_y)
+{
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= width || y >= height) {
+    return;
+  }
+
+  const int y_stride = y_pitch_bytes / sizeof(uint16_t);
+  const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
+
+  float red;
+  float green;
+  float blue;
+  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, x, y, color_space, full_range, red, green, blue);
+
+  const float normalise = 1.0f / 255.0f;
+  const ushort4 rgba = make_ushort4(ClampHalfBits(red * normalise),
+                                    ClampHalfBits(green * normalise),
+                                    ClampHalfBits(blue * normalise),
+                                    __half_as_ushort(__float2half_rn(1.0f)));
+
+  const int write_x = dst_x + x;
+  const int write_y = dst_y + y;
+  surf2Dwrite(rgba, output_surface, write_x * sizeof(ushort4), write_y);
 }
 
 }
@@ -227,5 +298,38 @@ cudaError_t OliveLaunchP010ToRgbaSurface(const uint16_t *y_plane,
                                                full_range,
                                                dst_x,
                                                dst_y);
+  return cudaGetLastError();
+}
+
+cudaError_t OliveLaunchP010ToRgba16fSurface(const uint16_t *y_plane,
+                                            int y_pitch_bytes,
+                                            const uint16_t *uv_plane,
+                                            int uv_pitch_bytes,
+                                            cudaSurfaceObject_t output_surface,
+                                            int width,
+                                            int height,
+                                            int color_space,
+                                            bool full_range,
+                                            int dst_x,
+                                            int dst_y)
+{
+  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
+    return cudaErrorInvalidValue;
+  }
+
+  const dim3 threads(16, 16);
+  const dim3 blocks((width + threads.x - 1) / threads.x,
+                    (height + threads.y - 1) / threads.y);
+  P010ToRgba16fSurfaceKernel<<<blocks, threads>>>(y_plane,
+                                                  y_pitch_bytes,
+                                                  uv_plane,
+                                                  uv_pitch_bytes,
+                                                  output_surface,
+                                                  width,
+                                                  height,
+                                                  color_space,
+                                                  full_range,
+                                                  dst_x,
+                                                  dst_y);
   return cudaGetLastError();
 }
