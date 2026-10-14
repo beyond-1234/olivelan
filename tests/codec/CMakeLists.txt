@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 olive_add_test(Codec color-golden-tests color-golden-tests.cpp)
+olive_add_test(Codec image-export-tests image-export-tests.cpp)
 
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.

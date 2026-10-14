@@ -107,10 +107,39 @@ bool FFmpegEncoder::Open()
     return true;
   }
 
+  // Stills / image sequences write one file per frame, each opened and closed
+  // inside WriteFrame(); there is nothing to prepare up front.
+  if (IsWritingImages()) {
+    open_ = true;
+    return true;
+  }
+
+  return OpenInternal();
+}
+
+bool FFmpegEncoder::IsWritingImages() const
+{
+  if (params().video_is_image_sequence()) {
+    return true;
+  }
+
+  switch (params().format()) {
+  case ExportFormat::kFormatOpenEXR:
+  case ExportFormat::kFormatPNG:
+  case ExportFormat::kFormatTIFF:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool FFmpegEncoder::OpenInternal()
+{
   int error_code;
 
-  // Convert QString to C string that FFmpeg expects
-  QByteArray filename_bytes = params().filename().toUtf8();
+  // Convert QString to C string that FFmpeg expects. When writing stills each
+  // frame has its own filename.
+  QByteArray filename_bytes = (output_filename_.isEmpty() ? params().filename() : output_filename_).toUtf8();
   const char* filename_c_str = filename_bytes.constData();
 
   // Create output format context
@@ -120,6 +149,13 @@ bool FFmpegEncoder::Open()
   if (error_code < 0) {
     FFmpegError(tr("Failed to allocate output context"), error_code);
     return false;
+  }
+
+  if (IsWritingImages()) {
+    // image2 warns (and declines to overwrite) when the filename has no %d
+    // pattern. We deliberately write exactly one frame per file, so tell it to
+    // update in place.
+    av_opt_set(fmt_ctx_->priv_data, "update", "1", AV_OPT_SEARCH_CHILDREN);
   }
 
   // Initialize a video stream if it's enabled
@@ -218,7 +254,9 @@ bool FFmpegEncoder::Open()
     }
   }
 
-  av_dump_format(fmt_ctx_, 0, filename_c_str, 1);
+  if (!IsWritingImages()) {
+    av_dump_format(fmt_ctx_, 0, filename_c_str, 1);
+  }
 
   // Open output file for writing
   error_code = avio_open(&fmt_ctx_->pb, filename_c_str, AVIO_FLAG_WRITE);
@@ -239,6 +277,30 @@ bool FFmpegEncoder::Open()
 }
 
 bool FFmpegEncoder::WriteFrame(FramePtr frame, rational time)
+{
+  if (IsWritingImages()) {
+    // One file per frame: resolve the concrete filename (the Encoder base class
+    // substitutes the [####] placeholder), then run a full open/encode/close
+    // cycle for just this frame.
+    output_filename_ = GetFilenameForFrame(time);
+
+    if (!OpenInternal()) {
+      output_filename_.clear();
+      return false;
+    }
+
+    const bool ok = WriteMovieFrame(frame, time);
+
+    Close();
+    output_filename_.clear();
+
+    return ok;
+  }
+
+  return WriteMovieFrame(frame, time);
+}
+
+bool FFmpegEncoder::WriteMovieFrame(FramePtr frame, rational time)
 {
   // We may need to convert this frame to a frame that swscale will understand
   if (frame->format() != video_conversion_fmt_) {

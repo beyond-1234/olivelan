@@ -314,7 +314,9 @@ Encoder::Type Encoder::GetTypeFromFormat(ExportFormat::Format f)
   case ExportFormat::kFormatOpenEXR:
   case ExportFormat::kFormatPNG:
   case ExportFormat::kFormatTIFF:
-    return kEncoderTypeOIIO;
+    // Patch 0032: route still images and image sequences through FFmpegEncoder,
+    // which now writes one file per frame, instead of the OIIO encoder.
+    return kEncoderTypeFFmpeg;
   case ExportFormat::kFormatCount:
     break;
   }

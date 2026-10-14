@@ -73,6 +73,18 @@ private:
 
   bool WriteAVFrame(AVFrame* frame, AVCodecContext *codec_ctx, AVStream *stream);
 
+  /**
+   * @brief True when this encoder writes one file per frame (stills / image
+   * sequences) rather than a single container file.
+   */
+  bool IsWritingImages() const;
+
+  /// The main Open() body that actually builds the muxer.
+  bool OpenInternal();
+
+  /// The movie path: encode one frame into the already-open container.
+  bool WriteMovieFrame(olive::FramePtr frame, olive::core::rational time);
+
   bool InitializeStream(enum AVMediaType type, AVStream** stream, AVCodecContext** codec_ctx, const ExportCodec::Codec &codec);
   bool InitializeCodecContext(AVStream** stream, AVCodecContext** codec_ctx, const AVCodec* codec);
   bool SetupCodecContext(AVStream *stream, AVCodecContext *codec_ctx, const AVCodec *codec);
@@ -105,6 +117,12 @@ private:
   AVCodecContext* subtitle_codec_ctx_;
 
   bool open_;
+
+  /**
+   * @brief Set only when writing stills / image sequences, where each frame is
+   * its own file. Empty for normal single-container movie output.
+   */
+  QString output_filename_;
 
 };
 
