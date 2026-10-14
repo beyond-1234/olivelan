@@ -51,6 +51,48 @@ public:
     kColorRangeDefault = kColorRangeLimited
   };
 
+  /**
+   * @brief Patch 0042 (Phase 8): container colour metadata.
+   *
+   * These mirror the colour description FFmpeg stores in the container
+   * (AVColorPrimaries / AVColorTransferCharacteristic / AVColorSpace). VideoParams
+   * deliberately does not include FFmpeg headers, so the values travel as plain
+   * ints holding the FFmpeg constants - they are part of FFmpeg's stable ABI and
+   * are exactly what gets serialised into the project file.
+   *
+   * NOTE: color_space() is the container's YUV matrix coefficients, which is NOT
+   * the same thing as colorspace(). The latter holds the *name* of the colour
+   * space ("Rec.709 OETF", "Rec.2020 HLG", ...) that the colour manager works in.
+   */
+  enum ContainerColorPrimaries
+  {
+    kColorPrimariesUnspecified = 2, // AVCOL_PRI_UNSPECIFIED
+    kColorPrimariesBt709 = 1,       // AVCOL_PRI_BT709
+    kColorPrimariesBt2020 = 9,      // AVCOL_PRI_BT2020
+
+    kColorPrimariesDefault = kColorPrimariesUnspecified
+  };
+
+  enum ContainerTransferCharacteristic
+  {
+    kTransferUnspecified = 2, // AVCOL_TRC_UNSPECIFIED
+    kTransferBt709 = 1,       // AVCOL_TRC_BT709
+    kTransferSmpte2084 = 16,  // AVCOL_TRC_SMPTE2084 (PQ / HDR10)
+    kTransferAribStdB67 = 18, // AVCOL_TRC_ARIB_STD_B67 (HLG)
+
+    kTransferDefault = kTransferUnspecified
+  };
+
+  enum ContainerColorSpace
+  {
+    kColorSpaceUnspecified = 2, // AVCOL_SPC_UNSPECIFIED
+    kColorSpaceBt709 = 1,       // AVCOL_SPC_BT709
+    kColorSpaceBt2020Ncl = 9,   // AVCOL_SPC_BT2020_NCL
+    kColorSpaceBt2020Cl = 10,   // AVCOL_SPC_BT2020_CL
+
+    kColorSpaceDefault = kColorSpaceUnspecified
+  };
+
 
   VideoParams();
   VideoParams(int width, int height, PixelFormat format, int nb_channels,
@@ -365,6 +407,53 @@ public:
   const ColorRange &color_range() const { return color_range_; }
   void set_color_range(const ColorRange &color_range) { color_range_ = color_range; }
 
+  int color_primaries() const { return color_primaries_; }
+  void set_color_primaries(int primaries) { color_primaries_ = primaries; }
+
+  int color_trc() const { return color_trc_; }
+  void set_color_trc(int trc) { color_trc_ = trc; }
+
+  int color_space() const { return color_space_; }
+  void set_color_space(int color_space) { color_space_ = color_space; }
+
+  /**
+   * @brief Peak luminance of the mastering display in cd/m2, or 0 when unknown.
+   *
+   * Populated from the container's mastering-display metadata when present. It
+   * doubles as the manual fallback control ("HDR Peak Nits") for streams whose
+   * container carries no metadata.
+   */
+  double mastering_peak_nits() const { return mastering_peak_nits_; }
+  void set_mastering_peak_nits(double nits) { mastering_peak_nits_ = nits; }
+
+  /**
+   * @brief True when the stream carries HDR content that needs display mapping.
+   *
+   * Mirrors GpuEnvironmentProbe::NeedsToneMapping() so the CPU-side decision and
+   * the GPU probe agree on a single rule: PQ, HLG, or a BT.2020 matrix.
+   */
+  bool needs_hdr_mapping() const;
+
+  /**
+   * @brief Map a container transfer characteristic to the built-in colour
+   *        engine's HDR input colour space name.
+   *
+   * Returns "Rec.2020 PQ" / "Rec.2020 HLG" for PQ / HLG, and an empty string for
+   * everything else - in which case the stream keeps whatever colour space the
+   * project or the user already assigned.
+   */
+  static QString GetHdrColorSpaceForTransfer(int trc);
+
+  /**
+   * @brief Convert a mastering-display max-luminance value to cd/m2 (nits).
+   *
+   * ISO 14496-12 stores the field in units of 0.0001 cd/m2, but FFmpeg
+   * normalises it while demuxing into a rational whose quotient already *is* the
+   * luminance in cd/m2. A degenerate (den == 0) rational means "unknown" and is
+   * reported as 0.
+   */
+  static double MasteringDisplayMaxLuminanceToNits(int64_t num, int64_t den);
+
   int64_t get_time_in_timebase_units(const rational& time) const;
 
   void Load(QXmlStreamReader* reader);
@@ -413,6 +502,10 @@ private:
   float x_;
   float y_;
   ColorRange color_range_;
+  int color_primaries_;
+  int color_trc_;
+  int color_space_;
+  double mastering_peak_nits_;
 
 };
 

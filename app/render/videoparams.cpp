@@ -272,6 +272,10 @@ void VideoParams::set_defaults_for_footage()
   x_ = 0;
   y_ = 0;
   color_range_ = kColorRangeDefault;
+  color_primaries_ = kColorPrimariesDefault;
+  color_trc_ = kTransferDefault;
+  color_space_ = kColorSpaceDefault;
+  mastering_peak_nits_ = 0.0;
 }
 
 void VideoParams::calculate_square_pixel_width()
@@ -335,6 +339,41 @@ int64_t VideoParams::get_time_in_timebase_units(const rational &time) const
   return Timecode::time_to_timestamp(time, time_base_) + start_time_;
 }
 
+bool VideoParams::needs_hdr_mapping() const
+{
+  // Deliberately mirrors GpuEnvironmentProbe::NeedsToneMapping() so the CPU-side
+  // footage decision and the GPU environment probe cannot drift apart.
+  return color_trc_ == kTransferSmpte2084
+      || color_trc_ == kTransferAribStdB67
+      || color_space_ == kColorSpaceBt2020Ncl
+      || color_space_ == kColorSpaceBt2020Cl;
+}
+
+QString VideoParams::GetHdrColorSpaceForTransfer(int trc)
+{
+  // Only the transfer characteristic drives the default: a BT.2020 matrix with an
+  // SDR transfer curve is still an SDR deliverable and keeps the project default.
+  switch (trc) {
+  case kTransferSmpte2084:
+    return QStringLiteral("Rec.2020 PQ");
+  case kTransferAribStdB67:
+    return QStringLiteral("Rec.2020 HLG");
+  default:
+    break;
+  }
+
+  return QString();
+}
+
+double VideoParams::MasteringDisplayMaxLuminanceToNits(int64_t num, int64_t den)
+{
+  if (den == 0) {
+    return 0.0;
+  }
+
+  return double(num) / double(den);
+}
+
 void VideoParams::Load(QXmlStreamReader *reader)
 {
   while (XMLReadNextStartElement(reader)) {
@@ -378,6 +417,14 @@ void VideoParams::Load(QXmlStreamReader *reader)
       set_colorspace(reader->readElementText());
     } else if (reader->name() == QStringLiteral("colorrange")) {
       set_color_range(static_cast<ColorRange>(reader->readElementText().toInt()));
+    } else if (reader->name() == QStringLiteral("colorprimaries")) {
+      set_color_primaries(reader->readElementText().toInt());
+    } else if (reader->name() == QStringLiteral("colortransfer")) {
+      set_color_trc(reader->readElementText().toInt());
+    } else if (reader->name() == QStringLiteral("colormatrix")) {
+      set_color_space(reader->readElementText().toInt());
+    } else if (reader->name() == QStringLiteral("masteringpeaknits")) {
+      set_mastering_peak_nits(reader->readElementText().toDouble());
     } else {
       reader->skipCurrentElement();
     }
@@ -406,6 +453,10 @@ void VideoParams::Save(QXmlStreamWriter *writer) const
   writer->writeTextElement(QStringLiteral("premultipliedalpha"), QString::number(premultiplied_alpha_));
   writer->writeTextElement(QStringLiteral("colorspace"), colorspace_);
   writer->writeTextElement(QStringLiteral("colorrange"), QString::number(color_range_));
+  writer->writeTextElement(QStringLiteral("colorprimaries"), QString::number(color_primaries_));
+  writer->writeTextElement(QStringLiteral("colortransfer"), QString::number(color_trc_));
+  writer->writeTextElement(QStringLiteral("colormatrix"), QString::number(color_space_));
+  writer->writeTextElement(QStringLiteral("masteringpeaknits"), QString::number(mastering_peak_nits_));
 }
 
 }

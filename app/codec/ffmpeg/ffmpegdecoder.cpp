@@ -28,6 +28,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
@@ -54,6 +55,38 @@ namespace olive {
 
 QVariant Yuv2RgbShader;
 QVariant DeinterlaceShader;
+
+namespace {
+
+/**
+ * @brief Patch 0042 (Phase 8): peak luminance of the mastering display, in cd/m2.
+ *
+ * FFmpeg 6.1 exposes per-stream side data through AVCodecParameters; the older
+ * AVStream::side_data array is deprecated. Returns 0 when the container carries
+ * no (or incomplete) mastering-display metadata, which the caller surfaces as
+ * "unknown" and which the "HDR Peak Nits" footage control can then override.
+ */
+double GetMasteringPeakNits(const AVCodecParameters *codecpar)
+{
+  for (int i = 0; i < codecpar->nb_coded_side_data; i++) {
+    const AVPacketSideData &sd = codecpar->coded_side_data[i];
+
+    if (sd.type == AV_PKT_DATA_MASTERING_DISPLAY_METADATA
+        && sd.size >= int(sizeof(AVMasteringDisplayMetadata))) {
+      const AVMasteringDisplayMetadata *md =
+          reinterpret_cast<const AVMasteringDisplayMetadata *>(sd.data);
+
+      if (md->has_luminance) {
+        return VideoParams::MasteringDisplayMaxLuminanceToNits(md->max_luminance.num,
+                                                              md->max_luminance.den);
+      }
+    }
+  }
+
+  return 0.0;
+}
+
+} // namespace
 
 FFmpegDecoder::FFmpegDecoder() :
   sws_ctx_(nullptr),
@@ -510,6 +543,24 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
           stream.set_time_base(avstream->time_base);
           stream.set_duration(avstream->duration);
           stream.set_color_range(avstream->codecpar->color_range == AVCOL_RANGE_JPEG ? VideoParams::kColorRangeFull : VideoParams::kColorRangeLimited);
+
+          // Patch 0042: carry the container's colour description through to the
+          // renderer. The transfer characteristic drives the HDR decision, and an
+          // HDR stream defaults its input colour space to the matching Rec.2020
+          // space rather than silently riding the (SDR) project default. An empty
+          // result leaves colorspace() empty, which Footage resolves to the
+          // project default as before.
+          stream.set_color_primaries(avstream->codecpar->color_primaries);
+          stream.set_color_trc(avstream->codecpar->color_trc);
+          // NB: AVCodecParameters spells this one `color_space`, unlike
+          // AVCodecContext's older `colorspace`.
+          stream.set_color_space(avstream->codecpar->color_space);
+          stream.set_mastering_peak_nits(GetMasteringPeakNits(avstream->codecpar));
+
+          const QString hdr_colorspace = VideoParams::GetHdrColorSpaceForTransfer(avstream->codecpar->color_trc);
+          if (!hdr_colorspace.isEmpty()) {
+            stream.set_colorspace(hdr_colorspace);
+          }
 
           // Defaults to false, requires user intervention if incorrect
           stream.set_premultiplied_alpha(false);

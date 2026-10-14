@@ -20,6 +20,7 @@
 
 #include "colorprocessor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -176,19 +177,36 @@ OCIO::ConstProcessorRcPtr ColorProcessorOCIO::GetProcessor(const ColorProcessor 
 // ============================================================================
 // Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
 //
-// This is the first, deliberately narrow, step of the built-in engine. It
-// implements a single ingest -> working (scene-linear) -> display transfer
-// function pipeline over a small set of named colour spaces, and nothing else:
+// Implements a single ingest -> working (scene-linear) -> display transfer
+// function pipeline over a set of named colour spaces:
 //
-//   * no matrix / gamut conversion (all spaces are treated as Rec.709 primaries),
-//   * no 3D LUT, no looks, no HLG/PQ,
+//   * no matrix / gamut conversion (see the HDR note below for the exceptions),
+//   * no 3D LUT, no looks, no Lift/Gamma/Gain grading,
 //   * unknown colour spaces fall back to "already linear".
 //
-// The remaining pieces (gamut matrices, .cube LUTs, Lift/Gamma/Gain grading,
-// HLG/PQ transfer functions) land in the follow-up patches. The engine is
-// therefore NOT expected to match the OCIO backend numerically; its acceptance
-// gate is that the tree builds and links with zero OpenColorIO symbols, with the
-// colour-equivalence gates tracked separately.
+// Patch 0042 added the BT.2100 HLG and SMPTE ST 2084 (PQ) transfer functions, so
+// the "Rec.2020 HLG" / "Rec.2020 PQ" spaces the built-in manager advertises are
+// actually interpreted instead of silently passing through as linear. Those two
+// spaces exist *only* in the built-in engine: the bundled OCIO config cannot
+// express them, and neither can OCIO 2.1 (its fixed-function transform set has
+// no PQ or HLG style), so there is no ON-side counterpart to match.
+//
+// Two honest caveats on the HDR curves:
+//   * the two standards use different linear scales - PQ normalises so that
+//     1.0 == 10000 cd/m2, HLG so that the inverse OETF maps 1.0 to the nominal
+//     1000 cd/m2 peak. Nothing here renormalises them onto a common scale.
+//   * the HLG OOTF / system gamma and the BT.2408 & Reinhard display roll-off are
+//     NOT applied here. They belong to the GPU display transform (colormanage.frag)
+//     and are still outstanding.
+// Also note that the Rec.2020 gamut matrix is not applied: as with every other
+// space in this engine, values are treated as if they were already in the
+// working primaries.
+//
+// The remaining pieces (gamut matrices, .cube LUTs, Lift/Gamma/Gain grading)
+// land in follow-up patches. The engine is therefore NOT expected to match the
+// OCIO backend numerically; its acceptance gate is that the tree builds and
+// links with zero OpenColorIO symbols, with the colour-equivalence gates
+// tracked separately.
 // ============================================================================
 
 namespace {
@@ -199,6 +217,8 @@ enum TransferFunction
   kTransferSrgb,
   kTransferRec709,
   kTransferBt1886,
+  kTransferHlg,
+  kTransferPq,
   kTransferData
 };
 
@@ -222,6 +242,14 @@ TransferFunction GetTransferFunction(const QString &name)
     return kTransferBt1886;
   }
 
+  if (name == QStringLiteral("Rec.2020 HLG")) {
+    return kTransferHlg;
+  }
+
+  if (name == QStringLiteral("Rec.2020 PQ")) {
+    return kTransferPq;
+  }
+
   if (name == QStringLiteral("Non-Colour Data")) {
     return kTransferData;
   }
@@ -236,6 +264,64 @@ double PowSigned(double base, double exponent)
   return base < 0.0 ? -std::pow(-base, exponent) : std::pow(base, exponent);
 }
 
+// --- Patch 0042: HDR transfer functions -------------------------------------
+
+// ITU-R BT.2100 reference HLG OETF constants (Table 5).
+const double kHlgA = 0.17883277;
+const double kHlgB = 0.28466892;
+const double kHlgC = 0.55991073;
+
+// SMPTE ST 2084 (PQ) EOTF constants.
+const double kPqM1 = 2610.0 / 16384.0;
+const double kPqM2 = 2523.0 / 4096.0 * 128.0;
+const double kPqC1 = 3424.0 / 4096.0;
+const double kPqC2 = 2413.0 / 4096.0 * 32.0;
+const double kPqC3 = 2392.0 / 4096.0 * 32.0;
+
+double HlgToLinear(double signal)
+{
+  // Inverse BT.2100 HLG OETF (scene light). The branch boundary is signal 0.5
+  // (scene 1/12); note the published a/b/c constants are rounded to 8 decimals,
+  // so the two branches only agree to ~4e-5 either side of the knee. Negative
+  // values are mirrored to match the rest of this engine.
+  const double sign = signal < 0.0 ? -1.0 : 1.0;
+  const double s = std::fabs(signal);
+  const double e = (s <= 0.5) ? (s * s) / 3.0
+                              : (std::exp((s - kHlgC) / kHlgA) + kHlgB) / 12.0;
+  return sign * e;
+}
+
+double HlgFromLinear(double linear)
+{
+  const double sign = linear < 0.0 ? -1.0 : 1.0;
+  const double e = std::fabs(linear);
+  const double s = (e <= 1.0 / 12.0) ? std::sqrt(3.0 * e)
+                                     : kHlgA * std::log(12.0 * e - kHlgB) + kHlgC;
+  return sign * s;
+}
+
+double PqToLinear(double signal)
+{
+  // SMPTE ST 2084 EOTF. The `max(..., 0)` is the standard's own clamp: signals
+  // below the minimum representable code value have no luminance.
+  const double sign = signal < 0.0 ? -1.0 : 1.0;
+  const double s = std::fabs(signal);
+  const double p = std::pow(s, 1.0 / kPqM2);
+  const double denominator = kPqC2 - kPqC3 * p;
+  const double y = (denominator > 0.0)
+                       ? std::pow(std::max(p - kPqC1, 0.0) / denominator, 1.0 / kPqM1)
+                       : 0.0;
+  return sign * y;
+}
+
+double PqFromLinear(double linear)
+{
+  const double sign = linear < 0.0 ? -1.0 : 1.0;
+  const double y = std::fabs(linear);
+  const double p = std::pow(y, kPqM1);
+  return sign * std::pow((kPqC1 + kPqC2 * p) / (1.0 + kPqC3 * p), kPqM2);
+}
+
 double ToLinear(double v, TransferFunction tf)
 {
   switch (tf) {
@@ -245,6 +331,10 @@ double ToLinear(double v, TransferFunction tf)
     return (v < 0.081) ? v / 4.5 : PowSigned((v + 0.099) / 1.099, 1.0 / 0.45);
   case kTransferBt1886:
     return PowSigned(v, 2.4);
+  case kTransferHlg:
+    return HlgToLinear(v);
+  case kTransferPq:
+    return PqToLinear(v);
   case kTransferLinear:
   case kTransferData:
     break;
@@ -262,6 +352,10 @@ double FromLinear(double v, TransferFunction tf)
     return (v < 0.018) ? 4.5 * v : 1.099 * PowSigned(v, 0.45) - 0.099;
   case kTransferBt1886:
     return PowSigned(v, 1.0 / 2.4);
+  case kTransferHlg:
+    return HlgFromLinear(v);
+  case kTransferPq:
+    return PqFromLinear(v);
   case kTransferLinear:
   case kTransferData:
     break;
