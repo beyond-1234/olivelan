@@ -20,6 +20,8 @@
 
 #include "audiovisualwaveform.h"
 
+#include <cmath>
+
 #include <QDebug>
 #include <QtGlobal>
 

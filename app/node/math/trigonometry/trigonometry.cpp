@@ -20,6 +20,8 @@
 
 #include "trigonometry.h"
 
+#include <cmath>
+
 namespace olive {
 
 const QString TrigonometryNode::kMethodIn = QStringLiteral("method_in");

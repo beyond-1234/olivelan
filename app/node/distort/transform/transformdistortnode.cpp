@@ -20,6 +20,8 @@
 
 #include "transformdistortnode.h"
 
+#include <cmath>
+
 #include <QGuiApplication>
 
 namespace olive {

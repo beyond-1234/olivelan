@@ -173,7 +173,7 @@ void PolygonGenerator::UpdateGizmoPositions(const NodeValueRow &row, const NodeG
     res = globals.square_resolution();
   }
 
-  Imath::V2d half_res(res.x()/2, res.y()/2);
+  Vec2d half_res(res.x()/2, res.y()/2);
 
   auto points = row[kPointsInput].toArray();
 
@@ -205,9 +205,9 @@ void PolygonGenerator::UpdateGizmoPositions(const NodeValueRow &row, const NodeG
     for (int i=0; i<pts_sz; i++) {
       const Bezier &pt = points.at(i).toBezier();
 
-      Imath::V2d main = pt.to_vec() + half_res;
-      Imath::V2d cp1 = main + pt.control_point_1_to_vec();
-      Imath::V2d cp2 = main + pt.control_point_2_to_vec();
+      Vec2d main = pt.to_vec() + half_res;
+      Vec2d cp1 = main + pt.control_point_1_to_vec();
+      Vec2d cp2 = main + pt.control_point_2_to_vec();
 
       gizmo_position_handles_[i]->SetPoint(QPointF(main.x, main.y));
 
@@ -246,9 +246,9 @@ void PolygonGenerator::GizmoDragMove(double x, double y, const Qt::KeyboardModif
 
 void PolygonGenerator::AddPointToPath(QPainterPath *path, const Bezier &before, const Bezier &after)
 {
-  Imath::V2d a = before.to_vec() + before.control_point_2_to_vec();
-  Imath::V2d b = after.to_vec() + after.control_point_1_to_vec();
-  Imath::V2d c = after.to_vec();
+  Vec2d a = before.to_vec() + before.control_point_2_to_vec();
+  Vec2d b = after.to_vec() + after.control_point_1_to_vec();
+  Vec2d c = after.to_vec();
 
   path->cubicTo(QPointF(a.x, a.y), QPointF(b.x, b.y), QPointF(c.x, c.y));
 }
@@ -259,7 +259,7 @@ QPainterPath PolygonGenerator::GeneratePath(const NodeValueArray &points, int si
 
   if (!points.empty()) {
     const Bezier &first_pt = points.at(0).toBezier();
-    Imath::V2d v = first_pt.to_vec();
+    Vec2d v = first_pt.to_vec();
     path.moveTo(QPointF(v.x, v.y));
 
     for (int i=1; i<size; i++) {

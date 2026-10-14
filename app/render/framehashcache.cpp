@@ -150,7 +150,9 @@ FramePtr FrameHashCache::LoadCacheFrame(const QString &fn)
     try {
       Imf::InputFile file(fn.toUtf8(), 0);
 
-      Imath::Box2i dw = file.header().dataWindow();
+      // Deduced so the app does not spell an Imath type directly; the OpenEXR
+      // header still brings Imath in transitively until OpenEXR itself is removed.
+      auto dw = file.header().dataWindow();
       Imf::PixelType pix_type = file.header().channels().begin().channel().type;
       int width = dw.max.x - dw.min.x + 1;
       int height = dw.max.y - dw.min.y + 1;
