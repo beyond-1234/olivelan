@@ -23,6 +23,10 @@ olive_add_test(Codec frame-cache-tests frame-cache-tests.cpp)
 # call sites from patch 0054 (encoder E2, decoder D3).
 olive_add_test(Codec audio-conform-tests audio-conform-tests.cpp)
 
+# Patch 0058: interlaced encode -> FFmpegDecoder::Probe() round trip. Also the regression gate for
+# the top-field-first fix in FFmpegEncoder (requested tff used to be written as bff).
+olive_add_test(Codec interlace-tests interlace-tests.cpp)
+
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.
 target_compile_definitions(

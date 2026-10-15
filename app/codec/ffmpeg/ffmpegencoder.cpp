@@ -336,6 +336,18 @@ bool FFmpegEncoder::WriteMovieFrame(FramePtr frame, rational time)
 
   encoded_frame->pts = qRound64(time.toDouble() / av_q2d(video_codec_ctx_->time_base));
 
+  // Interlace signalling has to live on the frame, not just on the codec context: libavcodec's
+  // libx264 wrapper decides b_tff per frame from AV_FRAME_FLAG_TOP_FIELD_FIRST and never reads
+  // AVCodecContext::field_order. Without this a top-field-first request was encoded as
+  // bottom-field-first. (libx265 via libavcodec reads neither, so this is a no-op there.)
+  if (params().video_params().interlacing() != VideoParams::kInterlaceNone) {
+    encoded_frame->flags |= AV_FRAME_FLAG_INTERLACED;
+
+    if (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) {
+      encoded_frame->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
+    }
+  }
+
   return WriteAVFrame(encoded_frame.get(), video_codec_ctx_, video_stream_);
 }
 
@@ -698,17 +710,14 @@ bool FFmpegEncoder::InitializeStream(AVMediaType type, AVStream** stream_ptr, AV
       //        explain them at all. I hope using both of them is the right thing to do.
       codec_ctx->flags |= AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME;
 
-
-      if (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) {
-        codec_ctx->field_order = AV_FIELD_TT;
-      } else {
-        codec_ctx->field_order = AV_FIELD_BB;
-
-        if (codec == ExportCodec::kCodecH264 || codec == ExportCodec::kCodecH264rgb) {
-          // For some reason, FFmpeg doesn't set libx264's bff flag so we have to do it ourselves
-          av_opt_set(codec_ctx->priv_data, "x264opts", "bff=1", AV_OPT_SEARCH_CHILDREN);
-        }
-      }
+      // field_order is the encoder-level declaration and what the muxer reads, but libavcodec's
+      // libx264 wrapper ignores it: it derives b_tff from the *frame* flags on every frame
+      // (libavcodec/libx264.c reads AV_FRAME_FLAG_TOP_FIELD_FIRST), and WriteMovieFrame() sets
+      // those. This used to be worked around for bottom-first only, with "x264opts bff=1", which
+      // is why requesting top-first silently produced bottom-first.
+      codec_ctx->field_order =
+        (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) ? AV_FIELD_TT
+                                                                                   : AV_FIELD_BB;
     }
 
     // Set custom options
