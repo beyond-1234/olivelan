@@ -108,7 +108,8 @@ OLIVE_ADD_TEST(ColorRoleMapping)
  * This probe walks every advertised colour space and asserts the engine can actually
  * evaluate it, so "advertised == implemented" is enforced rather than assumed. The
  * negative control pins the opposite direction: a genuinely unknown name must be
- * reported as defaulted, proving the detector itself is wired up.
+ * rejected outright (Create() returns nullptr), proving the detector is wired up
+ * rather than vacuously accepting everything.
  */
 OLIVE_ADD_TEST(ColorspaceImplementationParity)
 {
@@ -163,20 +164,14 @@ OLIVE_ADD_TEST(ColorspaceImplementationParity)
     }
   }
 
-  // Negative control: proves the detector is not vacuously returning false.
-  ColorProcessorPtr bogus = ColorProcessor::Create(
-        manager,
-        QStringLiteral("Definitely Not A Colour Space"),
-        ColorTransform(QStringLiteral("Linear")));
-
-  if (!bogus) {
-    std::cout << " - could not create processor for unknown space";
-    return __LINE__;
-  }
-
-  if (!bogus->IsDefaulted()) {
-    std::cout << " - unknown colour space was NOT reported as defaulted"
-              << " (the detector is not wired up)";
+  // Negative control: the detector must reject an unknown colour space outright.
+  // Under the built-in engine Create() returns nullptr instead of handing back a
+  // processor that would silently pass pixels through as linear; without this the
+  // parity loop above could pass while the detector was never actually wired up.
+  if (ColorProcessor::Create(manager,
+                            QStringLiteral("Definitely Not A Colour Space"),
+                            ColorTransform(QStringLiteral("Linear"))) != nullptr) {
+    std::cout << " - unknown colour space was NOT rejected (detector not wired up)";
     return __LINE__;
   }
 

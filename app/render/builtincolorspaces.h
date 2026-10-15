@@ -121,12 +121,25 @@ constexpr int kBuiltinColorSpaceCount =
     int(sizeof(kBuiltinColorSpaces) / sizeof(kBuiltinColorSpaces[0]));
 
 /**
- * @brief Colour space a legacy project falls back to when it names something the
- *        built-in engine cannot evaluate (see the parity gate).
+ * @brief True when `name` is a colour space the built-in engine can evaluate.
+ *
+ * Used by ColorProcessor::Create() to reject a requested conversion instead of
+ * quietly passing pixels through. Deliberately accepts the historical aliases
+ * ("scene_linear", "Linear Raw", "sRGB") that GetTransferFunction() recognises -
+ * the canonical table below holds only the 7 primary entries, so a bare table
+ * lookup would wrongly reject those names.
  */
-inline QString BuiltinFallbackColorSpace()
+inline bool IsBuiltinColorSpace(const QString &name)
 {
-  return QStringLiteral("Rec.709 OETF");
+  for (int i = 0; i < kBuiltinColorSpaceCount; i++) {
+    if (name == QString::fromUtf8(kBuiltinColorSpaces[i].name)) {
+      return true;
+    }
+  }
+
+  return name == QStringLiteral("scene_linear")
+      || name == QStringLiteral("Linear Raw")
+      || name == QStringLiteral("sRGB");
 }
 
 // ---------------------------------------------------------------------------

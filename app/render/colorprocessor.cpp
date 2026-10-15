@@ -480,9 +480,6 @@ struct ColorProcessor::Impl
   QString view;
   Direction direction = kNormal;
   std::string id;
-
-  // Patch 0045: set when an endpoint could not be evaluated and was remapped.
-  bool defaulted = false;
 };
 
 ColorProcessor::ColorProcessor() :
@@ -510,37 +507,25 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
     impl_->output = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
   }
 
-  // Patch 0045 (Phase 8): refuse to degrade in silence. If either endpoint is a
-  // colour space the built-in engine cannot evaluate, say so once per processor
-  // instead of quietly passing pixels through as linear. This is what makes the
-  // pruned list above *honest*: what is offered is what is implemented.
-  bool src_ok = false;
-  bool dst_ok = false;
-  GetTransferFunction(impl_->input, &src_ok);
-  GetTransferFunction(impl_->output, &dst_ok);
-
-  // Remap to Rec.709 OETF rather than leaving an implicit linear passthrough: the
-  // pixels then go through a real, named transfer function, and `id` (the shader-cache
-  // key) is computed *after* this point, so it reflects what actually happened.
-  const QString kFallbackSpace = QStringLiteral("Rec.709 OETF");
-
-  if (!src_ok) {
-    qWarning() << "[ColorProcessor] Built-in engine cannot evaluate input colour space"
-               << input << "- remapping to" << kFallbackSpace;
-    impl_->input = kFallbackSpace;
-    impl_->defaulted = true;
+  // Patch 0046: an unrecognised endpoint is a hard error, not a silent passthrough.
+  // Pixels that "convert" by doing nothing are indistinguishable from a correct
+  // conversion to every caller, which is precisely the failure mode the built-in
+  // engine was written to eliminate. Legacy projects are no longer supported, so an
+  // unknown name here is a programming error.
+  //
+  // The validator deliberately accepts the historical aliases ("scene_linear",
+  // "Linear Raw", "sRGB") that GetTransferFunction() recognises - the shared table
+  // holds only canonical entries, so a bare table lookup would wrongly reject them.
+  if (!IsBuiltinColorSpace(impl_->input)) {
+    qCritical() << "[ColorProcessor] Unknown input colour space:" << impl_->input
+                << "- refusing to build a processor that would pass pixels through.";
+    std::abort();
   }
 
-  if (!dst_ok) {
-    qWarning() << "[ColorProcessor] Built-in engine cannot evaluate output colour space"
-               << impl_->output << "- remapping to" << kFallbackSpace;
-    impl_->output = kFallbackSpace;
-
-    if (impl_->is_display) {
-      impl_->view = kFallbackSpace;
-    }
-
-    impl_->defaulted = true;
+  if (!IsBuiltinColorSpace(impl_->output)) {
+    qCritical() << "[ColorProcessor] Unknown output colour space:" << impl_->output
+                << "- refusing to build a processor that would pass pixels through.";
+    std::abort();
   }
 
   impl_->id = QStringLiteral("builtin|%1|%2|%3|%4")
@@ -621,11 +606,38 @@ const char *ColorProcessor::id() const
 
 bool ColorProcessor::IsDefaulted() const
 {
-  return impl_->defaulted;
+  // Unreachable in practice: Create() refuses to build a processor whose endpoints
+  // are unknown (patch 0046), so any processor a caller can hold is well-formed.
+  return false;
 }
 
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)
 {
+  // Patch 0046: fail loudly rather than degrade silently. Under the built-in
+  // engine an unrecognised colour space used to fall through to a linear
+  // passthrough with no diagnostic at all, which is indistinguishable from a
+  // correct conversion to the caller. Legacy projects are no longer supported,
+  // so an unknown name here is a programming error, not data to be tolerated.
+  const QString in = input;
+  const QString out = (transform.is_display())
+                          ? ((transform.view().isEmpty())
+                                 ? config->GetDefaultView(transform.output().isEmpty()
+                                                              ? config->GetDefaultDisplay()
+                                                              : transform.output())
+                                 : transform.view())
+                          : ((transform.output().isEmpty()) ? config->GetDefaultDisplay()
+                                                           : transform.output());
+
+  if (!IsBuiltinColorSpace(in)) {
+    qCritical() << "[ColorProcessor] Unknown input colour space: " << in;
+    return nullptr;
+  }
+
+  if (!IsBuiltinColorSpace(out)) {
+    qCritical() << "[ColorProcessor] Unknown output colour space: " << out;
+    return nullptr;
+  }
+
   return std::make_shared<ColorProcessor>(config, input, transform, direction);
 }
 

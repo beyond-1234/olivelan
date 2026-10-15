@@ -56,15 +56,17 @@ public:
   const char *id() const;
 
   /**
-   * @brief Patch 0045 (Phase 8): true when either endpoint was a colour space the
-   *        engine could not evaluate, so the processor fell back to a default.
+   * @brief Patch 0045 (Phase 8): true when the processor was asked for a colour
+   *        space the engine cannot evaluate.
    *
-   * Under the built-in engine (OLIVE_ENABLE_OCIO=OFF) the requested colour space name
-   * is remapped to Rec.709 OETF and a warning is emitted; this accessor lets callers
-   * and tests detect that remap instead of having the degradation pass unnoticed.
+   * Under the built-in engine (OLIVE_ENABLE_OCIO=OFF) an unrecognised name is a hard
+   * error: Create() returns nullptr instead of building a processor that would
+   * silently pass pixels through as linear. This accessor therefore always reports
+   * false on a successfully constructed processor - it exists so the parity gate can
+   * assert that no advertised space can ever reach the defaulted state.
    *
-   * Under OpenColorIO (ON) the config resolves the names itself, so this is always
-   * false - an unresolvable name fails at processor construction, not silently.
+   * Under OpenColorIO (ON) the config resolves names at construction time, so an
+   * unresolvable name throws rather than yielding an unconverted passthrough.
    */
   bool IsDefaulted() const;
 
