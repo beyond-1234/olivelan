@@ -135,12 +135,12 @@ void GpuEnvironmentProbe::DetectGpuTopology()
 #endif
 
 #if defined(_WIN32)
-  // Windows-specific vendor fallback
-  if (primary_vendor_ == GpuVendor::Unknown) {
-#if defined(OLIVE_ENABLE_D3D11_INTEROP)
-    has_d3d11_support_ = true;
-#endif
-  }
+  // Windows-specific vendor fallback.
+  //
+  // Patch 0049 (Phase 8): the D3D11 interop pipeline is a PLACEHOLDER - it is never
+  // enabled, on any platform. Policy: Windows uses Tier 3 (reinforced CPU decode)
+  // as its hardware fallback until the D3D11 path is actually implemented and
+  // validated. Do not set has_d3d11_support_ here; see hardware_pipeline_factory.cpp.
 #endif
 }
 
@@ -163,12 +163,16 @@ void GpuEnvironmentProbe::DetectBackendCapabilities()
 #else
   has_videotoolbox_support_ = false;
 #endif
+}
 
-#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
-  has_d3d11_support_ = true;
-#else
-  has_d3d11_support_ = false;
-#endif
+// Patch 0049 (Phase 8): the D3D11 interop pipeline is a placeholder and is NEVER
+// supported, on any platform - Windows included. Until the path is implemented and
+// validated, Windows falls back to Tier 3 (reinforced CPU decode). Keeping the
+// answer a hard false here makes the pipeline unreachable from every consumer
+// (auto-routing, forced backend, backend dialog) through one choke point.
+bool GpuEnvironmentProbe::SupportsD3D11() const
+{
+  return false;
 }
 
 void GpuEnvironmentProbe::DetectDecodeCapabilityMatrix()
@@ -219,17 +223,9 @@ void GpuEnvironmentProbe::DetectDecodeCapabilityMatrix()
   }
 #endif
 
-#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
-  if (has_d3d11_support_) {
-    decode_capability_.h264 = true;
-    decode_capability_.hevc_8bit = true;
-    decode_capability_.hevc_10bit = true;
-    decode_capability_.vp9 = true;
-    decode_capability_.av1_8bit = false;
-    decode_capability_.av1_10bit = false;
-    return;
-  }
-#endif
+  // Patch 0049 (Phase 8): the D3D11 decode capability block is removed along with
+  // the rest of the placeholder path - Windows reports its decode matrix via the
+  // fallback branch above (Tier 3), so no D3D11 capability rows are advertised.
 
   // No hardware backend: all capabilities remain false.
 }

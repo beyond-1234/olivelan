@@ -199,9 +199,12 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
       noted = true;
       qInfo() << "[VAAPI-HAL] 10-bit surface detected (Y fourcc" << Qt::hex << prime_desc.layers[0].drm_format
               << ", UV fourcc" << prime_desc.layers[1].drm_format << Qt::dec
-              << "); both 16-bit planes are imported intact. Carrying that precision through to the"
-                 " RGBA pipeline still needs a two-plane YUV->RGB shader and an F16 target, and must"
-                 " be validated on VA-API hardware.";
+              << "); both 16-bit planes are imported intact. Explicit capability note: this"
+                 " pipeline delivers the planes as imported - it does NOT convert or truncate"
+                 " them itself. Full-precision delivery (two-plane YUV->RGB shader + F16 target)"
+                 " is future work pending validation on VA-API hardware; until then the"
+                 " downstream consumer's handling of 16-bit plane textures is unvalidated."
+                 " No silent downsample happens here.";
     }
   }
 

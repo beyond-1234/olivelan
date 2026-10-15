@@ -39,6 +39,15 @@ bool ReinforcedSoftwarePipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, i
   }
 
   qInfo() << "[Reinforced-SW HAL] Initialized Tier 3 software pipeline with" << fallback_threads << "worker threads";
+
+  // Patch 0049 (Phase 8): one-shot division-of-labour note, so logs make clear what
+  // "reinforced" actually means - the DECODE side is reinforced (thread clamping,
+  // B-frame skipping); the UPLOAD side reuses the existing native Yuv2RgbShader path.
+  static bool noted = false;
+  if (!noted) {
+    noted = true;
+    qDebug() << "[Reinforced-SW HAL] Division of labour: reinforced CPU decode (thread clamp + B-frame skip) + native YUV shader upload (Yuv2RgbShader)";
+  }
   return true;
 }
 

@@ -79,7 +79,15 @@ public:
   bool HasNvdecSupport() const { return has_nvdec_support_; }
   bool SupportsVaapiDmaBuf() const { return has_vaapi_dmabuf_support_; }
   bool SupportsVideoToolbox() const { return has_videotoolbox_support_; }
-  bool SupportsD3D11() const { return has_d3d11_support_; }
+
+  /**
+   * @brief Patch 0049 (Phase 8): D3D11 interop is a placeholder - never supported,
+   *        on any platform, Windows included. Windows hardware fallback is Tier 3.
+   *
+   * Defined in the .cpp so the policy lives in one place (and so a future
+   * implementation only has to flip this one function).
+   */
+  bool SupportsD3D11() const;
 
   // Decision helper: should this stream even attempt hardware acceleration?
   // Prevents allocating hardware decoder slots for formats better handled by CPU (ProRes, 4:2:2).
@@ -123,7 +131,8 @@ private:
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
   bool has_videotoolbox_support_{false};
-  bool has_d3d11_support_{false};
+  // Patch 0049: has_d3d11_support_ removed - D3D11 interop is a placeholder and
+  // SupportsD3D11() answers a hard false from the .cpp.
   HardwareDecodeCapability decode_capability_;
   std::vector<GpuDeviceInfo> detected_devices_;
 };

@@ -137,7 +137,7 @@ void HALBackendDialog::PopulateProbeInfo()
   add_item(backends, QStringLiteral("VideoToolbox (Tier 2, macOS)"), probe.SupportsVideoToolbox() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), probe.SupportsVaapiDmaBuf() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("D3D11 Interop (Tier 2, Windows)"), probe.SupportsD3D11() ? tr("Available") : tr("Unavailable"));
-  add_item(backends, QStringLiteral("Reinforced Software (Tier 3)"), tr("Available"));
+  add_item(backends, QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), tr("Available"));
 
   auto* cap = new QTreeWidgetItem(probe_tree_, {tr("Decode capability matrix")});
   add_item(cap, tr("H.264"), probe.SupportsStream(AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P) ? tr("Yes") : tr("No"));
@@ -175,10 +175,14 @@ void HALBackendDialog::PopulateBackendCombo()
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
   add_backend(QStringLiteral("VA-API DMA-BUF (Tier 2)"), QStringLiteral("vaapi"), probe.SupportsVaapiDmaBuf());
 #endif
-#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
-  add_backend(QStringLiteral("D3D11 Interop (Tier 2)"), QStringLiteral("d3d11"), probe.SupportsD3D11());
+  // Patch 0049 (Phase 8): D3D11 interop is a placeholder - shown on Windows as a
+  // greyed-out "Planned" entry so the roadmap is visible, but never selectable and
+  // never routed to (SupportsD3D11() answers false everywhere).
+#if defined(_WIN32)
+  add_backend(QStringLiteral("D3D11 Interop (Tier 2)"), QStringLiteral("d3d11"),
+              probe.SupportsD3D11(), tr("Planned - not implemented; Tier 3 is used instead"));
 #endif
-  add_backend(QStringLiteral("Reinforced Software (Tier 3)"), QStringLiteral("software"), true);
+  add_backend(QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), QStringLiteral("software"), true);
 }
 
 QString HALBackendDialog::VendorToString(GpuVendor vendor)

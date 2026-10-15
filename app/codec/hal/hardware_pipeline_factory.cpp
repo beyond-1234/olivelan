@@ -43,11 +43,11 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     qWarning() << "[HAL Factory] Forced backend 'vaapi' not compiled in (needs Linux + OLIVE_ENABLE_VAAPI_DMABUF); ignoring.";
 #endif
   } else if (name == QStringLiteral("d3d11")) {
-#if defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
-    return std::make_unique<D3D11InteropPipeline>(renderer);
-#else
-    qWarning() << "[HAL Factory] Forced backend 'd3d11' not compiled in (needs Windows + OLIVE_ENABLE_D3D11_INTEROP); ignoring.";
-#endif
+    // Patch 0049 (Phase 8): the D3D11 interop pipeline is a placeholder and is not
+    // created on ANY platform - Windows included. Windows falls back to Tier 3
+    // (reinforced CPU decode). The pipeline class is kept as the starting point for
+    // future development.
+    qWarning() << "[HAL Factory] Forced backend 'd3d11' is a placeholder, not implemented; ignoring (Windows uses Tier 3 fallback).";
   } else if (name == QStringLiteral("software")) {
     return std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   }
@@ -136,21 +136,16 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
       return pipeline;
     }
   }
-#elif defined(_WIN32) && defined(OLIVE_ENABLE_D3D11_INTEROP)
-  if (probe.SupportsD3D11()) {
-    auto pipeline = std::make_unique<D3D11InteropPipeline>(renderer);
-    if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
-      qInfo() << "[HAL Factory] Selected Tier 2 Windows:" << pipeline->GetBackendName();
-      return pipeline;
-    }
-  }
 #endif
+  // Patch 0049 (Phase 8): no Windows Tier 2 branch. The D3D11 interop pipeline is a
+  // placeholder (see SupportsD3D11()), so Windows auto-routing falls straight through
+  // to Tier 3 below.
 
   // 3. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
   // When HW pipelines are saturated or unsupported (e.g. over-budget),
   // routes to Olive's reinforced CPU decode pipeline protected by adaptive thread clamps and B-frame skipping.
   // HDR/BT.2020 tonemapping is handled by Olive's existing OCIO color pipeline, not a separate decode backend.
-  qInfo() << "[HAL Factory] Routing to Tier 3: Olive Native Reinforced Software Pipeline (Zero-Dependency).";
+  qInfo() << "[HAL Factory] Routing to Tier 3: Reinforced CPU Decode + Native YUV Shader Upload (Zero-Dependency).";
   auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
   return sw_pipeline;

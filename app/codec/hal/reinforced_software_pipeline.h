@@ -15,7 +15,7 @@ public:
   virtual void Close() override;
 
   virtual HardwareBackendType GetType() const override { return HardwareBackendType::SoftwareFallback; }
-  virtual const char* GetBackendName() const override { return "Reinforced Software (Tier 3 Native)"; }
+  virtual const char* GetBackendName() const override { return "Reinforced CPU Decode + Native YUV Shader Upload (Tier 3)"; }
   virtual AVBufferRef* GetHwDeviceContext() const override { return nullptr; }
 
   virtual void SetRenderer(Renderer* renderer) override { renderer_ = renderer; }
