@@ -13,8 +13,8 @@ ARG ASWF_PKG_ORG=aswftesting
 ARG CI_COMMON_VERSION=2
 ARG VFXPLATFORM_VERSION=2022
 # FFmpeg >= 6.1 (see ci-ffmpeg/Dockerfile); the matching ci-package-ffmpeg image
-# is selected by this tag.
-ARG FFMPEG_VERSION=6.1
+# is selected by this tag. Pinned to the newest 6.1.x patch release (6.1.6).
+ARG FFMPEG_VERSION=6.1.6
 ARG OTIO_VERSION=0.14.1
 
 FROM ${ASWF_PKG_ORG}/ci-package-qt:${VFXPLATFORM_VERSION} as ci-package-qt
