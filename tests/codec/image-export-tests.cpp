@@ -300,6 +300,195 @@ const ImageCase kCases[] = {
   { "EXR still",    ExportFormat::kFormatOpenEXR, ExportCodec::kCodecOpenEXR, "exr",  "gbrapf32le", false },
 };
 
+/**
+ * Phase 8 / patch 0047: 10-bit export probe.
+ *
+ * The built-in colour engine (0039~0047) works in float; any export path that
+ * quantises to 8 bits silently destroys the HDR headroom the BT.2408 roll-off is
+ * meant to preserve. This case drives FFmpegEncoder end to end with PixelFormat::U16
+ * (10-bit values left-shifted into the top bits of a 16-bit container, exactly what
+ * an actual 10-bit pipeline produces) and asserts the decoded values come back with
+ * no more rounding than the 10-bit quantum itself.
+ *
+ * Read-back reuses ProbeImage's libavformat/libavcodec path (headless-safe).
+ */
+
+const int kTenBitValue = 512; // mid-grey on a 10-bit scale (of 1023)
+
+/**
+ * @brief Decode the top-left pixel as native 16-bit samples.
+ *
+ * Returns false if the file could not be opened or decoded at all.
+ */
+bool ProbeImage16(const QString &filename, int *width, int *height, int64_t *rgba16)
+{
+  AVFormatContext *fmt = nullptr;
+  if (avformat_open_input(&fmt, filename.toUtf8().constData(), nullptr, nullptr) < 0) {
+    return false;
+  }
+
+  bool ok = false;
+
+  if (avformat_find_stream_info(fmt, nullptr) >= 0) {
+    const int stream_index = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+
+    if (stream_index >= 0) {
+      AVStream *stream = fmt->streams[stream_index];
+      *width = stream->codecpar->width;
+      *height = stream->codecpar->height;
+
+      const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
+      AVCodecContext *cc = codec ? avcodec_alloc_context3(codec) : nullptr;
+
+      if (cc && avcodec_parameters_to_context(cc, stream->codecpar) >= 0 &&
+          avcodec_open2(cc, codec, nullptr) >= 0) {
+        AVPacket *pkt = av_packet_alloc();
+        AVFrame *frame = av_frame_alloc();
+
+        if (pkt && frame && av_read_frame(fmt, pkt) >= 0 &&
+            avcodec_send_packet(cc, pkt) >= 0 &&
+            avcodec_receive_frame(cc, frame) >= 0) {
+          switch (frame->format) {
+          case AV_PIX_FMT_RGB48LE:
+          case AV_PIX_FMT_RGB48BE:
+          case AV_PIX_FMT_RGBA64LE:
+          case AV_PIX_FMT_RGBA64BE: {
+            const int bytes_per_sample = (frame->format == AV_PIX_FMT_RGB48LE
+                                          || frame->format == AV_PIX_FMT_RGB48BE) ? 2 : 2;
+            const uint16_t *s = reinterpret_cast<const uint16_t *>(frame->data[0]);
+            const int ncomp = (frame->format == AV_PIX_FMT_RGB48LE
+                               || frame->format == AV_PIX_FMT_RGB48BE) ? 3 : 4;
+            for (int i = 0; i < ncomp; i++) {
+              uint16_t v = s[i];
+              if (QSysInfo::ByteOrder == QSysInfo::LittleEndian
+                  && (frame->format == AV_PIX_FMT_RGB48BE
+                      || frame->format == AV_PIX_FMT_RGBA64BE)) {
+                v = ((v & 0xFF) << 8) | (v >> 8);
+              }
+              rgba16[i] = v;
+            }
+            if (ncomp == 3) {
+              rgba16[3] = 65535;
+            }
+            (void) bytes_per_sample;
+            ok = true;
+            break;
+          }
+          default:
+            break;
+          }
+        }
+
+        av_frame_free(&frame);
+        av_packet_free(&pkt);
+      }
+
+      if (cc) {
+        avcodec_free_context(&cc);
+      }
+    }
+  }
+
+  avformat_close_input(&fmt);
+  return ok;
+}
+
+QString RunTenBitCase()
+{
+  QTemporaryDir dir;
+  if (!dir.isValid()) {
+    return QStringLiteral("could not create temp dir");
+  }
+
+  const QString file = dir.filePath(QStringLiteral("tenbit.png"));
+
+  EncodingParams params;
+  params.set_format(ExportFormat::kFormatPNG);
+  params.SetFilename(file);
+  params.set_video_is_image_sequence(false);
+  params.set_video_pix_fmt(QStringLiteral("rgb48be"));
+  params.EnableVideo(VideoParams(kWidth, kHeight, rational(1, 25), PixelFormat::U16,
+                                 VideoParams::kRGBChannelCount),
+                     ExportCodec::kCodecPNG);
+
+  if (Encoder::GetTypeFromFormat(ExportFormat::kFormatPNG) != Encoder::kEncoderTypeFFmpeg) {
+    return QStringLiteral("PNG is not routed to FFmpeg");
+  }
+
+  Encoder *enc = Encoder::CreateFromFormat(ExportFormat::kFormatPNG, params);
+  if (!enc) {
+    return QStringLiteral("no encoder");
+  }
+
+  if (!dynamic_cast<FFmpegEncoder *>(enc)) {
+    delete enc;
+    return QStringLiteral("encoder is not a FFmpegEncoder");
+  }
+
+  if (!enc->Open()) {
+    const QString e = enc->GetError();
+    delete enc;
+    return QStringLiteral("Open() failed: %1").arg(e);
+  }
+
+  // 10-bit 512/1023 expressed in the U16 container (<< 6) and normalised to the
+  // float 0..1 range the Frame API takes.
+  const float v = float((kTenBitValue << 6) / 65535.0);
+  FramePtr frame = Frame::Create();
+  frame->set_video_params(VideoParams(kWidth, kHeight, rational(1, 25), PixelFormat::U16,
+                                      VideoParams::kRGBChannelCount));
+  if (!frame->allocate()) {
+    delete enc;
+    return QStringLiteral("frame allocation failed");
+  }
+
+  // Write via the U8 path? No: allocate() honouring U16 means data is uint16_t.
+  for (int y = 0; y < kHeight; y++) {
+    for (int x = 0; x < kWidth; x++) {
+      uint16_t *px = reinterpret_cast<uint16_t *>(
+          frame->data() + y * frame->linesize_pixels() * 2 + x * 2 * 3);
+      px[0] = px[1] = px[2] = uint16_t(kTenBitValue << 6);
+    }
+  }
+
+  frame->set_timestamp(rational(0));
+
+  if (!enc->WriteFrame(frame, rational(0))) {
+    const QString e = enc->GetError();
+    delete enc;
+    return QStringLiteral("WriteFrame failed: %1").arg(e);
+  }
+
+  enc->Close();
+  delete enc;
+
+  if (!QFile::exists(file) || QFileInfo(file).size() == 0) {
+    return QStringLiteral("missing or empty output %1").arg(file);
+  }
+
+  int w = 0, h = 0;
+  int64_t rgba16[4] = {0, 0, 0, 0};
+  if (!ProbeImage16(file, &w, &h, rgba16)) {
+    return QStringLiteral("could not decode %1").arg(file);
+  }
+
+  if (w != kWidth || h != kHeight) {
+    return QStringLiteral("%1 is %2x%3, expected %4x%5").arg(file).arg(w).arg(h).arg(kWidth).arg(kHeight);
+  }
+
+  // 16-bit stored value must equal 512 << 6 = 32768 exactly (or ±1 LSB of 16-bit
+  // for encoder rounding - far tighter than any 8-bit path could achieve).
+  const int64_t expected = int64_t(kTenBitValue) << 6;
+  for (int ch = 0; ch < 3; ch++) {
+    if (qAbs(rgba16[ch] - expected) > 1) {
+      return QStringLiteral("channel %1 = %2, expected %3 (10-bit precision lost)")
+          .arg(ch).arg(rgba16[ch]).arg(expected);
+    }
+  }
+
+  return QString();
+}
+
 } // namespace
 
 OLIVE_ADD_TEST(FfmpegImageExport)
@@ -316,6 +505,15 @@ OLIVE_ADD_TEST(FfmpegImageExport)
     const QString err = RunCase(c);
     if (!err.isEmpty()) {
       std::cout << " - " << err.toStdString();
+      return __LINE__;
+    }
+  }
+
+  // Patch 0047: 10-bit export must survive the round trip without collapsing to 8 bits.
+  {
+    const QString err = RunTenBitCase();
+    if (!err.isEmpty()) {
+      std::cout << " - [TenBitExport] " << err.toStdString();
       return __LINE__;
     }
   }
