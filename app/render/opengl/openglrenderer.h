@@ -69,6 +69,19 @@ public:
 
   TexturePtr CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height);
   TexturePtr CreateTextureFromEglImage(const VideoParams &params, void* egl_image, int width, int height);
+
+  // Patch 0050 (item #5): two-plane VA-API DMA-BUF import + YUV->RGB composite.
+  // Binds egl_image_y (R8/R16 luma) and egl_image_uv (GR88/GR32/GR1616 chroma) as
+  // separate textures - the radeonsi-measured-safe shape (GL_R16/GL_RG16, full
+  // per-channel precision) - renders the internal YUV->RGB shader into a pooled
+  // GL_RGBA8/GL_RGBA16F slot, and leaves the caller free to destroy both images
+  // immediately (the pool slot is a plain GL texture, independent of the DMA-BUF fds).
+  TexturePtr CompositeTextureFromVaapiPlanes(const VideoParams &params,
+                                             void* egl_image_y, void* egl_image_uv,
+                                             int width, int height,
+                                             int bits_per_pixel, bool full_range,
+                                             float yuv_crv, float yuv_cbu,
+                                             float yuv_cgu, float yuv_cgv);
   bool ReleaseNativeSurfacePoolTexture(GLuint tid);
 
   virtual void UploadToTexture(const QVariant &handle, const VideoParams &params, const void* data, int linesize) override;
@@ -173,6 +186,10 @@ private:
     GLuint gl_tex_id = 0;
     int width = 0;
     int height = 0;
+    // Patch 0050: slots are format-keyed. A GL_RGBA8 slot and a GL_RGBA16F slot of the
+    // same dimensions must NOT be shared across streams - reuse matching now requires
+    // identical format, mirroring CudaGLPoolSlot (patch 0027).
+    PixelFormat format = PixelFormat::U8;
     bool in_use = false;
   };
 
@@ -186,7 +203,11 @@ private:
   int native_returned_count_ = 0;
   int native_in_use_count_ = 0;
 
-  int AcquireNativeSurfaceSlot(int width, int height, GLenum target, GLuint* out_texture_id = nullptr);
+  // Patch 0050: format-aware acquisition. A slot's storage is allocated for a specific
+  // internal format (GL_RGBA8 for 8-bit YUV, GL_RGBA16F for 10-bit P010), so reuse
+  // requires an exact format match - same fix as the CUDA pool got in patch 0027.
+  int AcquireNativeSurfaceSlot(int width, int height, GLenum target, PixelFormat format,
+                               GLuint* out_texture_id = nullptr);
   void DestroyNativeSurfacePool();
 
   // Phase 6 (patch 0026): double-buffered Pixel Unpack Buffer ring for asynchronous

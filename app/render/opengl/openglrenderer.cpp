@@ -609,7 +609,8 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
 }
 #endif
 
-int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum target, GLuint* out_texture_id)
+int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum target, PixelFormat format,
+                                             GLuint* out_texture_id)
 {
   QMutexLocker locker(&native_surface_pool_mutex_);
   if (width <= 0 || height <= 0) return -1;
@@ -619,11 +620,21 @@ int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum targe
 
   for (size_t i = 0; i < native_surface_pool_.size(); ++i) {
     auto &slot = native_surface_pool_[i];
-    if (!slot.in_use && slot.width == width && slot.height == height) {
+    if (!slot.in_use && slot.width == width && slot.height == height && slot.format == format) {
       chosen = i;
       found = true;
       break;
     }
+  }
+
+  // Patch 0050: internal-format selection mirrors AllocateOrResizePoolSlot (patch 0027):
+  // 8-bit YUV lands in the cheap GL_RGBA8 slot; 10-bit (P010) promotes to GL_RGBA16F so
+  // the two extra bits survive. A slot allocated for one format is never rebound to another.
+  GLint internal_format = GL_RGBA8;
+  GLenum upload_type = GL_UNSIGNED_BYTE;
+  if (format == PixelFormat::F16 || format == PixelFormat::F32) {
+    internal_format = GL_RGBA16F;
+    upload_type = GL_HALF_FLOAT;
   }
 
   if (!found) {
@@ -640,9 +651,11 @@ int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum targe
         functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        functions_->glTexImage2D(target, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
         functions_->glBindTexture(target, 0);
         slot.width = width;
         slot.height = height;
+        slot.format = format;
         slot.in_use = true;
         chosen = i;
         found = true;
@@ -659,6 +672,8 @@ int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum targe
     functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    functions_->glTexImage2D(target, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
+    functions_->glBindTexture(target, 0);
     functions_->glBindTexture(target, 0);
     new_slot.width = width;
     new_slot.height = height;
@@ -770,7 +785,7 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
   }
 
   GLuint target_2d = 0;
-  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, &target_2d);
+  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, params.format(), &target_2d);
   if (slot_index < 0) {
     glDeleteTextures(1, &rect_tex);
     return nullptr;
@@ -826,7 +841,7 @@ TexturePtr OpenGLRenderer::CreateTextureFromEglImage(const VideoParams &params, 
   }
 
   GLuint texture_id = 0;
-  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, &texture_id);
+  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, params.format(), &texture_id);
   if (slot_index < 0) return nullptr;
 
   functions_->glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -837,9 +852,208 @@ TexturePtr OpenGLRenderer::CreateTextureFromEglImage(const VideoParams &params, 
 #endif
 }
 
-QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
+// Patch 0050 (item #5): fragment shader for the two-plane VA-API import composite.
+// Mirrors :/shaders/yuv2rgb.frag exactly, but takes a single packed-UV texture
+// (GL_RG8/GL_RG16 from a GR88/GR32/GR1616 EGLImage) instead of separate U and V
+// planes, and consumes the 10-bit container value directly:
+//
+// The luma/chroma textures arrive as UNORM (GL_R16/GL_RG16 per the import probe),
+// so a 10-bit sample stored MSB-aligned in a 16-bit container (val16 = val10 << 6)
+// reads back as s = val10*64/65535. Multiplying by 65535/64 = 1023.984375 recovers
+// the exact 10-bit domain [0, 1023] that the CPU path (and CUDA Tier 1) works in -
+// keeping Tier 1 / Tier 2 outputs mathematically identical.
+static const char* kVaapiYuvToRgbFrag = R"(
+
+uniform sampler2D ove_y_tex;
+uniform sampler2D ove_uv_tex;
+
+uniform int bits_per_pixel;
+uniform bool full_range;
+
+uniform float yuv_crv;
+uniform float yuv_cgu;
+uniform float yuv_cgv;
+uniform float yuv_cbu;
+
+in vec2 ove_texcoord;
+out vec4 frag_color;
+
+void main()
 {
-  GL_PREAMBLE;
+  vec3 yuv;
+  yuv.r = texture(ove_y_tex, ove_texcoord).r;
+  vec2 uv = texture(ove_uv_tex, ove_texcoord).rg;
+  yuv.g = uv.r;
+  yuv.b = uv.g;
+
+  // UNORM readback -> integer domain of the actual bit depth.
+  if (bits_per_pixel == 8) {
+    // 8-bit UNORM: s = val/255, already the [0,255] domain.
+  } else if (bits_per_pixel == 10) {
+    // s = val10*64/65535 -> recover val10 domain.
+    yuv *= (65535.0/64.0);
+  } else if (bits_per_pixel == 12) {
+    // s = val12*16/65535 -> recover val12 domain.
+    yuv *= (65535.0/16.0);
+  }
+
+  if (bits_per_pixel == 8) {
+    yuv.gb -= (128.0/255.0);
+  } else if (bits_per_pixel == 10) {
+    yuv.gb -= (512.0/1023.0);
+  } else if (bits_per_pixel == 12) {
+    yuv.gb -= (2048.0/4095.0);
+  }
+
+  // Limited-range luma (16-235 of 255) into full range.
+  yuv.r -= 0.0625;
+  yuv.r *= 1.1643;
+
+  vec4 rgba;
+  rgba.r = yuv.r + yuv_crv * yuv.b;
+  rgba.g = yuv.r - yuv_cgu * yuv.g - yuv_cgv * yuv.b;
+  rgba.b = yuv.r + yuv_cbu * yuv.g;
+
+  if (full_range) {
+    rgba.rgb /= 1.1643;
+    rgba.rgb += 0.0625;
+  }
+
+  rgba.a = 1.0;
+  frag_color = rgba;
+}
+
+)";
+
+TexturePtr OpenGLRenderer::CompositeTextureFromVaapiPlanes(const VideoParams &params,
+                                                           void* egl_image_y, void* egl_image_uv,
+                                                           int width, int height,
+                                                           int bits_per_pixel, bool full_range,
+                                                           float yuv_crv, float yuv_cbu,
+                                                           float yuv_cgu, float yuv_cgv)
+{
+#if !defined(__linux__)
+  Q_UNUSED(params);
+  Q_UNUSED(egl_image_y);
+  Q_UNUSED(egl_image_uv);
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+  Q_UNUSED(full_range);
+  Q_UNUSED(yuv_crv);
+  Q_UNUSED(yuv_cbu);
+  Q_UNUSED(yuv_cgu);
+  Q_UNUSED(yuv_cgv);
+  return nullptr;
+#else
+  if (!egl_image_y || !egl_image_uv || width <= 0 || height <= 0) return nullptr;
+
+  // Resolve pointers per-call (CR-11: a static cache would freeze nullptrs if the first
+  // call had no current GL context).
+  QOpenGLContext* ctx = QOpenGLContext::currentContext();
+  if (!ctx) {
+    qWarning() << "[VAAPI-HAL] No current OpenGL context while compositing VA-API planes";
+    return nullptr;
+  }
+  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC_)(unsigned int, void*);
+  auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC_>(
+      ctx->getProcAddress("glEGLImageTargetTexture2DOES"));
+  if (!pfn_glEGLImageTargetTexture2DOES) {
+    qWarning() << "[VAAPI-HAL] glEGLImageTargetTexture2DOES not available; cannot composite planes";
+    return nullptr;
+  }
+
+  // Scratch textures bound to the two EGLImages. Created per call and deleted below -
+  // they are views over driver-owned memory, never stored.
+  GLuint y_tex = 0, uv_tex = 0;
+  functions_->glGenTextures(1, &y_tex);
+  functions_->glBindTexture(GL_TEXTURE_2D, y_tex);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_y);
+
+  functions_->glGenTextures(1, &uv_tex);
+  functions_->glBindTexture(GL_TEXTURE_2D, uv_tex);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_uv);
+  functions_->glBindTexture(GL_TEXTURE_2D, 0);
+  if (GLenum err = functions_->glGetError(); err != GL_NO_ERROR) {
+    qWarning() << "[VAAPI-HAL] EGLImage plane binding failed, GL error 0x" << Qt::hex << err << Qt::dec;
+    functions_->glDeleteTextures(1, &y_tex);
+    functions_->glDeleteTextures(1, &uv_tex);
+    return nullptr;
+  }
+
+  // Compile the composite shader once per renderer process.
+  static QVariant vaapi_yuv_shader;
+  if (vaapi_yuv_shader.isNull()) {
+    vaapi_yuv_shader = CreateNativeShader(ShaderCode(QString::fromUtf8(kVaapiYuvToRgbFrag)));
+    if (vaapi_yuv_shader.isNull()) {
+      qCritical() << "[VAAPI-HAL] Failed to compile VA-API two-plane YUV->RGB shader";
+      functions_->glDeleteTextures(1, &y_tex);
+      functions_->glDeleteTextures(1, &uv_tex);
+      return nullptr;
+    }
+  }
+
+  // Destination: pooled slot, GL_RGBA16F for 10-bit sources (patch 0050/0027 symmetry),
+  // GL_RGBA8 for 8-bit. The slot outlives the DMA-BUF fds, which the pipeline may close
+  // as soon as this function returns.
+  VideoParams dst_params = params;
+  if (bits_per_pixel > 8) {
+    dst_params.set_format(PixelFormat::F16);
+  }
+  dst_params.set_channel_count(VideoParams::kRGBAChannelCount);
+
+  TexturePtr dst = CreateTexture(dst_params);
+  if (!dst) {
+    qWarning() << "[VAAPI-HAL] Failed to allocate composite destination texture";
+    functions_->glDeleteTextures(1, &y_tex);
+    functions_->glDeleteTextures(1, &uv_tex);
+    return nullptr;
+  }
+
+  // Half-size chroma texture params (420 subsampling, matching the GR*/P010 layout).
+  VideoParams uv_params = dst_params;
+  uv_params.set_width(width / 2);
+  uv_params.set_height(height / 2);
+  uv_params.set_channel_count(2);
+
+  VideoParams y_params = dst_params;
+  y_params.set_channel_count(1);
+  TexturePtr y_view = std::make_shared<Texture>(this, QVariant::fromValue(y_tex), y_params);
+  TexturePtr uv_view = std::make_shared<Texture>(this, QVariant::fromValue(uv_tex), uv_params);
+
+  ShaderJob job;
+  job.Insert(QStringLiteral("ove_y_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(y_view)));
+  job.Insert(QStringLiteral("ove_uv_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(uv_view)));
+  job.Insert(QStringLiteral("bits_per_pixel"), NodeValue(NodeValue::kInt, bits_per_pixel));
+  job.Insert(QStringLiteral("full_range"), NodeValue(NodeValue::kBoolean, full_range));
+  job.Insert(QStringLiteral("yuv_crv"), NodeValue(NodeValue::kFloat, yuv_crv));
+  job.Insert(QStringLiteral("yuv_cbu"), NodeValue(NodeValue::kFloat, yuv_cbu));
+  job.Insert(QStringLiteral("yuv_cgu"), NodeValue(NodeValue::kFloat, yuv_cgu));
+  job.Insert(QStringLiteral("yuv_cgv"), NodeValue(NodeValue::kFloat, yuv_cgv));
+
+  // Same default matrix the node pipeline passes to every other Blit call.
+  QMatrix4x4 identity;
+  job.Insert(QStringLiteral("ove_mvpmat"), NodeValue(NodeValue::kMatrix, identity));
+
+  BlitToTexture(vaapi_yuv_shader, job, dst.get(), false);
+
+  functions_->glDeleteTextures(1, &y_tex);
+  functions_->glDeleteTextures(1, &uv_tex);
+
+  return dst;
+#endif
+}
+
+QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
+{  GL_PREAMBLE;
 
   PRINT_GL_ERRORS;
 

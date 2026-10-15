@@ -30,7 +30,8 @@ private:
   AVBufferRef* hw_device_ctx_{nullptr};
   int max_width_{0};
   int max_height_{0};
-  void* egl_image_{nullptr};
+  // Patch 0050: egl_image_ member removed - plane images are now per-frame locals that
+  // are destroyed before ProcessHardwareFrame returns (see the composite path).
 
   // vaExportSurfaceHandle(DRM_PRIME_2) hands back fresh, *caller-owned* file descriptors on
   // every call. A P010/NV12 surface can export more than one object (one per plane), so we

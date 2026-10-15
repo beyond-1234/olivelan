@@ -13,6 +13,14 @@ extern "C" {
 #include <va/va.h>
 #include <va/va_drmcommon.h>
 #include <unistd.h>
+
+// swscale.h must be inside extern "C" (see ffmpegutils.h for the same pattern);
+// including it standalone here mangles the link names.
+extern "C" {
+#include <libswscale/swscale.h>
+}
+
+#include "common/ffmpegutils.h"
 #endif
 
 namespace olive {
@@ -114,13 +122,60 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     exported_fds_.push_back(prime_desc.objects[i].fd);
   }
 
-  // The import below maps the Y plane to EGL plane 0 and the chroma plane to EGL plane 1, so
-  // a two-layer export is mandatory. Guard before touching layers[1] to avoid an out-of-bounds
-  // read on drivers that export a single combined layer.
+  // Patch 0050 (item #5): import strategy selected by measurement on Radeon 780M /
+  // Mesa radeonsi 25.2.8 (see p010_export_probe / vaapi_import_probe).
+  //
+  // SEPARATE_LAYERS + TWO EGLImages won the A/B measurement:
+  //   - Path A (COMPOSED_LAYERS, single P010 EGLImage) binds, but Mesa reports the
+  //     composite as a sizeless legacy GL_RGB with channel sizes R16 G0 B0 - the
+  //     chroma channels report zero, so 10-bit precision would be silently lost.
+  //   - Path B (SEPARATE_LAYERS, dual EGLImages) binds GL_R16 (luma, full size) and
+  //     GL_RG16 (chroma, half size), every channel full 16-bit. radeonsi exports
+  //     GR32 ('G','R','3','2' = 0x32335247) for chroma; some drivers use the newer
+  //     DRM_FORMAT_GR1616 (0x36315247) - both are recognised below.
+  //
+  // The old code was broken on radeonsi regardless: it passed layers[0]'s fourcc
+  // (R16, single-plane) with TWO plane attribs and read objects[1], which does not
+  // exist (radeonsi exports both separate layers from ONE object).
   if (prime_desc.num_layers < 2) {
     qWarning() << "[VAAPI-HAL] Surface exported with" << prime_desc.num_layers
                << "layer(s); two-plane YUV import requires 2, skipping frame";
     return false;
+  }
+
+  // Surface bit-depth telemetry (patch 0050: constant-name fix + GR32 recognition).
+  // radeonsi exports 10-bit chroma as DRM_FORMAT_GR32 ('G','R','3','2' = 0x32335247);
+  // that numeric value was previously mislabelled DRM_FORMAT_GR1616 in this file.
+  // The real GR1616 is 0x36315247. Both are recognised; separate-layer export on
+  // radeonsi reports luma as R16 and chroma as GR32.
+#ifndef DRM_FORMAT_R16
+#define DRM_FORMAT_R16 0x20363152
+#endif
+#ifndef DRM_FORMAT_GR32
+#define DRM_FORMAT_GR32 0x32335247
+#endif
+#ifndef DRM_FORMAT_GR1616
+#define DRM_FORMAT_GR1616 0x36315247
+#endif
+  static_assert(DRM_FORMAT_GR32 != DRM_FORMAT_GR1616,
+                "patch 0050: GR32 (Mesa radeonsi) and GR1616 (drm_fourcc) are distinct fourccs");
+  constexpr uint32_t kFccR16 = DRM_FORMAT_R16;
+  constexpr uint32_t kFccGR32 = DRM_FORMAT_GR32;
+  constexpr uint32_t kFccGR1616 = DRM_FORMAT_GR1616;
+  const bool is_10bit = (prime_desc.layers[0].drm_format == kFccR16)
+                        || (prime_desc.layers[1].drm_format == kFccGR32)
+                        || (prime_desc.layers[1].drm_format == kFccGR1616);
+  if (is_10bit) {
+    static bool noted = false;
+    if (!noted) {
+      noted = true;
+      qInfo() << "[VAAPI-HAL] 10-bit surface detected (Y fourcc" << Qt::hex << prime_desc.layers[0].drm_format
+              << ", UV fourcc" << prime_desc.layers[1].drm_format << Qt::dec
+              << "); 16-bit planes are imported intact (GL_R16/GL_RG16) and composed into a"
+                 " GL_RGBA16F pool slot via the internal YUV->RGB shader (validated on"
+                 " Radeon 780M / Mesa radeonsi 25.2.8 by p010_export_probe + vaapi_import_probe)."
+                 " No silent downsample.";
+    }
   }
 
   // EGLImage creation and OpenGL texture binding
@@ -139,6 +194,8 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
 
   typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
   typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const intptr_t*);
+  typedef void* EGLImageKHRHandle;
+  typedef void (*PFNEGLDESTROYIMAGEKHR)(void*, EGLImageKHRHandle);
   typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
 
   // Resolve every extension pointer on each call. A one-time static cache would freeze nullptrs if
@@ -162,50 +219,47 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
-  const intptr_t attribs[] = {
+  // Patch 0050: dual-EGLImage import (measured winner). Each layer is a single-plane
+  // fourcc (R8/R16 luma, GR88/GR32/GR1616 chroma) with its own width/height/offset -
+  // the only attribs an EGLImage of that fourcc is allowed to carry. Plane fds come
+  // from layer.object_index[]; no assumption that plane N lives in objects[N]
+  // (radeonsi exports both layers from one object).
+  const uint32_t y_obj = prime_desc.layers[0].object_index[0];
+  const uint32_t uv_obj = prime_desc.layers[1].object_index[0];
+
+  const intptr_t attribs_y[] = {
     EGL_WIDTH, static_cast<intptr_t>(prime_desc.width),
     EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height),
     EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[0].drm_format),
-    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[0].fd),
+    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[y_obj].fd),
     EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[0].offset[0]),
     EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[0].pitch[0]),
-    EGL_DMA_BUF_PLANE1_FD_EXT, static_cast<intptr_t>(prime_desc.objects[1].fd),
-    EGL_DMA_BUF_PLANE1_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
-    EGL_DMA_BUF_PLANE1_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
+    0x3038 // EGL_NONE
+  };
+  const intptr_t attribs_uv[] = {
+    EGL_WIDTH, static_cast<intptr_t>(prime_desc.width / 2),
+    EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height / 2),
+    EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[1].drm_format),
+    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[uv_obj].fd),
+    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
+    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
     0x3038 // EGL_NONE
   };
 
-  egl_image_ = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-  if (!egl_image_) {
-    qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for surface";
-    return false;
-  }
-
-  // Surface bit-depth telemetry. With VA_EXPORT_SURFACE_SEPARATE_LAYERS a 10-bit source is
-  // reported either as a single DRM_FORMAT_P010 layer or, on most drivers, as an R16 luma layer
-  // plus a GR1616 chroma layer. Detect both so the precision of the imported planes is at least
-  // visible in the log rather than silently assumed.
-#ifndef DRM_FORMAT_P010
-#define DRM_FORMAT_P010 0x30313050
-#endif
-#ifndef DRM_FORMAT_GR1616
-#define DRM_FORMAT_GR1616 0x32335247
-#endif
-  const bool is_10bit = (prime_desc.layers[0].drm_format == DRM_FORMAT_P010)
-                        || (prime_desc.layers[1].drm_format == DRM_FORMAT_GR1616);
-  if (is_10bit) {
-    static bool noted = false;
-    if (!noted) {
-      noted = true;
-      qInfo() << "[VAAPI-HAL] 10-bit surface detected (Y fourcc" << Qt::hex << prime_desc.layers[0].drm_format
-              << ", UV fourcc" << prime_desc.layers[1].drm_format << Qt::dec
-              << "); both 16-bit planes are imported intact. Explicit capability note: this"
-                 " pipeline delivers the planes as imported - it does NOT convert or truncate"
-                 " them itself. Full-precision delivery (two-plane YUV->RGB shader + F16 target)"
-                 " is future work pending validation on VA-API hardware; until then the"
-                 " downstream consumer's handling of 16-bit plane textures is unvalidated."
-                 " No silent downsample happens here.";
+  void* egl_image_y = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y);
+  void* egl_image_uv = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv);
+  if (!egl_image_y || !egl_image_uv) {
+    qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for plane images (y:"
+               << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")";
+    if (egl_image_y) {
+      auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
+      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(nullptr, egl_image_y);
     }
+    if (egl_image_uv) {
+      auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
+      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(nullptr, egl_image_uv);
+    }
+    return false;
   }
 
   if (!renderer_) {
@@ -213,9 +267,47 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
-  TexturePtr tex = renderer_->CreateTextureFromEglImage(params, egl_image_, prime_desc.width, prime_desc.height);
+  // Determine the bit depth of the planes for the composite shader and the pool slot
+  // format (GL_RGBA16F for 10-bit, GL_RGBA8 for 8-bit - see AcquireNativeSurfaceSlot).
+  // The slot outlives the DMA-BUF fds, so both images are destroyed right after the
+  // composite pass below, and the exported fds are closed immediately.
+  const bool y16 = (prime_desc.layers[0].drm_format == kFccR16);
+  const bool uv16 = (prime_desc.layers[1].drm_format == kFccGR32
+                     || prime_desc.layers[1].drm_format == kFccGR1616);
+  const int bits = (y16 || uv16) ? 10 : 8;
+
+  // YUV matrix coefficients from the container metadata (patch 0042 fields travel as
+  // plain ints holding FFmpeg's stable ABI constants). Same source as the CPU path.
+  auto* sws_coeffs = sws_getCoefficients(FFmpegUtils::GetSwsColorspaceFromAVColorSpace(
+      static_cast<AVColorSpace>(params.color_space())));
+  float crv = 0.0f, cbu = 0.0f, cgu = 0.0f, cgv = 0.0f;
+  if (sws_coeffs) {
+    crv = static_cast<float>(sws_coeffs[0]) / 65536.0f;
+    cbu = static_cast<float>(sws_coeffs[1]) / 65536.0f;
+    cgu = static_cast<float>(sws_coeffs[2]) / 65536.0f;
+    cgv = static_cast<float>(sws_coeffs[3]) / 65536.0f;
+  }
+  const bool full_range = (params.color_range() == VideoParams::kColorRangeFull);
+
+  TexturePtr tex = renderer_->CompositeTextureFromVaapiPlanes(params, egl_image_y, egl_image_uv,
+                                                              prime_desc.width, prime_desc.height,
+                                                              bits, full_range,
+                                                              crv, cbu, cgu, cgv);
+
+  // The composite has rendered into the pooled GL texture; both EGLImages and the fds
+  // are dead weight now. Destroying the images before the fd close keeps the
+  // image-before-fd destruction order Mesa requires.
+  {
+    auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
+    if (pfn_eglDestroyImageKHR) {
+      pfn_eglDestroyImageKHR(nullptr, egl_image_y);
+      pfn_eglDestroyImageKHR(nullptr, egl_image_uv);
+    }
+  }
+  ReleaseExportedFds();
+
   if (!tex) {
-    qWarning() << "[VAAPI-HAL] Failed to create owning texture from EGLImage pool";
+    qWarning() << "[VAAPI-HAL] Failed to composite VA-API planes into pool texture";
     return false;
   }
 
