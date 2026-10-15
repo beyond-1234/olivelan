@@ -431,9 +431,8 @@ QString RunTenBitCase()
     return QStringLiteral("Open() failed: %1").arg(e);
   }
 
-  // 10-bit 512/1023 expressed in the U16 container (<< 6) and normalised to the
-  // float 0..1 range the Frame API takes.
-  const float v = float((kTenBitValue << 6) / 65535.0);
+  // The 10-bit code (kTenBitValue, i.e. 512/1023) is written MSB-aligned into the
+  // U16 container as (kTenBitValue << 6); see the per-pixel loop below.
   FramePtr frame = Frame::Create();
   frame->set_video_params(VideoParams(kWidth, kHeight, rational(1, 25), PixelFormat::U16,
                                       VideoParams::kRGBChannelCount));

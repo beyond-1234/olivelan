@@ -342,8 +342,13 @@ double PqToLinear(double signal)
  * luminance and then multiplied into each channel. Raising each channel to the power
  * gamma on its own is the classic wrong implementation and shifts hue visibly on
  * saturated colours, so it must not be substituted here.
+ *
+ * TODO(cpu-parity, patch 0046/0047, 0051 F-9): the CPU evaluation path does not call
+ * this yet - only the generated GLSL applies the HLG OOTF at present. It is kept
+ * compiled with [[maybe_unused]] so the implementation is ready for the CPU path to
+ * adopt, and so the gap stays explicit rather than silently dropped.
  */
-void HlgApplyOotf(double *rgb)
+[[maybe_unused]] void HlgApplyOotf(double *rgb)
 {
   const double y = kLumaCoefR * rgb[0] + kLumaCoefG * rgb[1] + kLumaCoefB * rgb[2];
 

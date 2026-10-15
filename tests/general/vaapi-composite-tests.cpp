@@ -89,8 +89,9 @@ OLIVE_ADD_TEST(VaapiCompositePath)
     auto sample = [](int val10) {
       return (static_cast<double>(val10) * 64.0) / 65535.0;
     };
+    // NB: the white anchor is not a plain constant here - the MSB-aligned sample
+    // is 940*64/65535, not 940/1023 - so the white case below uses sample(940).
     const double black = 64.0 / 1023.0;
-    const double white = 940.0 / 1023.0;
     const double scale = 1023.0 / 876.0;
 
     const double black_out = (sample(64) - black) * scale;

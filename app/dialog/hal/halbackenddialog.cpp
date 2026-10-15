@@ -48,11 +48,11 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
   connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
     const int idx = backend_combo_->currentIndex();
-    const QString data = backend_combo_->itemData(idx).toString();
+    const QString backend_id = backend_combo_->itemData(idx).toString();
 
     // Warn (but still allow) forcing a backend the probe considers unavailable.
     const QVariant avail = backend_combo_->itemData(idx, Qt::UserRole + 1);
-    if (data != QStringLiteral("auto") && avail.isValid() && !avail.toBool()) {
+    if (backend_id != QStringLiteral("auto") && avail.isValid() && !avail.toBool()) {
       const auto answer = QMessageBox::warning(this, tr("Backend unavailable"),
           tr("The probe did not detect support for this backend on this system. "
              "Forcing it may fail at initialization and fall back to automatic routing. "
@@ -63,7 +63,7 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
       }
     }
 
-    selected_backend_ = (data == QStringLiteral("auto")) ? QString() : data;
+    selected_backend_ = (backend_id == QStringLiteral("auto")) ? QString() : backend_id;
     accept();
   });
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -152,14 +152,17 @@ void HALBackendDialog::PopulateProbeInfo()
 
 void HALBackendDialog::PopulateBackendCombo()
 {
-  auto& probe = GpuEnvironmentProbe::Instance();
+  // Only referenced by the per-backend #if blocks below; on a build with no
+  // hardware backend compiled in (e.g. CI, or a GPU-less container) none of those
+  // blocks exist and the probe would otherwise be flagged unused.
+  [[maybe_unused]] auto& probe = GpuEnvironmentProbe::Instance();
 
-  auto add_backend = [this](const QString& display, const QString& data, bool available, const QString& reason = QString()) {
+  auto add_backend = [this](const QString& display, const QString& backend_id, bool available, const QString& reason = QString()) {
     QString label = display;
     if (!available) {
       label += QStringLiteral(" (") + (reason.isEmpty() ? tr("detected unavailable") : reason) + QStringLiteral(")");
     }
-    backend_combo_->addItem(label, data);
+    backend_combo_->addItem(label, backend_id);
     const int idx = backend_combo_->count() - 1;
     backend_combo_->setItemData(idx, available, Qt::UserRole + 1);
   };

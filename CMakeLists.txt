@@ -141,6 +141,15 @@ else()
   )
   if (USE_WERROR)
     list(APPEND OLIVE_COMPILE_OPTIONS "-Werror")
+
+    # GCC 13 emits -Wmaybe-uninitialized from Qt's inline QRect code (reached via
+    # app/widget/curvewidget/curveview.cpp) during optimisation. It is a third-party
+    # false positive, and optimisation-time warnings are *not* covered by the
+    # system-header suppression that -isystem installs for Qt. Keep it visible as a
+    # warning, but do not let it fail the build.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      list(APPEND OLIVE_COMPILE_OPTIONS "-Wno-error=maybe-uninitialized")
+    endif()
   endif()
 endif()
 
