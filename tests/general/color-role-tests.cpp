@@ -37,6 +37,8 @@
 
 #include "testutil.h"
 
+#include <cmath>
+
 #include <QFile>
 #include <QString>
 
@@ -44,6 +46,7 @@
 #include "core.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/project.h"
+#include "render/builtincolorspaces.h"
 #include "render/colorprocessor.h"
 #include "render/colortransform.h"
 
@@ -246,6 +249,78 @@ OLIVE_ADD_TEST(GeneratedGlslTracksColorProcessor)
   const QString with_lut = GenerateBuiltinGlslShader(kTransferLinear, kTransferSrgb, true, 0.0);
   if (!with_lut.contains(QStringLiteral("uniform sampler3D ove_cube_lut"))) {
     std::cout << " - attached LUT did not produce the ove_cube_lut sampler3D";
+    return __LINE__;
+  }
+
+  // 5. F-2 (HAL/Phase6-8 review): the constants emitted into the GLSL must equal the
+  //    CPU-side constants in render/builtincolorspaces.h (single source of truth) to
+  //    within 1e-7. This is the assertion that catches the historical drift where the
+  //    generator hardcoded kPqM2/kPqC2/kPqC3 without the ST 2084 *128 / *32 factors.
+  {
+    auto extract_float = [](const QString &text, const QString &name, bool *ok) -> double {
+      const QString needle = QStringLiteral("const float %1 = ").arg(name);
+      const int start = text.indexOf(needle);
+      if (start < 0) {
+        *ok = false;
+        return 0.0;
+      }
+      const int value_start = start + needle.size();
+      const int end = text.indexOf(QLatin1Char(';'), value_start);
+      if (end < 0) {
+        *ok = false;
+        return 0.0;
+      }
+      return text.mid(value_start, end - value_start).toDouble(ok);
+    };
+
+    struct EmittedConstant {
+      const char *glsl_name;
+      double cpu_value;
+    };
+    const EmittedConstant expected[] = {
+      { "kHlgA", olive::kHlgA },
+      { "kHlgB", olive::kHlgB },
+      { "kHlgC", olive::kHlgC },
+      { "kHlgSystemGamma", olive::kHlgSystemGamma },
+      { "kDisplayRefWhiteNits", olive::kDisplayReferenceWhiteNits },
+      { "kPqM1", olive::kPqM1 },
+      { "kPqM2", olive::kPqM2 },
+      { "kPqC1", olive::kPqC1 },
+      { "kPqC2", olive::kPqC2 },
+      { "kPqC3", olive::kPqC3 },
+    };
+
+    for (const EmittedConstant &c : expected) {
+      bool ok = false;
+      const double emitted = extract_float(pq, QString::fromUtf8(c.glsl_name), &ok);
+      if (!ok) {
+        std::cout << " - GLSL is missing constant " << c.glsl_name;
+        return __LINE__;
+      }
+      if (std::abs(emitted - c.cpu_value) > 1e-7) {
+        std::cout << " - GLSL " << c.glsl_name << "=" << emitted
+                  << " disagrees with CPU value " << c.cpu_value;
+        return __LINE__;
+      }
+    }
+
+    // The corrected ST 2084 values are on the order of 78.8 / 18.9, not ~0.6. Guard the
+    // magnitude directly so a future edit cannot pass by re-introducing the un-scaled form.
+    if (pq.contains(QStringLiteral("kPqM2 = 0.61597")) || pq.contains(QStringLiteral("kPqC2 = 0.58911"))) {
+      std::cout << " - GLSL PQ constants are back to the un-scaled ST 2084 form";
+      return __LINE__;
+    }
+  }
+
+  // 6. F-4 (HAL/Phase6-8 review): the production default path passes peak_nits = 0,
+  //    which must bake a roll-off that short-circuits; a positive peak must be embedded
+  //    verbatim. This closes the "the gate used 1000.0, so 0 was never exercised" hole.
+  if (!basic.contains(QStringLiteral("HdrRollOff(col.r, 0)"))) {
+    std::cout << " - default (peak_nits=0) shader does not short-circuit the roll-off";
+    return __LINE__;
+  }
+  if (!pq.contains(QStringLiteral("HdrRollOff(col.r, 1000)"))) {
+    std::cout << " - a positive mastering peak did not reach HdrRollOff";
     return __LINE__;
   }
 

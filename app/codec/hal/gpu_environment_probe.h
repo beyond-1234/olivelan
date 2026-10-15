@@ -77,6 +77,12 @@ public:
   // Topology and backend capability checks
   bool IsHybridTopology() const { return is_hybrid_topology_; }
   bool HasNvdecSupport() const { return has_nvdec_support_; }
+  /**
+   * @brief F-7 fix (HAL/Phase6-8 review): true only when a VA-API device could actually
+   *        be created at runtime, not merely when the backend was compiled in. A pure
+   *        NVIDIA machine therefore reports false instead of advertising a capability it
+   *        cannot honour.
+   */
   bool SupportsVaapiDmaBuf() const { return has_vaapi_dmabuf_support_; }
   bool SupportsVideoToolbox() const { return has_videotoolbox_support_; }
 

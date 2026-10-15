@@ -97,8 +97,10 @@ bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParam
   out_frame.texture = tex;
   out_frame.width = hw_frame->width;
   out_frame.height = hw_frame->height;
-  out_frame.coded_width = hw_frame->linesize[0];
-  out_frame.coded_height = hw_frame->height;
+  // F-8 fix (HAL/Phase6-8 review): the removed coded_width used to be assigned
+  // hw_frame->linesize[0], which is a BYTE stride, not a padded pixel width - the two are
+  // only equal for 8-bit 4:2:0 luma. Nothing consumed the field, so it is gone rather than
+  // reported with the wrong units.
   out_frame.pts = hw_frame->pts;
 
   frame_count_++;

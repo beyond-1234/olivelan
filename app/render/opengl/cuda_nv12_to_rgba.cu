@@ -127,8 +127,13 @@ __device__ __forceinline__ void P010SampleToRgb(const uint16_t *y_plane,
     u_norm = (sample_u - 512.0f) * (255.0f / 1023.0f);
     v_norm = (sample_v - 512.0f) * (255.0f / 1023.0f);
   } else {
-    // 10-bit limited range: Y in [64, 940], UV in [64, 960]
-    y_norm = 1.164383f * (sample_y - 64.0f) * (255.0f / 876.0f);
+    // 10-bit limited range: Y in [64, 940], UV in [64, 960]. The luma expansion is a
+    // pure 255/876 (== 1.164383 * 255/219 has NO place here: it is the 8-bit factor and
+    // double-applies the limited-range expansion, making P010 ~16% too bright - the
+    // HAL/Phase6-8 review's F-5). The chroma normalisation 255/896 already accounts for
+    // the limited-range chroma compression, so the full-range coefficients below are
+    // correct for it.
+    y_norm = (sample_y - 64.0f) * (255.0f / 876.0f);
     u_norm = (sample_u - 512.0f) * (255.0f / 896.0f);
     v_norm = (sample_v - 512.0f) * (255.0f / 896.0f);
   }

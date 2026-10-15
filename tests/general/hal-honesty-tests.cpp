@@ -31,10 +31,13 @@
  *   2. Tier 3 is the safety net: its factory entry point must always be available
  *      (the backend dialog advertises it unconditionally).
  *
- *   3. The VAAPI pipeline never claims 10-bit delivery: the capability note must
- *      state that planes are delivered as imported, with no silent downsample -
- *      the honesty marker itself is pinned here so a reword cannot quietly
+ *   3. The VAAPI 10-bit import must stay honest: the capability note must state that the
+ *      16-bit planes are imported intact and composed into a GL_RGBA16F slot with no
+ *      silent downsample. The honesty markers are pinned here so a reword cannot quietly
  *      re-introduce ambiguity.
+ *
+ *   4. VA-API support is reported only when a VA-API device can actually be created at
+ *      runtime, not merely because the backend was compiled in (F-7).
  *
  * Runtime factory rejection of a forced d3d11 backend needs a GL context and is
  * observable only in a graphics session (tracked in the GPU-session backlog).
@@ -44,6 +47,10 @@
 
 #include <QFile>
 #include <QString>
+
+extern "C" {
+#include <libavutil/hwcontext.h>
+}
 
 #include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/reinforced_software_pipeline.h"
@@ -70,21 +77,55 @@ OLIVE_ADD_TEST(HalCapabilityHonesty)
   }
 
   // 3. The VAAPI 10-bit note must keep the honesty wording: planes delivered as
-  //    imported, no silent downsample.
+  //    imported, no silent downsample, 10-bit precision preserved in the output slot.
+  //
+  //    Gate-quality fix (HAL/Phase6-8 review §五 #3/#4): the path is injected at build
+  //    time instead of being resolved relative to the process CWD, and a missing file is
+  //    now a FAILURE rather than a silent skip (the old "if (src.open()) {...}" made this
+  //    whole check a no-op under ctest). The markers were also updated to the wording
+  //    patch 0050 actually introduced.
   {
-    QFile src(QStringLiteral("app/codec/hal/vaapi_dmabuf_pipeline.cpp"));
-    if (src.open(QFile::ReadOnly)) {
-      const QString text = QString::fromUtf8(src.readAll());
-      if (!text.contains(QStringLiteral("does NOT convert or truncate"))) {
-        std::cout << " - VAAPI 10-bit capability note lost its explicit no-conversion wording";
-        return __LINE__;
-      }
-      if (!text.contains(QStringLiteral("No silent downsample happens here"))) {
-        std::cout << " - VAAPI 10-bit capability note lost its no-silent-downsample marker";
-        return __LINE__;
-      }
+    QFile src(QStringLiteral(OLIVE_TEST_SOURCE_DIR "/app/codec/hal/vaapi_dmabuf_pipeline.cpp"));
+    if (!src.open(QFile::ReadOnly)) {
+      std::cout << " - could not open the VAAPI pipeline source ("
+                << OLIVE_TEST_SOURCE_DIR "/app/codec/hal/vaapi_dmabuf_pipeline.cpp"
+                << ") for the honesty check";
+      return __LINE__;
+    }
+
+    const QString text = QString::fromUtf8(src.readAll());
+
+    if (!text.contains(QStringLiteral("imported intact (GL_R16/GL_RG16)"))) {
+      std::cout << " - VAAPI 10-bit capability note lost its intact-import (GL_R16/GL_RG16) wording";
+      return __LINE__;
+    }
+    if (!text.contains(QStringLiteral("No silent downsample."))) {
+      std::cout << " - VAAPI 10-bit capability note lost its no-silent-downsample marker";
+      return __LINE__;
+    }
+    if (!text.contains(QStringLiteral("GL_RGBA16F"))) {
+      std::cout << " - VAAPI 10-bit capability note no longer states the 10-bit output slot";
+      return __LINE__;
     }
   }
+
+  // 4. F-7: SupportsVaapiDmaBuf() must reflect real device availability, not the compile
+  //    flag. Recreate a VA-API device and require the two answers to agree.
+#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+  {
+    AVBufferRef *device = nullptr;
+    const bool creatable =
+        (av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0) >= 0);
+    if (device) {
+      av_buffer_unref(&device);
+    }
+    if (probe.SupportsVaapiDmaBuf() != creatable) {
+      std::cout << " - SupportsVaapiDmaBuf()=" << probe.SupportsVaapiDmaBuf()
+                << " disagrees with actual VA-API device availability=" << creatable;
+      return __LINE__;
+    }
+  }
+#endif
 
   OLIVE_TEST_END;
 }

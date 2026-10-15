@@ -275,18 +275,11 @@ double PowSigned(double base, double exponent)
 }
 
 // --- Patch 0042: HDR transfer functions -------------------------------------
-
-// ITU-R BT.2100 reference HLG OETF constants (Table 5).
-const double kHlgA = 0.17883277;
-const double kHlgB = 0.28466892;
-const double kHlgC = 0.55991073;
-
-// SMPTE ST 2084 (PQ) EOTF constants.
-const double kPqM1 = 2610.0 / 16384.0;
-const double kPqM2 = 2523.0 / 4096.0 * 128.0;
-const double kPqC1 = 3424.0 / 4096.0;
-const double kPqC2 = 2413.0 / 4096.0 * 32.0;
-const double kPqC3 = 2392.0 / 4096.0 * 32.0;
+//
+// F-2 fix (HAL/Phase6-8 review): the HLG / PQ / luminance constants are no longer
+// declared here. They live in `render/builtincolorspaces.h` as the single source of
+// truth and are shared verbatim with the GLSL emitted by GenerateBuiltinGlslShader()
+// below, so the CPU and GPU maths cannot drift apart again.
 
 double HlgToLinear(double signal)
 {
@@ -332,24 +325,10 @@ double PqToLinear(double signal)
 // white (203 cd/m2) - which is also the SDR white point - so that:
 //   * SDR content sits at 1.0 unchanged (no regression for existing projects);
 //   * the roll-off knee below has a meaningful, standardised anchor.
-constexpr double kPqPeakNits = 10000.0;
-constexpr double kHlgPeakNits = 1000.0;
-
-// PQ: divide by the 10000 cd/m2 PQ peak, then express in units of 203 cd/m2.
-constexpr double kPqLinearToDisplay = kPqPeakNits / kDisplayReferenceWhiteNits;
-
-// HLG: the OOTF is applied first (see HlgApplyOotf), then scaled from the 1000
-// cd/m2 nominal peak into units of 203 cd/m2.
-constexpr double kHlgLinearToDisplay = kHlgPeakNits / kDisplayReferenceWhiteNits;
-
-// BT.2100 OOTF system gamma for the 1000 cd/m2 reference display. BT.2100 gives
-// gamma = 1.2 + 0.42 * log10(Lw / 1000), which reduces to 1.2 at Lw = 1000.
-constexpr double kHlgSystemGamma = 1.2;
-
-// Rec.709 luma coefficients (also used by BT.2020 luma derivation below).
-constexpr double kLumaCoefR = 0.2627;
-constexpr double kLumaCoefG = 0.6780;
-constexpr double kLumaCoefB = 0.0593;
+//
+// F-2 fix: kPqPeakNits / kHlgPeakNits / kPqLinearToDisplay / kHlgLinearToDisplay /
+// kHlgSystemGamma / kLumaCoef* now live in `render/builtincolorspaces.h` and are shared
+// with the generated GLSL.
 
 /**
  * @brief Apply the BT.2100 HLG OOTF to a linear scene-referred RGB triple.
@@ -478,6 +457,12 @@ void ToStorage(char *p, PixelFormat::Format f, float v)
  * the same constants the CPU path evaluates with, rather than maintained as a second
  * hand-written GLSL template, so the CPU and GPU paths cannot drift apart.
  *
+ * F-9 (HAL/Phase6-8 review) caveat: this covers the transfer curves shared with the CPU
+ * path (sRGB / Rec.709 / BT.1886). The GPU output additionally applies the BT.2100 HLG
+ * OOTF, the BT.2408 display normalisation and the mastering-peak roll-off below, which the
+ * CPU ConvertColor()/ConvertFrame() path does NOT do - so on HLG/PQ the two paths differ by
+ * design until GPU backlog #2 is closed.
+ *
  * The generated code defines `OCIODisplay(vec4)` - the entry point `colormanage.frag`
  * already calls - plus the HLG OOTF / BT.2408 roll-off helpers it needs. If a .cube
  * LUT is attached it is sampled first, then the transfer functions are applied.
@@ -542,28 +527,32 @@ QString GenerateBuiltinGlslShader(BuiltinTransferFunction src,
     }
   };
 
+  // F-2 fix: every constant below is pulled from the single source of truth in
+  // `render/builtincolorspaces.h` (the exact values the CPU path evaluates with), so the
+  // GLSL can no longer disagree with the CPU. The previous hand-written copy omitted the
+  // ST 2084 *128 / *32 factors on kPqM2 / kPqC2 / kPqC3, which made the GPU PQ transfer
+  // functions wrong by a large factor.
   QString out = QStringLiteral(
     "// Patch 0047 (Phase 8): derived from the CPU-side transfer-function table.\n"
     "// Do not edit by hand - regenerate from builtincolorspaces.h / colorprocessor.cpp.\n"
-    "const float kHlgA = 0.17883277;\n"
-    "const float kHlgB = 0.28466892;\n"
-    "const float kHlgC = 0.55991073;\n"
-    "const float kHlgSystemGamma = 1.2;\n"
-    "const vec3 kRec2020LumaCoefs = vec3(0.2627, 0.6780, 0.0593);\n"
-    "const float kDisplayRefWhiteNits = 203.0;\n");
-
-  // Patch 0046 PQ constants, mirrored from the CPU path (ST 2084 / BT.2100 Table 4).
-  {
-    double m1 = 1305.0 / 8192.0, m2 = 2523.0 / 4096.0;
-    double c1 = 107.0 / 128.0, c2 = 2413.0 / 4096.0, c3 = 2392.0 / 4096.0;
-    out += QStringLiteral("const float kPqM1 = %1;\n"
-                          "const float kPqM2 = %2;\n"
-                          "const float kPqC1 = %3;\n"
-                          "const float kPqC2 = %4;\n"
-                          "const float kPqC3 = %5;\n")
-        .arg(m1, 0, 'g', 17).arg(m2, 0, 'g', 17)
-        .arg(c1, 0, 'g', 17).arg(c2, 0, 'g', 17).arg(c3, 0, 'g', 17);
-  }
+    "const float kHlgA = %1;\n"
+    "const float kHlgB = %2;\n"
+    "const float kHlgC = %3;\n"
+    "const float kHlgSystemGamma = %4;\n"
+    "const vec3 kRec2020LumaCoefs = vec3(%5, %6, %7);\n"
+    "const float kDisplayRefWhiteNits = %8;\n"
+    "const float kPqM1 = %9;\n"
+    "const float kPqM2 = %10;\n"
+    "const float kPqC1 = %11;\n"
+    "const float kPqC2 = %12;\n"
+    "const float kPqC3 = %13;\n")
+        .arg(kHlgA, 0, 'g', 17).arg(kHlgB, 0, 'g', 17).arg(kHlgC, 0, 'g', 17)
+        .arg(kHlgSystemGamma, 0, 'g', 17)
+        .arg(kLumaCoefR, 0, 'g', 17).arg(kLumaCoefG, 0, 'g', 17)
+        .arg(kLumaCoefB, 0, 'g', 17)
+        .arg(kDisplayReferenceWhiteNits, 0, 'g', 17)
+        .arg(kPqM1, 0, 'g', 17).arg(kPqM2, 0, 'g', 17).arg(kPqC1, 0, 'g', 17)
+        .arg(kPqC2, 0, 'g', 17).arg(kPqC3, 0, 'g', 17);
 
   if (has_cube_lut) {
     out += QStringLiteral("uniform sampler3D ove_cube_lut;\n");

@@ -56,6 +56,7 @@ function(olive_add_test GROUP NAME SOURCE)
     ${NAME}
     PRIVATE
     ${OLIVE_DEFINITIONS}
+    OLIVE_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
   )
   target_compile_options(
     ${NAME}

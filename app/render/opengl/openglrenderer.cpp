@@ -674,9 +674,12 @@ int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum targe
     functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     functions_->glTexImage2D(target, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
     functions_->glBindTexture(target, 0);
-    functions_->glBindTexture(target, 0);
     new_slot.width = width;
     new_slot.height = height;
+    // F-3 fix (HAL/Phase6-8 review): the newly created slot must record its pixel format,
+    // otherwise the match at the top of this function (slot.format == format) can never hit
+    // it and every 16-bit borrow would allocate a fresh slot instead of reusing this one.
+    new_slot.format = format;
     new_slot.in_use = true;
     native_surface_pool_.push_back(new_slot);
     chosen = native_surface_pool_.size() - 1;
@@ -814,54 +817,19 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
 #endif
 }
 
-TexturePtr OpenGLRenderer::CreateTextureFromEglImage(const VideoParams &params, void* egl_image, int width, int height)
-{
-#if !defined(__linux__)
-  Q_UNUSED(params);
-  Q_UNUSED(egl_image);
-  Q_UNUSED(width);
-  Q_UNUSED(height);
-  return nullptr;
-#else
-  if (!egl_image || width <= 0 || height <= 0) return nullptr;
-
-  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
-  // Resolve the extension pointer on every call: a static cache would freeze a nullptr if the
-  // first invocation ran without a current GL context (fixes CR-11: silent permanent failure).
-  QOpenGLContext* ctx = QOpenGLContext::currentContext();
-  if (!ctx) {
-    qWarning() << "[VAAPI-HAL] No current OpenGL context while resolving glEGLImageTargetTexture2DOES";
-    return nullptr;
-  }
-  auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
-      ctx->getProcAddress("glEGLImageTargetTexture2DOES"));
-  if (!pfn_glEGLImageTargetTexture2DOES) {
-    qWarning() << "[VAAPI-HAL] glEGLImageTargetTexture2DOES not available";
-    return nullptr;
-  }
-
-  GLuint texture_id = 0;
-  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, params.format(), &texture_id);
-  if (slot_index < 0) return nullptr;
-
-  functions_->glBindTexture(GL_TEXTURE_2D, texture_id);
-  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
-  functions_->glBindTexture(GL_TEXTURE_2D, 0);
-
-  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), params);
-#endif
-}
-
-// Patch 0050 (item #5): fragment shader for the two-plane VA-API import composite.
-// Mirrors :/shaders/yuv2rgb.frag exactly, but takes a single packed-UV texture
-// (GL_RG8/GL_RG16 from a GR88/GR32/GR1616 EGLImage) instead of separate U and V
-// planes, and consumes the 10-bit container value directly:
+// Patch 0050 (item #5), corrected by the HAL/Phase6-8 review (F-1): fragment shader for
+// the two-plane VA-API import composite. Mirrors :/shaders/yuv2rgb.frag, but takes a
+// single packed-UV texture (GL_RG8/GL_RG16 from a GR88/GR32/GR1616 EGLImage) instead of
+// separate U and V planes.
 //
-// The luma/chroma textures arrive as UNORM (GL_R16/GL_RG16 per the import probe),
-// so a 10-bit sample stored MSB-aligned in a 16-bit container (val16 = val10 << 6)
-// reads back as s = val10*64/65535. Multiplying by 65535/64 = 1023.984375 recovers
-// the exact 10-bit domain [0, 1023] that the CPU path (and CUDA Tier 1) works in -
-// keeping Tier 1 / Tier 2 outputs mathematically identical.
+// The luma/chroma textures arrive as UNORM (GL_R8/R16, GL_RG8/RG16), so the GL hardware
+// has already normalised *every* depth to [0,1]. A 10-bit sample stored MSB-aligned in a
+// 16-bit container (val16 = val10 << 6) reads back as s = val10*64/65535 ~= val10/1023,
+// i.e. the normalised 10-bit domain. There is therefore NO integer-domain rescale: the
+// pre-fix `yuv *= 65535/64` applied the domain transform a second time and produced
+// ~1024x over-bright output (the review's F-1). Limited range is expanded per bit depth
+// so the 10-bit black level sits at 64/1023 and white at 940/1023, matching the CPU
+// YUV->RGB path and Tier 1 (CUDA).
 static const char* kVaapiYuvToRgbFrag = R"(
 
 uniform sampler2D ove_y_tex;
@@ -886,28 +854,29 @@ void main()
   yuv.g = uv.r;
   yuv.b = uv.g;
 
-  // UNORM readback -> integer domain of the actual bit depth.
+  // The UNORM samples are already normalised to [0,1]; only the limited-range expansion
+  // differs per bit depth. Chroma is recentred on the mid code value of the depth.
+  float luma_black;
+  float luma_scale;
   if (bits_per_pixel == 8) {
-    // 8-bit UNORM: s = val/255, already the [0,255] domain.
-  } else if (bits_per_pixel == 10) {
-    // s = val10*64/65535 -> recover val10 domain.
-    yuv *= (65535.0/64.0);
-  } else if (bits_per_pixel == 12) {
-    // s = val12*16/65535 -> recover val12 domain.
-    yuv *= (65535.0/16.0);
-  }
-
-  if (bits_per_pixel == 8) {
+    luma_black = 16.0/255.0;    // limited-range black (16 of 255)
+    luma_scale = 255.0/219.0;   // 16..235 -> 0..1
     yuv.gb -= (128.0/255.0);
   } else if (bits_per_pixel == 10) {
+    luma_black = 64.0/1023.0;   // limited-range black (64 of 1023)
+    luma_scale = 1023.0/876.0;  // 64..940 -> 0..1
     yuv.gb -= (512.0/1023.0);
   } else if (bits_per_pixel == 12) {
+    luma_black = 256.0/4095.0;  // limited-range black (256 of 4095)
+    luma_scale = 4095.0/3504.0; // 256..3760 -> 0..1
     yuv.gb -= (2048.0/4095.0);
+  } else {
+    luma_black = 0.0;
+    luma_scale = 1.0;
   }
 
-  // Limited-range luma (16-235 of 255) into full range.
-  yuv.r -= 0.0625;
-  yuv.r *= 1.1643;
+  // Limited-range luma -> full range (undone below when the source is full range).
+  yuv.r = (yuv.r - luma_black) * luma_scale;
 
   vec4 rgba;
   rgba.r = yuv.r + yuv_crv * yuv.b;
@@ -915,8 +884,7 @@ void main()
   rgba.b = yuv.r + yuv_cbu * yuv.g;
 
   if (full_range) {
-    rgba.rgb /= 1.1643;
-    rgba.rgb += 0.0625;
+    rgba.rgb = rgba.rgb / luma_scale + luma_black;
   }
 
   rgba.a = 1.0;

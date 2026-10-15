@@ -6,6 +6,7 @@
 #include <sstream>
 
 extern "C" {
+#include <libavutil/hwcontext.h>
 #include <libavutil/pixdesc.h>
 }
 
@@ -19,6 +20,30 @@ extern "C" {
 #endif
 
 namespace olive {
+
+namespace {
+
+#if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+// F-7 fix (HAL/Phase6-8 review): "compiled with VA-API" is not the same as "a VA-API
+// device exists". Try to actually create a VA-API device and only report the capability
+// when that succeeds. Before this, a pure-NVIDIA machine advertised "VA-API ... Available"
+// (halbackenddialog) and broadcast h264/hevc/vp9 decode support purely because the backend
+// had been compiled in, then failed in ProbeAndInitialize and fell back to Tier 3. This
+// applies the same honesty standard patch 0049 set for D3D11.
+bool ProbeVaapiDeviceAvailable()
+{
+  AVBufferRef* device = nullptr;
+  const int err = av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0);
+
+  if (device) {
+    av_buffer_unref(&device);
+  }
+
+  return err >= 0;
+}
+#endif
+
+}
 
 GpuEnvironmentProbe& GpuEnvironmentProbe::Instance()
 {
@@ -153,7 +178,8 @@ void GpuEnvironmentProbe::DetectBackendCapabilities()
 #endif
 
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
-  has_vaapi_dmabuf_support_ = true;
+  // F-7 fix: device availability, not compile-time presence (see ProbeVaapiDeviceAvailable).
+  has_vaapi_dmabuf_support_ = ProbeVaapiDeviceAvailable();
 #else
   has_vaapi_dmabuf_support_ = false;
 #endif

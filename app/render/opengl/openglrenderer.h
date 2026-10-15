@@ -68,7 +68,10 @@ public:
 #endif
 
   TexturePtr CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height);
-  TexturePtr CreateTextureFromEglImage(const VideoParams &params, void* egl_image, int width, int height);
+
+  // Patch 0050 / F-10 (HAL/Phase6-8 review): CreateTextureFromEglImage() was removed.
+  // It had no callers after 0050 replaced single-image EGLImage wrapping with the
+  // two-plane CompositeTextureFromVaapiPlanes() path below.
 
   // Patch 0050 (item #5): two-plane VA-API DMA-BUF import + YUV->RGB composite.
   // Binds egl_image_y (R8/R16 luma) and egl_image_uv (GR88/GR32/GR1616 chroma) as

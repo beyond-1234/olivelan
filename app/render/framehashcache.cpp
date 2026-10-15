@@ -232,6 +232,26 @@ FramePtr FrameHashCache::LoadCacheFrame(const QString &fn)
     return nullptr;
   }
 
+  // F-6 fix (HAL/Phase6-8 review): every field above comes from the file and is therefore
+  // corrupt/adversarial input. Bound raw_size to a sane frame ceiling and compressed_size
+  // to what LZ4 could ever have produced for this raw payload - otherwise a bogus
+  // compressed_size allocates an arbitrary (up to ~4 GiB, or negative after
+  // static_cast<int>) buffer.
+  constexpr quint64 kMaxRawFrameBytes = 1ull << 30;  // 1 GiB: far above any real frame
+  if (raw_size == 0
+      || raw_size > kMaxRawFrameBytes
+      || compressed_size == 0) {
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
+
+  // raw_size <= 1 GiB keeps LZ4_compressBound() well inside int range.
+  const int max_compressed_size = LZ4_compressBound(static_cast<int>(raw_size));
+  if (compressed_size > quint64(max_compressed_size)) {
+    DeleteCorruptCacheFile(fn);
+    return nullptr;
+  }
+
   QByteArray compressed(static_cast<int>(compressed_size), Qt::Uninitialized);
   if (stream.readRawData(compressed.data(), static_cast<int>(compressed_size)) != static_cast<int>(compressed_size)) {
     DeleteCorruptCacheFile(fn);

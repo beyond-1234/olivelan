@@ -33,8 +33,10 @@
  *   * the FFmpeg side-data walk in FFmpegDecoder (exercising it needs a real HDR
  *     container with mastering-display metadata, which this tree has no fixture
  *     for) - only the pure conversion it relies on is pinned below;
- *   * the BT.2408 / Reinhard display roll-off and the HLG OOTF, which belong to
- *     the GPU display transform (colormanage.frag) and are still outstanding;
+ *   * the BT.2408 / Reinhard display roll-off *curve* and the HLG OOTF, which belong to
+ *     the GPU display transform (colormanage.frag); the roll-off curve itself is a
+ *     generated GLSL function and is exercised only in a graphics session, but the
+ *     mastering-peak resolution that feeds it is pinned below (ColorHdrRollOffPeakResolution);
  *   * the Rec.2020 gamut matrix - the built-in engine has no matrices at all yet,
  *     so HDR values are treated as if already in the working primaries.
  *
@@ -370,6 +372,58 @@ OLIVE_ADD_TEST(ColorHdrTransferFunctions)
 
   OLIVE_TEST_END;
 #endif
+}
+
+OLIVE_ADD_TEST(ColorHdrRollOffPeakResolution)
+{
+  // F-4 (HAL/Phase6-8 review): the mastering-display peak baked into the generated
+  // BT.2408 roll-off is resolved from the source VideoParams via ResolveMasteringPeakNits,
+  // not hardcoded to 0. Pin the three cases and the fact that the value reaches the GLSL.
+  using olive::ResolveMasteringPeakNits;
+
+  // SDR content: no mapping, so the roll-off must short-circuit (peak 0).
+  if (!NearlyEqual(ResolveMasteringPeakNits(false, 4000.0), 0.0, 0.0)) {
+    std::cout << " - SDR content resolved to a non-zero roll-off peak";
+    return __LINE__;
+  }
+
+  // HDR content whose container carried a mastering peak: use it verbatim.
+  if (!NearlyEqual(ResolveMasteringPeakNits(true, 4000.0), 4000.0, 0.0)) {
+    std::cout << " - HDR content did not use its container mastering peak";
+    return __LINE__;
+  }
+
+  // HDR content with no metadata (0): fall back to the standard default so the knee is
+  // not silently disabled.
+  if (!NearlyEqual(ResolveMasteringPeakNits(true, 0.0), olive::kDefaultMasteringPeakNits, 0.0)) {
+    std::cout << " - HDR content without metadata did not fall back to kDefaultMasteringPeakNits";
+    return __LINE__;
+  }
+
+#ifndef OLIVE_ENABLE_OCIO
+  // The resolved value must actually reach the generated GLSL (production default path).
+  using olive::GenerateBuiltinGlslShader;
+  using olive::kTransferPq;
+  using olive::kTransferSrgb;
+
+  const QString sdr = GenerateBuiltinGlslShader(kTransferPq, kTransferSrgb, false,
+                                                ResolveMasteringPeakNits(false, 0.0));
+  if (!sdr.contains(QStringLiteral("HdrRollOff(col.r, 0)"))) {
+    std::cout << " - production SDR default did not bake peak_nits = 0";
+    return __LINE__;
+  }
+
+  const QString hdr_default = GenerateBuiltinGlslShader(kTransferPq, kTransferSrgb, false,
+                                                        ResolveMasteringPeakNits(true, 0.0));
+  if (!hdr_default.contains(QStringLiteral("HdrRollOff(col.r, 1000)"))) {
+    std::cout << " - HDR default did not bake kDefaultMasteringPeakNits (1000)";
+    return __LINE__;
+  }
+#else
+  std::cout << " (GLSL wiring checked only under the built-in engine)";
+#endif
+
+  OLIVE_TEST_END;
 }
 
 }

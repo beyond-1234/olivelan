@@ -78,6 +78,13 @@ public:
    *
    * The GPU shader text is derived from these same enumerators (see
    * GenerateBuiltinGlslShader), so the CPU and GPU paths cannot drift apart.
+   *
+   * F-9 (HAL/Phase6-8 review) caveat: that guarantee holds for the *transfer curves* of
+   * sRGB / Rec.709 / BT.1886 (identical maths on both sides). It does NOT hold for HLG/PQ
+   * today: the GPU path additionally applies the BT.2100 HLG OOTF, the BT.2408 display
+   * normalisation and the mastering-peak roll-off, while the CPU ConvertColor()/
+   * ConvertFrame() path does not. Closing that gap is GPU backlog #2; until then the two
+   * paths intentionally differ on HDR content.
    */
   BuiltinTransferFunction GetInputTransferFunction() const;
   BuiltinTransferFunction GetOutputTransferFunction() const;

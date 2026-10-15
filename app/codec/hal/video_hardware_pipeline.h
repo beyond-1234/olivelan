@@ -41,8 +41,6 @@ struct HardwareDecodedFrame {
   int64_t pts{0};            // Presentation timestamp
   int width{0};              // Active video frame width
   int height{0};             // Active video frame height
-  int coded_width{0};        // HW buffer padded width
-  int coded_height{0};       // HW buffer padded height
   int pool_slot_index{-1};   // Internal frame pool slot index (-1 if non-pooled)
 };
 

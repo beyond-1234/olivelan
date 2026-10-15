@@ -170,7 +170,29 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
 
   ColorContext& color_ctx = *ctx;
 
+  // F-4 fix (HAL/Phase6-8 review): the BT.2408 roll-off baked into the shader needs a
+  // mastering-display peak. Derive it from the INPUT texture's VideoParams - that is
+  // where the decoded footage carries its HDR mastering metadata - with a documented
+  // fallback, instead of the previous hardcoded 0.0 that silently disabled roll-off.
+  double peak_nits = 0.0;
+  {
+    const NodeValue &in_tex = color_job.GetInputTexture();
+    if (in_tex.type() == NodeValue::kTexture) {
+      if (TexturePtr tex = in_tex.toTexture()) {
+        const VideoParams &src_params = tex->params();
+        peak_nits = ResolveMasteringPeakNits(src_params.needs_hdr_mapping(),
+                                             src_params.mastering_peak_nits());
+      }
+    }
+  }
+
   QString proc_id = color_job.id();
+
+  // The generated GLSL bakes peak_nits into HdrRollOff(), so distinct peaks must not
+  // share a cache entry (e.g. two HDR clips with different mastering metadata).
+  if (peak_nits > 0.0) {
+    proc_id += QStringLiteral("|peak=%1").arg(peak_nits, 0, 'g', 17);
+  }
 
   if (color_cache_.contains(proc_id)) {
     color_ctx = color_cache_.value(proc_id);
@@ -212,7 +234,6 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     BuiltinTransferFunction src_tf = kTransferLinear;
     BuiltinTransferFunction dst_tf = kTransferSrgb;
     bool has_lut = false;
-    double peak_nits = 0.0;
 
     if (ColorProcessor *proc = color_job.GetColorProcessor().get()) {
       src_tf = proc->GetInputTransferFunction();
@@ -222,6 +243,8 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       }
     }
 
+    // F-4 fix: `peak_nits` is resolved above from the source VideoParams (see
+    // ResolveMasteringPeakNits); it is no longer hardcoded to 0.0 here.
     const QString builtin_shader_text = GenerateBuiltinGlslShader(src_tf, dst_tf, has_lut, peak_nits)
         + QStringLiteral(
       "vec4 SceneLinearToCIEXYZ_d65(vec4 in) {\n"

@@ -29,9 +29,9 @@
  *   2. Every supported format (U8/U16/F16/F32) x channel count (RGB/RGBA) x
  *      divider (1/2) x pixel aspect ratio must round-trip bit-exact, including
  *      the reconstructed VideoParams.
- *   3. A missing file, a foreign file, a truncated header and an unknown
- *      version must all be reported as a cache miss (nullptr) rather than
- *      misread.
+ *   3. A missing file, a foreign file, a truncated header, an unknown
+ *      version, and a valid-looking header with an impossible compressed_size
+ *      must all be reported as a cache miss (nullptr) rather than misread.
  */
 
 #include "testutil.h"
@@ -289,6 +289,42 @@ OLIVE_ADD_TEST(FrameCacheContainer)
   if (FrameHashCache::LoadCacheFrame(wrong_version)) {
     std::cout << " - unknown version was not a cache miss";
     return __LINE__;
+  }
+
+  // 4. F-6 (HAL/Phase6-8 review): a header that is otherwise well-formed but declares an
+  //    impossible compressed_size must be rejected before it is used to allocate a buffer.
+  //    The fields mirror exactly what SaveCacheFrame() writes (see framehashcache.cpp),
+  //    with a consistent raw_size for a 16x8 RGBA U8 frame and an absurd compressed_size.
+  //    This is a hardening contract: the pre-fix build also happened to return nullptr here
+  //    (the short read failed), but only after asking for the bogus allocation described by
+  //    the header.
+  {
+    const QString oversized = dir.filePath(QStringLiteral("oversized_payload.olvcache"));
+    QFile f(oversized);
+    if (!f.open(QFile::WriteOnly)) {
+      std::cout << " - could not write oversized-payload file";
+      return __LINE__;
+    }
+    QDataStream stream(&f);
+    stream.setByteOrder(QDataStream::LittleEndian);
+    stream.writeRawData("OLVC", 4);
+    stream << quint32(1);                       // version
+    stream << quint32(kEffectiveWidth);         // width
+    stream << quint32(kEffectiveHeight);        // height
+    stream << quint32(PixelFormat::U8);         // format
+    stream << quint32(VideoParams::kRGBAChannelCount);
+    stream << quint32(1);                       // divider
+    stream << quint32(1);                       // par numerator
+    stream << quint32(1);                       // par denominator
+    stream << quint64(kEffectiveWidth * kEffectiveHeight
+                      * VideoParams::kRGBAChannelCount);  // raw_size (U8 = 1 byte/channel)
+    stream << quint32(0x40000000);              // compressed_size: 1 GiB, far above the LZ4 bound
+    f.close();
+
+    if (FrameHashCache::LoadCacheFrame(oversized)) {
+      std::cout << " - oversized compressed_size was not a cache miss";
+      return __LINE__;
+    }
   }
 
   OLIVE_TEST_END;
