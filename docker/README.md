@@ -32,7 +32,7 @@ Pull images from [Docker Hub](https://hub.docker.com/u/olivevideoeditor):
 docker pull olivevideoeditor/ci-common:2
 docker pull olivevideoeditor/ci-package-otio:0.14.1
 docker pull olivevideoeditor/ci-package-crashpad
-docker pull olivevideoeditor/ci-package-ffmpeg:5.0
+docker pull olivevideoeditor/ci-package-ffmpeg:6.1
 docker pull olivevideoeditor/ci-olive:2022.2
 ```
 
@@ -54,7 +54,7 @@ cd docker
 docker build -t olivevideoeditor/ci-common:2 -f ci-common/Dockerfile .
 docker build -t olivevideoeditor/ci-package-otio:0.14.1 -f ci-otio/Dockerfile .
 docker build -t olivevideoeditor/ci-package-crashpad -f ci-crashpad/Dockerfile .
-docker build -t olivevideoeditor/ci-package-ffmpeg:5.0 -f ci-ffmpeg/Dockerfile .
+docker build -t olivevideoeditor/ci-package-ffmpeg:6.1 -f ci-ffmpeg/Dockerfile .
 docker build -t olivevideoeditor/ci-olive:2022.2 -f ci-olive/Dockerfile .
 ```
 
@@ -68,6 +68,6 @@ Publish images:
 docker push olivevideoeditor/ci-common:2
 docker push olivevideoeditor/ci-package-otio:0.14.1
 docker push olivevideoeditor/ci-package-crashpad
-docker push olivevideoeditor/ci-package-ffmpeg:5.0
+docker push olivevideoeditor/ci-package-ffmpeg:6.1
 docker push olivevideoeditor/ci-olive:2022.2
 ```
