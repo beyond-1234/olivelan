@@ -241,6 +241,59 @@ QString RunConformCase(const QString &input, const AudioParams &target, double e
   return QString();
 }
 
+/// Encode a short stereo tone to `path`. Empty string on success.
+QString MakeToneFile(const QString &path)
+{
+  const AudioParams internal_ap(48000, AV_CH_LAYOUT_STEREO, SampleFormat(SampleFormat::F32P));
+  const AudioParams file_ap(48000, AV_CH_LAYOUT_STEREO, SampleFormat(SampleFormat::S16));
+
+  EncodingParams params;
+  params.set_format(ExportFormat::kFormatWAV);
+  params.SetFilename(path);
+  params.EnableAudio(file_ap, ExportCodec::kCodecPCM);
+
+  std::unique_ptr<Encoder> enc(Encoder::CreateFromFormat(ExportFormat::kFormatWAV, params));
+  if (!enc) {
+    return QStringLiteral("no encoder");
+  }
+  if (!enc->Open()) {
+    return QStringLiteral("Open: %1").arg(enc->GetError());
+  }
+
+  SampleBuffer tone(internal_ap, size_t(4800));
+  if (!tone.is_allocated()) {
+    tone.allocate();
+  }
+  for (int ch = 0; ch < tone.channel_count(); ch++) {
+    float *d = tone.data(ch);
+    for (size_t i = 0; i < tone.sample_count(); i++) {
+      d[i] = 0.2f * float(std::sin(6.283185307179586 * 440.0 * double(i) / 48000.0));
+    }
+  }
+
+  if (!enc->WriteAudio(tone)) {
+    return QStringLiteral("WriteAudio: %1").arg(enc->GetError());
+  }
+
+  enc->Close();
+  return QString();
+}
+
+/// Just report whether ConformAudio succeeds for this target (no output checks).
+bool ConformReturns(const QString &input, const AudioParams &target, QVector<QString> *out)
+{
+  DecoderPtr decoder = std::make_shared<FFmpegDecoder>();
+
+  Decoder::CodecStream stream(input, 0, nullptr);
+  if (!decoder->Open(stream)) {
+    return false;
+  }
+
+  const bool ok = decoder->ConformAudio(*out, target, nullptr);
+  decoder->Close();
+  return ok;
+}
+
 } // namespace
 
 OLIVE_ADD_TEST(FfmpegAudioRoundTrip)
@@ -330,6 +383,64 @@ OLIVE_ADD_TEST(FfmpegAudioRoundTrip)
     const QString err = RunConformCase(wav, target, 1.0, &out);
     if (!err.isEmpty()) {
       LogLine(QStringLiteral("conform mono s16p: %1").arg(err));
+      return __LINE__;
+    }
+  }
+
+  OLIVE_TEST_END;
+}
+
+/**
+ * Patch 0059: ConformAudio must reject unusable target parameters instead of crashing.
+ *
+ * A target AudioParams with a 0-channel layout used to sail past the resampler setup, then divide
+ * by params.channel_count() == 0 in the conversion loop and die with SIGFPE. If that ever comes
+ * back, this test process dies and ctest reports it.
+ */
+OLIVE_ADD_TEST(FfmpegConformRejectsInvalidParams)
+{
+  QTemporaryDir dir;
+  OLIVE_ASSERT(dir.isValid());
+
+  const QString wav = dir.filePath(QStringLiteral("invalid-params.wav"));
+
+  {
+    const QString err = MakeToneFile(wav);
+    if (!err.isEmpty()) {
+      LogLine(QStringLiteral("could not build the input file: %1").arg(err));
+      return __LINE__;
+    }
+  }
+
+  // Control: a usable target must still succeed, otherwise the "false" results below prove nothing.
+  {
+    QVector<QString> out;
+    out << dir.filePath(QStringLiteral("ok_0.raw")) << dir.filePath(QStringLiteral("ok_1.raw"));
+    const AudioParams good(48000, AV_CH_LAYOUT_STEREO, SampleFormat(SampleFormat::S16P));
+    if (!ConformReturns(wav, good, &out)) {
+      LogLine(QStringLiteral("valid target failed"));
+      return __LINE__;
+    }
+  }
+
+  // A layout with no channels: the resampler cannot be configured with it.
+  {
+    QVector<QString> out;
+    out << dir.filePath(QStringLiteral("mask0_0.raw"));
+    const AudioParams bad(48000, 0, SampleFormat(SampleFormat::S16P));
+    if (ConformReturns(wav, bad, &out)) {
+      LogLine(QStringLiteral("a 0-channel layout was accepted"));
+      return __LINE__;
+    }
+  }
+
+  // An out-of-range sample rate makes swr_alloc_set_opts2 itself fail.
+  {
+    QVector<QString> out;
+    out << dir.filePath(QStringLiteral("neg_0.raw")) << dir.filePath(QStringLiteral("neg_1.raw"));
+    const AudioParams bad(-1, AV_CH_LAYOUT_STEREO, SampleFormat(SampleFormat::S16P));
+    if (ConformReturns(wav, bad, &out)) {
+      LogLine(QStringLiteral("a negative sample rate was accepted"));
       return __LINE__;
     }
   }

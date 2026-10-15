@@ -721,7 +721,15 @@ bool FFmpegDecoder::ConformAudioInternal(const QVector<QString> &filenames, cons
     return false;
   }
 
-  swr_init(resampler);
+  int swr_init_err = swr_init(resampler);
+  if (swr_init_err < 0) {
+    // The resampler accepted the parameters above but cannot configure itself with them - e.g. a
+    // target AudioParams whose channel layout has no channels. This used to fall straight through
+    // into the conversion loop, where params.channel_count() == 0 divided by zero (SIGFPE).
+    qCritical() << "Failed to initialize resampling context:" << swr_init_err;
+    swr_free(&resampler);
+    return false;
+  }
 
   AVPacket* pkt = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
