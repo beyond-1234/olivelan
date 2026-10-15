@@ -474,8 +474,8 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
               // Read first frame and retrieve some metadata
               if (instance.GetFrame(pkt, frame) >= 0) {
                 // Check if video is interlaced and what field dominance it has if so
-                if (frame->interlaced_frame) {
-                  if (frame->top_field_first) {
+                if (frame->flags & AV_FRAME_FLAG_INTERLACED) {
+                  if (frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST) {
                     interlacing = VideoParams::kInterlacedTopFirst;
                   } else {
                     interlacing = VideoParams::kInterlacedBottomFirst;
@@ -576,9 +576,9 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
         } else if (avstream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
 
           // Create an audio stream object
-          uint64_t channel_layout = avstream->codecpar->channel_layout;
+          uint64_t channel_layout = FFmpegUtils::ChannelLayoutToMask(avstream->codecpar->ch_layout);
           if (!channel_layout) {
-            channel_layout = static_cast<uint64_t>(av_get_default_channel_layout(avstream->codecpar->channels));
+            channel_layout = FFmpegUtils::DefaultChannelLayoutMask(avstream->codecpar->ch_layout.nb_channels);
           }
 
           if (avstream->duration == AV_NOPTS_VALUE || duration_guessed_from_bitrate) {
@@ -694,16 +694,32 @@ bool FFmpegDecoder::ConformAudioInternal(const QVector<QString> &filenames, cons
     return false;
   }
 
-  // Create resampling context
-  SwrContext* resampler = swr_alloc_set_opts(nullptr,
-                                             params.channel_layout(),
-                                             FFmpegUtils::GetFFmpegSampleFormat(params.format()),
-                                             params.sample_rate(),
-                                             channel_layout,
-                                             static_cast<AVSampleFormat>(instance_.avstream()->codecpar->format),
-                                             instance_.avstream()->codecpar->sample_rate,
-                                             0,
-                                             nullptr);
+  // Create resampling context.
+  //
+  // in_layout is built from the *mask* returned by ValidateChannelLayout() rather than from
+  // codecpar->ch_layout directly: the deprecated swr_alloc_set_opts() converted a mask into a
+  // native layout internally, so going through the mask keeps this bit-for-bit identical to the
+  // previous behaviour. (Passing an AV_CHANNEL_ORDER_CUSTOM layout through verbatim would instead
+  // preserve its custom order, diverging from the old code's downgrade to a native layout.)
+  FFmpegUtils::ChannelLayoutGuard out_layout(params.channel_layout());
+  FFmpegUtils::ChannelLayoutGuard in_layout(channel_layout);
+
+  SwrContext* resampler = nullptr;
+  int swr_err = swr_alloc_set_opts2(&resampler,
+                                    out_layout.get(),
+                                    FFmpegUtils::GetFFmpegSampleFormat(params.format()),
+                                    params.sample_rate(),
+                                    in_layout.get(),
+                                    static_cast<AVSampleFormat>(instance_.avstream()->codecpar->format),
+                                    instance_.avstream()->codecpar->sample_rate,
+                                    0,
+                                    nullptr);
+  if (swr_err < 0 || !resampler) {
+    // Note: the previous swr_alloc_set_opts() call had no NULL check here; this is a deliberate
+    // hardening that only affects an already-failing path.
+    qCritical() << "Failed to initialize resampling context";
+    return false;
+  }
 
   swr_init(resampler);
 
@@ -828,20 +844,12 @@ int FFmpegDecoder::GetNativeChannelCount(AVPixelFormat pix_fmt)
 
 uint64_t FFmpegDecoder::ValidateChannelLayout(AVStream* stream)
 {
-  if (stream->codecpar->channel_layout) {
-    return stream->codecpar->channel_layout;
+  uint64_t channel_layout = FFmpegUtils::ChannelLayoutToMask(stream->codecpar->ch_layout);
+  if (channel_layout) {
+    return channel_layout;
   }
 
-  return av_get_default_channel_layout(stream->codecpar->channels);
-}
-
-const char *FFmpegDecoder::GetInterlacingModeInFFmpeg(VideoParams::Interlacing interlacing)
-{
-  if (interlacing == VideoParams::kInterlacedTopFirst) {
-    return "tff";
-  } else {
-    return "bff";
-  }
+  return FFmpegUtils::DefaultChannelLayoutMask(stream->codecpar->ch_layout.nb_channels);
 }
 
 bool FFmpegDecoder::IsPixelFormatGLSLCompatible(AVPixelFormat f)

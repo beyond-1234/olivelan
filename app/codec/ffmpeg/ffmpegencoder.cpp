@@ -396,7 +396,7 @@ bool FFmpegEncoder::WriteAudioData(const AudioParams &audio_params, const uint8_
   int output_sample_count = input_sample_count ? swr_get_out_samples(audio_resample_ctx_, input_sample_count) : 102400;
   uint8_t** output_data = nullptr;
   int output_linesize;
-  av_samples_alloc_array_and_samples(&output_data, &output_linesize, audio_stream_->codecpar->channels,
+  av_samples_alloc_array_and_samples(&output_data, &output_linesize, audio_stream_->codecpar->ch_layout.nb_channels,
                                      output_sample_count, static_cast<AVSampleFormat>(audio_stream_->codecpar->format), 0);
 
   // Perform conversion
@@ -411,7 +411,7 @@ bool FFmpegEncoder::WriteAudioData(const AudioParams &audio_params, const uint8_
 
       av_samples_copy(audio_frame_->data, output_data, audio_frame_offset_, i,
                       copy_length,
-                      audio_frame_->channels, static_cast<AVSampleFormat>(audio_frame_->format));
+                      audio_frame_->ch_layout.nb_channels, static_cast<AVSampleFormat>(audio_frame_->format));
 
       audio_frame_offset_ += copy_length;
       i += copy_length;
@@ -752,8 +752,15 @@ bool FFmpegEncoder::InitializeStream(AVMediaType type, AVStream** stream_ptr, AV
 
     // Assume audio stream
     codec_ctx->sample_rate = params().audio_params().sample_rate();
-    codec_ctx->channel_layout = params().audio_params().channel_layout();
-    codec_ctx->channels = av_get_channel_layout_nb_channels(codec_ctx->channel_layout);
+
+    // Setting ch_layout also carries the channel count (there is no separate `channels` field
+    // since FFmpeg 7.0).
+    FFmpegUtils::ChannelLayoutGuard audio_layout(params().audio_params().channel_layout());
+    if (av_channel_layout_copy(&codec_ctx->ch_layout, audio_layout.get()) < 0) {
+      SetError(tr("Failed to set audio channel layout"));
+      return false;
+    }
+
     codec_ctx->sample_fmt = FFmpegUtils::GetFFmpegSampleFormat(params().audio_params().format());
     codec_ctx->time_base = {1, codec_ctx->sample_rate};
 
@@ -849,11 +856,12 @@ void FFmpegEncoder::FlushEncoders()
   }
 
   if (fmt_ctx_) {
-    if (fmt_ctx_->oformat->flags & AVFMT_ALLOW_FLUSH) {
-      int r = av_interleaved_write_frame(fmt_ctx_, nullptr);
-      if (r < 0) {
-        FFmpegError(tr("Failed to write interleaved packet"), r);
-      }
+    // AVFMT_ALLOW_FLUSH was deprecated in FFmpeg 6.1 and removed in 8.0. Upstream's documented
+    // replacement is to simply send a NULL packet to flush the muxer (libavformat no-ops this
+    // internally for muxers that do not support flushing).
+    int r = av_interleaved_write_frame(fmt_ctx_, nullptr);
+    if (r < 0) {
+      FFmpegError(tr("Failed to write interleaved packet"), r);
     }
   }
 }
@@ -890,17 +898,21 @@ bool FFmpegEncoder::InitializeResampleContext(const AudioParams &audio)
     return true;
   }
 
-  // Create resample context
-  audio_resample_ctx_ = swr_alloc_set_opts(nullptr,
-                                           static_cast<int64_t>(audio_codec_ctx_->channel_layout),
-                                           audio_codec_ctx_->sample_fmt,
-                                           audio_codec_ctx_->sample_rate,
-                                           static_cast<int64_t>(audio.channel_layout()),
-                                           FFmpegUtils::GetFFmpegSampleFormat(audio.format()),
-                                           audio.sample_rate(),
-                                           0,
-                                           nullptr);
-  if (!audio_resample_ctx_) {
+  // Create resample context. The output layout comes straight from the codec context (already an
+  // AVChannelLayout); the input layout is built from Olive's channel-layout mask — the same mask
+  // the deprecated swr_alloc_set_opts() converted internally.
+  FFmpegUtils::ChannelLayoutGuard in_layout(audio.channel_layout());
+
+  int swr_err = swr_alloc_set_opts2(&audio_resample_ctx_,
+                                    &audio_codec_ctx_->ch_layout,
+                                    audio_codec_ctx_->sample_fmt,
+                                    audio_codec_ctx_->sample_rate,
+                                    in_layout.get(),
+                                    FFmpegUtils::GetFFmpegSampleFormat(audio.format()),
+                                    audio.sample_rate(),
+                                    0,
+                                    nullptr);
+  if (swr_err < 0 || !audio_resample_ctx_) {
     return false;
   }
 
@@ -927,7 +939,9 @@ bool FFmpegEncoder::InitializeResampleContext(const AudioParams &audio)
     return false;
   }
 
-  audio_frame_->channel_layout = audio_codec_ctx_->channel_layout;
+  if (av_channel_layout_copy(&audio_frame_->ch_layout, &audio_codec_ctx_->ch_layout) < 0) {
+    return false;
+  }
   audio_frame_->format = audio_codec_ctx_->sample_fmt;
   audio_frame_->nb_samples = audio_max_samples_;
 

@@ -151,8 +151,6 @@ private:
 
   static uint64_t ValidateChannelLayout(AVStream *stream);
 
-  static const char* GetInterlacingModeInFFmpeg(VideoParams::Interlacing interlacing);
-
   static bool IsPixelFormatGLSLCompatible(AVPixelFormat f);
 
   AVFramePtr GetFrameFromCache(const int64_t &t) const;

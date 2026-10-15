@@ -167,10 +167,17 @@ bool AudioProcessor::Open(const AudioParams &from, const AudioParams &to, double
 
   in_frame_ = av_frame_alloc();
   if (in_frame_) {
+    // Setting ch_layout carries the channel count with it (there is no separate `channels` field
+    // since FFmpeg 7.0).
+    FFmpegUtils::ChannelLayoutGuard from_layout(from.channel_layout());
+    if (av_channel_layout_copy(&in_frame_->ch_layout, from_layout.get()) < 0) {
+      qCritical() << "Failed to set channel layout on input frame";
+      Close();
+      return false;
+    }
+
     in_frame_->sample_rate = from.sample_rate();
     in_frame_->format = from_fmt_;
-    in_frame_->channel_layout = from.channel_layout();
-    in_frame_->channels = from.channel_count();
     in_frame_->pts = 0;
   } else {
     qCritical() << "Failed to allocate input frame";

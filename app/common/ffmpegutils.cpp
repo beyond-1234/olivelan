@@ -196,4 +196,25 @@ PixelFormat FFmpegUtils::GetCompatiblePixelFormat(const PixelFormat &pix_fmt)
   return PixelFormat::INVALID;
 }
 
+uint64_t FFmpegUtils::ChannelLayoutToMask(const AVChannelLayout &layout)
+{
+  if (layout.order == AV_CHANNEL_ORDER_NATIVE) {
+    return layout.u.mask;
+  }
+
+  return 0;
+}
+
+uint64_t FFmpegUtils::DefaultChannelLayoutMask(int nb_channels)
+{
+  AVChannelLayout layout{};
+  av_channel_layout_default(&layout, nb_channels);
+
+  const uint64_t mask = ChannelLayoutToMask(layout);
+
+  av_channel_layout_uninit(&layout);
+
+  return mask;
+}
+
 }
