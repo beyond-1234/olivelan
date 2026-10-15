@@ -29,6 +29,7 @@
 #include "common/ocioutils.h"
 #include "config/config.h"
 #include "core.h"
+#include "render/builtincolorspaces.h"
 
 #ifdef OLIVE_ENABLE_OCIO
 #include <OpenColorIO/OpenColorIO.h>
@@ -299,32 +300,18 @@ QStringList ColorManagerOCIO::ListAvailableColorspaces(OCIO::ConstConfigRcPtr co
 
 namespace {
 
-const QStringList kBuiltinColorspaces = {
-  QStringLiteral("Linear"),
-  QStringLiteral("Filmic Log Encoding"),
-  QStringLiteral("sRGB OETF"),
-  QStringLiteral("Apple DCI-P3 D65"),
-  QStringLiteral("AppleP3 sRGB OETF"),
-  QStringLiteral("BT.1886 EOTF"),
-  QStringLiteral("AppleP3 Filmic Log Encoding"),
-  QStringLiteral("BT.1886 Filmic Log Encoding"),
-  QStringLiteral("Fuji F-Log OETF"),
-  QStringLiteral("Fuji F-Log F-Gamut"),
-  QStringLiteral("Panasonic V-Log V-Gamut"),
-  QStringLiteral("Arri Wide Gamut / LogC EI 800"),
-  QStringLiteral("Arri Wide Gamut / LogC EI 400"),
-  QStringLiteral("Blackmagic Film Wide Gamut (Gen 5)"),
-  QStringLiteral("Rec.709 OETF"),
-  QStringLiteral("Rec.2020 HLG"),
-  QStringLiteral("Rec.2020 PQ"),
-  QStringLiteral("Non-Colour Data"),
-};
-
+// The advertised colour spaces come from `render/builtincolorspaces.h`, the same table
+// `ColorProcessor` evaluates against. They are not repeated here on purpose: before patch
+// 0045 this file carried its own 18-entry list while only 7 were implemented, so the UI
+// offered colour spaces that silently degraded to an unlabelled linear passthrough.
+//
+// Displays / views stay an explicit list: a "view" is a *named* entry in the bundled
+// config's `displays:` block, which the transfer-function enum cannot express on its own.
+// Each view below is an alias of a colour space defined in the shared table.
 const QStringList kBuiltinViews = {
   QStringLiteral("sRGB OETF"),
   QStringLiteral("Non-Colour Data"),
   QStringLiteral("Linear Raw"),
-  QStringLiteral("Filmic Log Encoding"),
 };
 
 }
@@ -394,7 +381,14 @@ QStringList ColorManager::ListAvailableLooks()
 
 QStringList ColorManager::ListAvailableColorspaces() const
 {
-  return kBuiltinColorspaces;
+  QStringList spaces;
+  spaces.reserve(kBuiltinColorSpaceCount);
+
+  for (int i = 0; i < kBuiltinColorSpaceCount; i++) {
+    spaces.append(QString::fromUtf8(kBuiltinColorSpaces[i].name));
+  }
+
+  return spaces;
 }
 
 QString ColorManager::GetDefaultInputColorSpace() const

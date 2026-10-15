@@ -28,6 +28,7 @@
 #include "common/ociobridge.h"
 #include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
+#include "render/builtincolorspaces.h"
 
 #ifdef OLIVE_ENABLE_OCIO
 #include <OpenColorIO/OpenColorIO.h>
@@ -147,6 +148,14 @@ const char *ColorProcessor::id() const
   return impl_->processor->getCacheID();
 }
 
+bool ColorProcessor::IsDefaulted() const
+{
+  // OpenColorIO resolves colour space names when the processor is built; an
+  // unknown name throws rather than yielding an unconverted passthrough, so a
+  // constructed processor is never silently defaulted on this path.
+  return false;
+}
+
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)
 {
   return std::make_shared<ColorProcessor>(config, input, transform, direction);
@@ -211,50 +220,51 @@ OCIO::ConstProcessorRcPtr ColorProcessorOCIO::GetProcessor(const ColorProcessor 
 
 namespace {
 
-enum TransferFunction
+// Patch 0045 (Phase 8): the built-in engine's transfer functions come from
+// `render/builtincolorspaces.h`, which is also what `ColorManager` advertises from.
+// Aliasing the shared type keeps the call sites below readable while leaving exactly
+// one definition of the enumerators.
+using TransferFunction = BuiltinTransferFunction;
+
+TransferFunction GetTransferFunction(const QString &name, bool *recognized = nullptr)
 {
-  kTransferLinear,
-  kTransferSrgb,
-  kTransferRec709,
-  kTransferBt1886,
-  kTransferHlg,
-  kTransferPq,
-  kTransferData
-};
+  TransferFunction tf = TransferFunction::kTransferLinear;
+  bool ok = false;
 
-TransferFunction GetTransferFunction(const QString &name)
-{
-  if (name == QStringLiteral("Linear")
-      || name == QStringLiteral("scene_linear")
-      || name == QStringLiteral("Linear Raw")) {
-    return kTransferLinear;
+  for (int i = 0; i < kBuiltinColorSpaceCount; i++) {
+    if (name == QString::fromUtf8(kBuiltinColorSpaces[i].name)) {
+      tf = static_cast<TransferFunction>(kBuiltinColorSpaces[i].transfer);
+      ok = true;
+      break;
+    }
   }
 
-  if (name == QStringLiteral("sRGB OETF") || name == QStringLiteral("sRGB")) {
-    return kTransferSrgb;
+  if (!ok) {
+    // "scene_linear" / "Linear Raw" are historical aliases for Linear that the
+    // project serializers and OCIO roles emit; "sRGB" is the shorthand the bundled
+    // config uses. They resolve to the same maths as their canonical entries.
+    if (name == QStringLiteral("scene_linear") || name == QStringLiteral("Linear Raw")) {
+      tf = kTransferLinear;
+      ok = true;
+    } else if (name == QStringLiteral("sRGB")) {
+      tf = kTransferSrgb;
+      ok = true;
+    } else {
+      // Patch 0045 (Phase 8): this fall-through is the root cause of the "fake
+      // capability" trap - an unrecognised colour space was decoded with a straight
+      // passthrough and no diagnostic whatsoever. The behaviour is deliberately kept
+      // (linear is the documented fallback) but callers can now detect it via
+      // `recognized` and surface an honest warning instead of degrading in silence.
+      tf = kTransferLinear;
+      ok = false;
+    }
   }
 
-  if (name == QStringLiteral("Rec.709 OETF")) {
-    return kTransferRec709;
+  if (recognized) {
+    *recognized = ok;
   }
 
-  if (name == QStringLiteral("BT.1886 EOTF")) {
-    return kTransferBt1886;
-  }
-
-  if (name == QStringLiteral("Rec.2020 HLG")) {
-    return kTransferHlg;
-  }
-
-  if (name == QStringLiteral("Rec.2020 PQ")) {
-    return kTransferPq;
-  }
-
-  if (name == QStringLiteral("Non-Colour Data")) {
-    return kTransferData;
-  }
-
-  return kTransferLinear;
+  return tf;
 }
 
 double PowSigned(double base, double exponent)
@@ -415,6 +425,9 @@ struct ColorProcessor::Impl
   QString view;
   Direction direction = kNormal;
   std::string id;
+
+  // Patch 0045: set when an endpoint could not be evaluated and was remapped.
+  bool defaulted = false;
 };
 
 ColorProcessor::ColorProcessor() :
@@ -440,6 +453,39 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
     impl_->output = impl_->view;
   } else {
     impl_->output = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
+  }
+
+  // Patch 0045 (Phase 8): refuse to degrade in silence. If either endpoint is a
+  // colour space the built-in engine cannot evaluate, say so once per processor
+  // instead of quietly passing pixels through as linear. This is what makes the
+  // pruned list above *honest*: what is offered is what is implemented.
+  bool src_ok = false;
+  bool dst_ok = false;
+  GetTransferFunction(impl_->input, &src_ok);
+  GetTransferFunction(impl_->output, &dst_ok);
+
+  // Remap to Rec.709 OETF rather than leaving an implicit linear passthrough: the
+  // pixels then go through a real, named transfer function, and `id` (the shader-cache
+  // key) is computed *after* this point, so it reflects what actually happened.
+  const QString kFallbackSpace = QStringLiteral("Rec.709 OETF");
+
+  if (!src_ok) {
+    qWarning() << "[ColorProcessor] Built-in engine cannot evaluate input colour space"
+               << input << "- remapping to" << kFallbackSpace;
+    impl_->input = kFallbackSpace;
+    impl_->defaulted = true;
+  }
+
+  if (!dst_ok) {
+    qWarning() << "[ColorProcessor] Built-in engine cannot evaluate output colour space"
+               << impl_->output << "- remapping to" << kFallbackSpace;
+    impl_->output = kFallbackSpace;
+
+    if (impl_->is_display) {
+      impl_->view = kFallbackSpace;
+    }
+
+    impl_->defaulted = true;
   }
 
   impl_->id = QStringLiteral("builtin|%1|%2|%3|%4")
@@ -516,6 +562,11 @@ Color ColorProcessor::ConvertColor(const Color& in)
 const char *ColorProcessor::id() const
 {
   return impl_->id.c_str();
+}
+
+bool ColorProcessor::IsDefaulted() const
+{
+  return impl_->defaulted;
 }
 
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)

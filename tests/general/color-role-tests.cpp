@@ -41,6 +41,11 @@
 #include <QString>
 
 #include "common/ocioutils.h"
+#include "core.h"
+#include "node/color/colormanager/colormanager.h"
+#include "node/project.h"
+#include "render/colorprocessor.h"
+#include "render/colortransform.h"
 
 namespace olive {
 
@@ -89,6 +94,94 @@ OLIVE_ADD_TEST(ColorRoleMapping)
 #endif
 
   OLIVE_TEST_END;
+}
+
+/**
+ * Phase 8 / patch 0045: fake-capability gate.
+ *
+ * `ColorManager::ListAvailableColorspaces()` used to advertise 18 colour spaces while
+ * `GetTransferFunction()` only implemented 7; the other 11 fell through to
+ * `kTransferLinear`, so choosing e.g. "Panasonic V-Log V-Gamut" in the UI produced an
+ * unlabelled linear passthrough with no diagnostic. Patch 0045 derives the advertised
+ * list from the same table the engine evaluates.
+ *
+ * This probe walks every advertised colour space and asserts the engine can actually
+ * evaluate it, so "advertised == implemented" is enforced rather than assumed. The
+ * negative control pins the opposite direction: a genuinely unknown name must be
+ * reported as defaulted, proving the detector itself is wired up.
+ */
+OLIVE_ADD_TEST(ColorspaceImplementationParity)
+{
+#ifdef OLIVE_ENABLE_OCIO
+  // The advertised list comes from the bundled config.ocio (19 spaces), but only the
+  // 7 the built-in engine implements are covered by the A-class golden gate, so the
+  // parity invariant below does not apply on this side. Keeping the test defined (with
+  // an early exit) keeps the runner's function table identical across both builds.
+  std::cout << " (OCIO build - colour spaces come from config.ocio, not the built-in table)";
+  OLIVE_TEST_END;
+#else
+  ColorManager::SetUpDefaultConfig();
+
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  const QStringList spaces = manager->ListAvailableColorspaces();
+
+  // Exactly the 7 spaces that are genuinely implemented must be advertised.
+  const QStringList kExpected = {
+    QStringLiteral("Linear"),
+    QStringLiteral("sRGB OETF"),
+    QStringLiteral("Rec.709 OETF"),
+    QStringLiteral("BT.1886 EOTF"),
+    QStringLiteral("Rec.2020 HLG"),
+    QStringLiteral("Rec.2020 PQ"),
+    QStringLiteral("Non-Colour Data")
+  };
+
+  if (spaces != kExpected) {
+    std::cout << " - advertised colour space list drifted from the implemented set ("
+              << spaces.size() << " advertised, " << kExpected.size() << " implemented): ";
+    for (const QString &s : spaces) {
+      std::cout << "[" << s.toStdString() << "] ";
+    }
+    return __LINE__;
+  }
+
+  // Every advertised space must be evaluable without silently defaulting.
+  for (const QString &space : spaces) {
+    ColorProcessorPtr proc = ColorProcessor::Create(manager, space, ColorTransform(space));
+
+    if (!proc) {
+      std::cout << " - could not create processor for advertised space " << space.toStdString();
+      return __LINE__;
+    }
+
+    if (proc->IsDefaulted()) {
+      std::cout << " - advertised space " << space.toStdString()
+                << " is NOT actually implemented (engine defaulted it silently)";
+      return __LINE__;
+    }
+  }
+
+  // Negative control: proves the detector is not vacuously returning false.
+  ColorProcessorPtr bogus = ColorProcessor::Create(
+        manager,
+        QStringLiteral("Definitely Not A Colour Space"),
+        ColorTransform(QStringLiteral("Linear")));
+
+  if (!bogus) {
+    std::cout << " - could not create processor for unknown space";
+    return __LINE__;
+  }
+
+  if (!bogus->IsDefaulted()) {
+    std::cout << " - unknown colour space was NOT reported as defaulted"
+              << " (the detector is not wired up)";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+#endif
 }
 
 }
