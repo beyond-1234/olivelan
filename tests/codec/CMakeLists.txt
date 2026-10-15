@@ -18,6 +18,11 @@ olive_add_test(Codec color-golden-tests color-golden-tests.cpp)
 olive_add_test(Codec image-export-tests image-export-tests.cpp)
 olive_add_test(Codec frame-cache-tests frame-cache-tests.cpp)
 
+# Patch 0056: the only audio coverage in the suite. Drives FFmpegEncoder and FFmpegDecoder
+# end to end through a real .wav round trip, which is what exercises the two swr_alloc_set_opts2
+# call sites from patch 0054 (encoder E2, decoder D3).
+olive_add_test(Codec audio-conform-tests audio-conform-tests.cpp)
+
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.
 target_compile_definitions(
