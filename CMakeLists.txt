@@ -268,7 +268,11 @@ list(APPEND OLIVE_LIBRARIES
 )
 
 # Link FFmpeg
-find_package(FFMPEG 3.0 REQUIRED
+#
+# 6.1 is the *real* floor, not the upstream-declared 3.0: this tree reads
+# AVCodecParameters::coded_side_data, which was added in FFmpeg 6.1 (6.0 and earlier only had the
+# deprecated AVStream::side_data).
+find_package(FFMPEG 6.1 REQUIRED
   COMPONENTS
   avutil
   avcodec
@@ -286,6 +290,24 @@ list(APPEND OLIVE_LIBRARIES
   FFMPEG::swscale
   FFMPEG::swresample
 )
+
+# Belt-and-braces floor check, independent of the version *string* format.
+#
+# FFMPEG_VERSION is read out of libavutil/ffversion.h and its shape varies by how FFmpeg was
+# produced (release tarball "6.1", distro package "6.1.1-3ubuntu5", git snapshot
+# "N-123456-gabcdef"), so the comparison above is a user-facing hint rather than a guarantee.
+# Assert on the actual symbol the code depends on instead.
+# NOTE: AVCodecParameters is declared in libavcodec/codec_par.h, *not* libavcodec/avcodec.h.
+include(CheckStructHasMember)
+set(CMAKE_REQUIRED_INCLUDES ${FFMPEG_INCLUDE_DIRS})
+check_struct_has_member("AVCodecParameters" coded_side_data "libavcodec/codec_par.h"
+                        OLIVE_HAVE_AVCODECPARAMETERS_CODED_SIDE_DATA)
+unset(CMAKE_REQUIRED_INCLUDES)
+if (NOT OLIVE_HAVE_AVCODECPARAMETERS_CODED_SIDE_DATA)
+  message(FATAL_ERROR
+    "FFmpeg >= 6.1 is required: AVCodecParameters::coded_side_data was not found "
+    "(searched libavcodec/codec_par.h). This tree cannot be built against FFmpeg 6.0 or older.")
+endif ()
 
 # Link PortAudio
 find_package(PortAudio REQUIRED)
