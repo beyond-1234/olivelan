@@ -324,6 +324,61 @@ double PqToLinear(double signal)
   return sign * y;
 }
 
+// --- Patch 0046: the common display-linear reference ------------------------
+//
+// PQ decodes to a scale where 1.0 == 10000 cd/m2 and HLG to one where 1.0 is the
+// nominal 1000 cd/m2 peak, so the two are not directly comparable. The engine
+// normalises both onto a single scale whose unit is the BT.2408 HDR reference diffuse
+// white (203 cd/m2) - which is also the SDR white point - so that:
+//   * SDR content sits at 1.0 unchanged (no regression for existing projects);
+//   * the roll-off knee below has a meaningful, standardised anchor.
+constexpr double kPqPeakNits = 10000.0;
+constexpr double kHlgPeakNits = 1000.0;
+
+// PQ: divide by the 10000 cd/m2 PQ peak, then express in units of 203 cd/m2.
+constexpr double kPqLinearToDisplay = kPqPeakNits / kDisplayReferenceWhiteNits;
+
+// HLG: the OOTF is applied first (see HlgApplyOotf), then scaled from the 1000
+// cd/m2 nominal peak into units of 203 cd/m2.
+constexpr double kHlgLinearToDisplay = kHlgPeakNits / kDisplayReferenceWhiteNits;
+
+// BT.2100 OOTF system gamma for the 1000 cd/m2 reference display. BT.2100 gives
+// gamma = 1.2 + 0.42 * log10(Lw / 1000), which reduces to 1.2 at Lw = 1000.
+constexpr double kHlgSystemGamma = 1.2;
+
+// Rec.709 luma coefficients (also used by BT.2020 luma derivation below).
+constexpr double kLumaCoefR = 0.2627;
+constexpr double kLumaCoefG = 0.6780;
+constexpr double kLumaCoefB = 0.0593;
+
+/**
+ * @brief Apply the BT.2100 HLG OOTF to a linear scene-referred RGB triple.
+ *
+ * The OOTF is a *luminance* power law applied as a per-channel scale:
+ *
+ *     Y  = 0.2627 R + 0.6780 G + 0.0593 B
+ *     RGB' = Y^(gamma - 1) * RGB
+ *
+ * The crucial detail is the Y^(gamma-1) *factor*, which is computed once from
+ * luminance and then multiplied into each channel. Raising each channel to the power
+ * gamma on its own is the classic wrong implementation and shifts hue visibly on
+ * saturated colours, so it must not be substituted here.
+ */
+void HlgApplyOotf(double *rgb)
+{
+  const double y = kLumaCoefR * rgb[0] + kLumaCoefG * rgb[1] + kLumaCoefB * rgb[2];
+
+  if (y <= 0.0) {
+    return;
+  }
+
+  const double scale = std::pow(y, kHlgSystemGamma - 1.0);
+
+  rgb[0] *= scale;
+  rgb[1] *= scale;
+  rgb[2] *= scale;
+}
+
 double PqFromLinear(double linear)
 {
   const double sign = linear < 0.0 ? -1.0 : 1.0;
