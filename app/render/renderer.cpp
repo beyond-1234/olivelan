@@ -21,6 +21,7 @@
 #include "renderer.h"
 
 #include "common/ociobridge.h"
+#include "render/colorprocessor.h"
 
 #include <QDateTime>
 #include <QThread>
@@ -203,25 +204,26 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
 #else
     // Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
     //
-    // There is no OCIO shader generator, so this snippet provides the functions
-    // the colour-managed shaders expect:
-    //   * OCIODisplay()             - scene-linear -> sRGB OETF display transform,
-    //                                 used by the generic colormanage.frag path;
-    //   * SceneLinearToCIEXYZ_d65() - Rec.709 scene-linear -> CIE XYZ (D65),
-    //                                 used by ChromaKeyNode.
-    // This is the first, deliberately narrow, step of the built-in engine; gamut
-    // matrices, .cube LUTs, looks and HLG/PQ land in the follow-up patches.
-    const QString builtin_shader_text = QStringLiteral(
-      "vec3 ove_linear_to_srgb(vec3 c) {\n"
-      "  vec3 s = sign(c);\n"
-      "  vec3 a = abs(c);\n"
-      "  vec3 lo = a * 12.92;\n"
-      "  vec3 hi = 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055;\n"
-      "  return s * mix(lo, hi, step(vec3(0.0031308), a));\n"
-      "}\n"
-      "vec4 OCIODisplay(vec4 in) {\n"
-      "  return vec4(ove_linear_to_srgb(in.rgb), in.a);\n"
-      "}\n"
+    // Patch 0047: the OCIODisplay() body is now *derived* from the processor's
+    // transfer-function enumerators (GenerateBuiltinGlslShader) instead of the fixed
+    // scene-linear -> sRGB stub, so every advertised colour space and any attached
+    // .cube LUT reaches the GPU correctly. SceneLinearToCIEXYZ_d65() is kept here
+    // because ChromaKeyNode calls it directly.
+    BuiltinTransferFunction src_tf = kTransferLinear;
+    BuiltinTransferFunction dst_tf = kTransferSrgb;
+    bool has_lut = false;
+    double peak_nits = 0.0;
+
+    if (ColorProcessor *proc = color_job.GetColorProcessor().get()) {
+      src_tf = proc->GetInputTransferFunction();
+      dst_tf = proc->GetOutputTransferFunction();
+      if (std::shared_ptr<CubeLUT> lut = proc->GetCubeLUT()) {
+        has_lut = lut->IsValid() && lut->Is3D();
+      }
+    }
+
+    const QString builtin_shader_text = GenerateBuiltinGlslShader(src_tf, dst_tf, has_lut, peak_nits)
+        + QStringLiteral(
       "vec4 SceneLinearToCIEXYZ_d65(vec4 in) {\n"
       "  return vec4(\n"
       "    dot(in.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
@@ -308,6 +310,28 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       color_ctx.lut1d_textures[i].interpolation = (interpolation == OCIO::INTERP_NEAREST) ? Texture::kNearest : Texture::kLinear;
     }
 #endif // OLIVE_ENABLE_OCIO
+
+#ifndef OLIVE_ENABLE_OCIO
+    // Patch 0047 (Phase 8): upload an attached .cube LUT into the renderer's existing
+    // 3D-texture slot. The loop in BlitColorManaged() that binds lut3d_textures into
+    // the ShaderJob lives OUTSIDE the OCIO #ifdef, so filling this vector is all the
+    // wiring needed for the sampler3D in the generated GLSL to reach the texture.
+    if (ColorProcessor *proc = color_job.GetColorProcessor().get()) {
+      if (std::shared_ptr<CubeLUT> lut = proc->GetCubeLUT()) {
+        if (lut->IsValid() && lut->Is3D()) {
+          const int edge = lut->texture_edge_length();
+
+          color_ctx.lut3d_textures.resize(1);
+          color_ctx.lut3d_textures[0].texture =
+              CreateTexture(VideoParams(edge, edge, edge, PixelFormat::F32,
+                                        VideoParams::kRGBChannelCount),
+                            lut->data().constData());
+          color_ctx.lut3d_textures[0].name = QStringLiteral("ove_cube_lut");
+          color_ctx.lut3d_textures[0].interpolation = Texture::kLinear;
+        }
+      }
+    }
+#endif // !OLIVE_ENABLE_OCIO
 
     color_cache_.insert(proc_id, color_ctx);
 

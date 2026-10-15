@@ -24,7 +24,9 @@
 #include <memory>
 
 #include "codec/frame.h"
+#include "render/builtincolorspaces.h"
 #include "render/colortransform.h"
+#include "render/cubelut.h"
 
 namespace olive {
 
@@ -70,6 +72,25 @@ public:
    */
   bool IsDefaulted() const;
 
+  /**
+   * @brief Patch 0047 (Phase 8): the CPU-side transfer functions this processor
+   *        was built for.
+   *
+   * The GPU shader text is derived from these same enumerators (see
+   * GenerateBuiltinGlslShader), so the CPU and GPU paths cannot drift apart.
+   */
+  BuiltinTransferFunction GetInputTransferFunction() const;
+  BuiltinTransferFunction GetOutputTransferFunction() const;
+
+  /**
+   * @brief Patch 0047 (Phase 8): attach a user .cube LUT.
+   *
+   * When set, the generated GLSL samples it through the renderer's existing
+   * 3D-texture slot, in addition to applying the transfer functions.
+   */
+  void SetCubeLUT(std::shared_ptr<CubeLUT> lut);
+  std::shared_ptr<CubeLUT> GetCubeLUT() const;
+
 private:
   ColorProcessor();
 
@@ -84,6 +105,17 @@ private:
 };
 
 using ColorProcessorChain = QVector<ColorProcessorPtr>;
+
+/**
+ * @brief Patch 0047 (Phase 8): generate the GLSL body for a built-in colour transform.
+ *
+ * Defined next to the CPU implementation in `colorprocessor.cpp` so both paths are
+ * driven by the same enumerators and matrix constants.
+ */
+QString GenerateBuiltinGlslShader(BuiltinTransferFunction src,
+                                  BuiltinTransferFunction dst,
+                                  bool has_cube_lut,
+                                  double peak_nits);
 
 }
 

@@ -63,6 +63,17 @@ public:
   bool IsValid() const { return size_ > 0; }
   bool Is1D() const { return is_1d_; }
 
+  /**
+   * @brief Patch 0047 (Phase 8): true for a 3D LUT (uploadable to GL_TEXTURE_3D).
+   */
+  bool Is3D() const { return !is_1d_; }
+
+  /**
+   * @brief Patch 0047 (Phase 8): texture edge length - `size` for both 1D and 3D
+   *        LUTs (a 3D LUT of `LUT_3D_SIZE n` is an n^3 cubic texture).
+   */
+  int texture_edge_length() const { return size_; }
+
   int size() const { return size_; }
 
   /**

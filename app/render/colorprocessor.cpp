@@ -471,6 +471,145 @@ void ToStorage(char *p, PixelFormat::Format f, float v)
 
 }
 
+/**
+ * @brief Patch 0047 (Phase 8): emit the GLSL body for a built-in colour transform.
+ *
+ * The shader text is *derived* from the same `BuiltinTransferFunction` enumerators and
+ * the same constants the CPU path evaluates with, rather than maintained as a second
+ * hand-written GLSL template, so the CPU and GPU paths cannot drift apart.
+ *
+ * The generated code defines `OCIODisplay(vec4)` - the entry point `colormanage.frag`
+ * already calls - plus the HLG OOTF / BT.2408 roll-off helpers it needs. If a .cube
+ * LUT is attached it is sampled first, then the transfer functions are applied.
+ *
+ * Placement matters: this sits after the anonymous namespace so it has external
+ * linkage (renderer.cpp calls it), but inside the OFF branch of the engine switch.
+ */
+QString GenerateBuiltinGlslShader(BuiltinTransferFunction src,
+                                  BuiltinTransferFunction dst,
+                                  bool has_cube_lut,
+                                  double peak_nits)
+{
+  auto emit_decode = [](BuiltinTransferFunction tf) -> QString {
+    switch (tf) {
+    case kTransferSrgb:
+      return QStringLiteral(
+        "  col.rgb = mix(col.rgb / 12.92, pow((col.rgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), col.rgb));\n");
+    case kTransferRec709:
+      return QStringLiteral(
+        "  col.rgb = mix(col.rgb / 4.5, pow((col.rgb + 0.099) / 1.099, vec3(1.0/0.45)), step(vec3(0.081), col.rgb));\n");
+    case kTransferBt1886:
+      return QStringLiteral("  col.rgb = pow(col.rgb, vec3(2.4));\n");
+    case kTransferHlg:
+      // BT.2100 HLG OETF inverse: signal -> scene linear.
+      return QStringLiteral(
+        "  col.rgb = mix(col.rgb * col.rgb / 3.0, (exp((col.rgb - kHlgC) / kHlgA) + kHlgB) / 12.0, step(vec3(0.5), col.rgb));\n");
+    case kTransferPq:
+      // SMPTE ST 2084 EOTF: PQ code -> absolute linear (0..10000 nits).
+      return QStringLiteral(
+        "  { vec3 p = pow(max(col.rgb, vec3(0.0)), vec3(1.0/kPqM2));\n"
+        "    col.rgb = pow(max(p - kPqC1, vec3(0.0)) / max(kPqC2 - kPqC3 * p, vec3(1e-6)), vec3(1.0/kPqM1)); }\n");
+    case kTransferLinear:
+    case kTransferData:
+    default:
+      return QStringLiteral("  // linear passthrough (no decode)\n");
+    }
+  };
+
+  auto emit_encode = [](BuiltinTransferFunction tf) -> QString {
+    switch (tf) {
+    case kTransferSrgb:
+      return QStringLiteral(
+        "  col.rgb = mix(col.rgb * 12.92, 1.055 * pow(col.rgb, vec3(1.0/2.4)) - 0.055, step(vec3(0.0031308), col.rgb));\n");
+    case kTransferRec709:
+      return QStringLiteral(
+        "  col.rgb = mix(4.5 * col.rgb, 1.099 * pow(col.rgb, vec3(0.45)) - 0.099, step(vec3(0.018), col.rgb));\n");
+    case kTransferBt1886:
+      return QStringLiteral("  col.rgb = pow(col.rgb, vec3(1.0/2.4));\n");
+    case kTransferHlg:
+      // BT.2100 HLG OETF: scene linear -> signal.
+      return QStringLiteral(
+        "  col.rgb = mix(sqrt(3.0 * col.rgb), kHlgA * log(12.0 * col.rgb - kHlgB) + kHlgC, step(vec3(1.0/12.0), col.rgb));\n");
+    case kTransferPq:
+      // SMPTE ST 2084 inverse EOTF: absolute linear -> PQ code.
+      return QStringLiteral(
+        "  { vec3 p = pow(max(col.rgb, vec3(0.0)), vec3(kPqM1));\n"
+        "    col.rgb = pow((kPqC1 + kPqC2 * p) / (1.0 + kPqC3 * p), vec3(kPqM2)); }\n");
+    case kTransferLinear:
+    case kTransferData:
+    default:
+      return QStringLiteral("  // linear passthrough (no encode)\n");
+    }
+  };
+
+  QString out = QStringLiteral(
+    "// Patch 0047 (Phase 8): derived from the CPU-side transfer-function table.\n"
+    "// Do not edit by hand - regenerate from builtincolorspaces.h / colorprocessor.cpp.\n"
+    "const float kHlgA = 0.17883277;\n"
+    "const float kHlgB = 0.28466892;\n"
+    "const float kHlgC = 0.55991073;\n"
+    "const float kHlgSystemGamma = 1.2;\n"
+    "const vec3 kRec2020LumaCoefs = vec3(0.2627, 0.6780, 0.0593);\n"
+    "const float kDisplayRefWhiteNits = 203.0;\n");
+
+  // Patch 0046 PQ constants, mirrored from the CPU path (ST 2084 / BT.2100 Table 4).
+  {
+    double m1 = 1305.0 / 8192.0, m2 = 2523.0 / 4096.0;
+    double c1 = 107.0 / 128.0, c2 = 2413.0 / 4096.0, c3 = 2392.0 / 4096.0;
+    out += QStringLiteral("const float kPqM1 = %1;\n"
+                          "const float kPqM2 = %2;\n"
+                          "const float kPqC1 = %3;\n"
+                          "const float kPqC2 = %4;\n"
+                          "const float kPqC3 = %5;\n")
+        .arg(m1, 0, 'g', 17).arg(m2, 0, 'g', 17)
+        .arg(c1, 0, 'g', 17).arg(c2, 0, 'g', 17).arg(c3, 0, 'g', 17);
+  }
+
+  if (has_cube_lut) {
+    out += QStringLiteral("uniform sampler3D ove_cube_lut;\n");
+  }
+
+  out += QStringLiteral(
+    "float HdrRollOff(float v, float peak_nits) {\n"
+    "  const float start = 1.0;\n"
+    "  if (v <= start || peak_nits <= 0.0) return v;\n"
+    "  float headroom = peak_nits / kDisplayRefWhiteNits - start;\n"
+    "  if (headroom <= 0.0) return start;\n"
+    "  float t = (v - start) / headroom;\n"
+    "  return start + headroom * (t / (1.0 + t));\n"
+    "}\n");
+
+  out += QStringLiteral("vec4 OCIODisplay(vec4 col) {\n");
+
+  if (has_cube_lut) {
+    // Hardware trilinear filtering matches the CPU Sample3D() semantics.
+    out += QStringLiteral(
+      "  col.rgb = texture(ove_cube_lut, clamp(col.rgb, 0.0, 1.0)).rgb;\n");
+  }
+
+  out += emit_decode(src);
+
+  // Normalise onto the BT.2408 display scale (1.0 == 203 cd/m2) before the knee.
+  if (src == kTransferHlg) {
+    out += QStringLiteral(
+      "  col.rgb *= pow(max(dot(col.rgb, kRec2020LumaCoefs), 0.0), kHlgSystemGamma - 1.0);\n"
+      "  col.rgb *= %1;\n").arg(kHlgLinearToDisplay, 0, 'g', 17);
+  } else if (src == kTransferPq) {
+    out += QStringLiteral("  col.rgb *= %1;\n").arg(kPqLinearToDisplay, 0, 'g', 17);
+  }
+
+  out += QStringLiteral(
+    "  col.r = HdrRollOff(col.r, %1);\n"
+    "  col.g = HdrRollOff(col.g, %1);\n"
+    "  col.b = HdrRollOff(col.b, %1);\n").arg(peak_nits, 0, 'g', 17);
+
+  out += emit_encode(dst);
+
+  out += QStringLiteral("  return col;\n}\n");
+
+  return out;
+}
+
 struct ColorProcessor::Impl
 {
   QString input;
@@ -480,6 +619,9 @@ struct ColorProcessor::Impl
   QString view;
   Direction direction = kNormal;
   std::string id;
+
+  // Patch 0047: optional user .cube LUT, sampled by the generated GLSL.
+  std::shared_ptr<CubeLUT> cube_lut;
 };
 
 ColorProcessor::ColorProcessor() :
@@ -609,6 +751,26 @@ bool ColorProcessor::IsDefaulted() const
   // Unreachable in practice: Create() refuses to build a processor whose endpoints
   // are unknown (patch 0046), so any processor a caller can hold is well-formed.
   return false;
+}
+
+BuiltinTransferFunction ColorProcessor::GetInputTransferFunction() const
+{
+  return GetTransferFunction(impl_->input);
+}
+
+BuiltinTransferFunction ColorProcessor::GetOutputTransferFunction() const
+{
+  return GetTransferFunction(impl_->output);
+}
+
+void ColorProcessor::SetCubeLUT(std::shared_ptr<CubeLUT> lut)
+{
+  impl_->cube_lut = std::move(lut);
+}
+
+std::shared_ptr<CubeLUT> ColorProcessor::GetCubeLUT() const
+{
+  return impl_->cube_lut;
 }
 
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)

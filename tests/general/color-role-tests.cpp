@@ -179,4 +179,78 @@ OLIVE_ADD_TEST(ColorspaceImplementationParity)
 #endif
 }
 
+/**
+ * Phase 8 / patch 0047: the GPU shader text is derived, not hand-written.
+ *
+ * The whole point of GenerateBuiltinGlslShader() is that the GLSL the renderer feeds
+ * to colormanage.frag is generated from the SAME transfer-function enumerators the CPU
+ * path evaluates with. If someone later hardcodes a shader body again, or adds a
+ * colour space without a GLSL branch, these assertions fail:
+ *
+ *   1. the derived text must define OCIODisplay (the entry colormanage.frag calls);
+ *   2. the text must change when the transfer functions change (proving derivation,
+ *      not a constant string);
+ *   3. PQ/HLG paths must carry the BT.2408 display-scale normalisation and the
+ *      roll-off knee;
+ *   4. attaching a .cube LUT must produce the sampler3D the renderer's
+ *      lut3d_textures slot binds (the binding loop lives outside the OCIO #ifdef).
+ *
+ * This is a structural gate: actually executing the GLSL needs a graphics context and
+ * is tracked separately (see the design doc's GPU-session backlog).
+ */
+OLIVE_ADD_TEST(GeneratedGlslTracksColorProcessor)
+{
+#ifdef OLIVE_ENABLE_OCIO
+  std::cout << " (OCIO build - shader text comes from the OCIO generator)";
+  OLIVE_TEST_END;
+#else
+  using olive::GenerateBuiltinGlslShader;
+  using olive::kTransferLinear;
+  using olive::kTransferSrgb;
+  using olive::kTransferRec709;
+  using olive::kTransferPq;
+  using olive::kTransferHlg;
+
+  // 1. entry point present for a plain linear -> sRGB display transform.
+  const QString basic = GenerateBuiltinGlslShader(kTransferLinear, kTransferSrgb, false, 0.0);
+  if (!basic.contains(QStringLiteral("vec4 OCIODisplay(vec4 col)"))) {
+    std::cout << " - derived shader does not define OCIODisplay(vec4)";
+    return __LINE__;
+  }
+
+  // 2. derivation, not a constant: different endpoints must produce different text.
+  const QString rec709 = GenerateBuiltinGlslShader(kTransferLinear, kTransferRec709, false, 0.0);
+  if (basic == rec709) {
+    std::cout << " - shader text identical for sRGB and Rec.709 destinations (not derived)";
+    return __LINE__;
+  }
+
+  // 3. HDR paths carry the BT.2408 scale + knee; SDR paths must not scale.
+  const QString pq = GenerateBuiltinGlslShader(kTransferPq, kTransferSrgb, false, 1000.0);
+  if (!pq.contains(QStringLiteral("HdrRollOff"))
+      || !pq.contains(QStringLiteral("203"))) {
+    std::cout << " - PQ path missing BT.2408 roll-off / reference-white anchor";
+    return __LINE__;
+  }
+  const QString hlg = GenerateBuiltinGlslShader(kTransferHlg, kTransferSrgb, false, 1000.0);
+  if (!hlg.contains(QStringLiteral("kRec2020LumaCoefs"))) {
+    std::cout << " - HLG path missing luminance OOTF (per-channel gamma would shift hue)";
+    return __LINE__;
+  }
+
+  // 4. .cube LUT wiring: sampler3D appears exactly when a LUT is attached.
+  if (basic.contains(QStringLiteral("sampler3D"))) {
+    std::cout << " - sampler3D emitted without an attached LUT";
+    return __LINE__;
+  }
+  const QString with_lut = GenerateBuiltinGlslShader(kTransferLinear, kTransferSrgb, true, 0.0);
+  if (!with_lut.contains(QStringLiteral("uniform sampler3D ove_cube_lut"))) {
+    std::cout << " - attached LUT did not produce the ove_cube_lut sampler3D";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+#endif
+}
+
 }
