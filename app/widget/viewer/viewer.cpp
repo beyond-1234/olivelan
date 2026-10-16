@@ -1181,7 +1181,9 @@ void ViewerWidget::FinishPlayPreprocess()
                                                         "Please check your audio preferences and try again.").arg(error));
     }
     prequeued_audio_.clear();
+  }
 
+  if (GetConnectedNode() && GetConnectedNode()->GetAudioParams().is_valid()) {
     AudioMonitor::StartWaveformOnAll(GetConnectedNode()->GetConnectedWaveform(),
                                      GetConnectedNode()->GetPlayhead(), playback_speed_);
   }

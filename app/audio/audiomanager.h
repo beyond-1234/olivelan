@@ -21,6 +21,7 @@
 #ifndef AUDIOMANAGER_H
 #define AUDIOMANAGER_H
 
+#include <atomic>
 #include <memory>
 #include <QtConcurrent/QtConcurrent>
 #include <QThread>
@@ -83,6 +84,10 @@ public:
 
   static PaStreamParameters GetPortAudioParams(const AudioParams &p, PaDeviceIndex device);
 
+  static const int kMaxMonitoredChannels = 8;
+  void UpdateOutputPeaks(const void *data, unsigned long frames);
+  float GetOutputPeak(int channel);
+
 signals:
   void OutputNotify();
 
@@ -108,6 +113,8 @@ private:
   PaStream *input_stream_;
 
   FFmpegEncoder *input_encoder_;
+
+  std::atomic<float> output_peaks_[kMaxMonitoredChannels];
 
 };
 

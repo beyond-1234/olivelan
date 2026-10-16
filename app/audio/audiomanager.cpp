@@ -65,6 +65,10 @@ int OutputCallback(const void *input, void *output, unsigned long frameCount, co
     memset(reinterpret_cast<uint8_t*>(output) + read_count, 0, max_read - read_count);
   }
 
+  if (output && frameCount > 0) {
+    AudioManager::instance()->UpdateOutputPeaks(output, frameCount);
+  }
+
   return paContinue;
 }
 
@@ -163,6 +167,10 @@ void AudioManager::StopOutput()
   if (output_stream_) {
     Pa_AbortStream(output_stream_);
     ClearBufferedOutput();
+  }
+
+  for (int i = 0; i < kMaxMonitoredChannels; ++i) {
+    output_peaks_[i].store(0.0f, std::memory_order_relaxed);
   }
 }
 
@@ -287,6 +295,10 @@ AudioManager::AudioManager() :
   input_stream_(nullptr),
   input_encoder_(nullptr)
 {
+  for (int i = 0; i < kMaxMonitoredChannels; ++i) {
+    output_peaks_[i].store(0.0f, std::memory_order_relaxed);
+  }
+
 #ifdef PA_HAS_JACK
   // PortAudio doesn't do a strcpy, so we need a const char that's readily accessible (i.e. not
   // a QString converted to UTF-8)
@@ -312,6 +324,50 @@ AudioManager::~AudioManager()
   CloseOutputStream();
 
   Pa_Terminate();
+}
+
+void AudioManager::UpdateOutputPeaks(const void *data, unsigned long frames)
+{
+  int channels = std::min(output_params_.channel_count(), kMaxMonitoredChannels);
+  if (channels <= 0 || frames == 0 || !data) return;
+
+  SampleFormat fmt = output_params_.format();
+  if (fmt == SampleFormat::S16) {
+    const int16_t *samples = reinterpret_cast<const int16_t*>(data);
+    for (unsigned long f = 0; f < frames; ++f) {
+      for (int ch = 0; ch < channels; ++ch) {
+        float val = std::abs(static_cast<float>(samples[f * channels + ch])) / 32768.0f;
+        float cur = output_peaks_[ch].load(std::memory_order_relaxed);
+        while (val > cur && !output_peaks_[ch].compare_exchange_weak(cur, val, std::memory_order_relaxed)) {}
+      }
+    }
+  } else if (fmt == SampleFormat::F32) {
+    const float *samples = reinterpret_cast<const float*>(data);
+    for (unsigned long f = 0; f < frames; ++f) {
+      for (int ch = 0; ch < channels; ++ch) {
+        float val = std::abs(samples[f * channels + ch]);
+        float cur = output_peaks_[ch].load(std::memory_order_relaxed);
+        while (val > cur && !output_peaks_[ch].compare_exchange_weak(cur, val, std::memory_order_relaxed)) {}
+      }
+    }
+  } else if (fmt == SampleFormat::S32) {
+    const int32_t *samples = reinterpret_cast<const int32_t*>(data);
+    for (unsigned long f = 0; f < frames; ++f) {
+      for (int ch = 0; ch < channels; ++ch) {
+        float val = std::abs(static_cast<float>(samples[f * channels + ch])) / 2147483648.0f;
+        float cur = output_peaks_[ch].load(std::memory_order_relaxed);
+        while (val > cur && !output_peaks_[ch].compare_exchange_weak(cur, val, std::memory_order_relaxed)) {}
+      }
+    }
+  }
+}
+
+float AudioManager::GetOutputPeak(int channel)
+{
+  if (channel >= 0 && channel < kMaxMonitoredChannels) {
+    return output_peaks_[channel].exchange(0.0f, std::memory_order_relaxed);
+  }
+  return 0.0f;
 }
 
 }

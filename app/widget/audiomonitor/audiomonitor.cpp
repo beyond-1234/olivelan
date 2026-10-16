@@ -73,6 +73,7 @@ void AudioMonitor::SetParams(const AudioParams &params)
 void AudioMonitor::Stop()
 {
   waveform_ = nullptr;
+  playing_realtime_ = false;
 
   // We don't stop the update loop here so that the monitor can show a smooth fade out. The update
   // loop will stop itself since file_ and waveform_ are null.
@@ -100,13 +101,14 @@ void AudioMonitor::StartWaveform(const AudioWaveformCache *waveform, const ratio
 {
   Stop();
 
-  waveform_length_ = waveform->length();
-  if (start >= waveform_length_) {
-    return;
+  waveform_length_ = (waveform) ? waveform->length() : 0;
+  if (waveform && waveform_length_ > 0 && start < waveform_length_) {
+    waveform_ = waveform;
+    waveform_time_ = start;
+  } else {
+    waveform_ = nullptr;
+    playing_realtime_ = true;
   }
-
-  waveform_ = waveform;
-  waveform_time_ = start;
 
   playback_speed_ = playback_speed;
 
@@ -340,11 +342,19 @@ void AudioMonitor::paintGL()
       delta_time *= abs_speed;
     }
 
-    if (waveform_) {
+    bool got_waveform = false;
+    if (waveform_ && waveform_length_ > 0) {
       UpdateValuesFromWaveform(v, delta_time);
+      got_waveform = true;
 
       if (waveform_time_ >= waveform_length_) {
         Stop();
+      }
+    }
+
+    if (!got_waveform) {
+      for (int i = 0; i < params_.channel_count(); ++i) {
+        v[i] = AudioManager::instance()->GetOutputPeak(i);
       }
     }
 
