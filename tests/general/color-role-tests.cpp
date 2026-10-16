@@ -40,6 +40,7 @@
 #include <cmath>
 
 #include <QFile>
+#include <QRegularExpression>
 #include <QString>
 
 #include "common/ocioutils.h"
@@ -322,6 +323,44 @@ OLIVE_ADD_TEST(GeneratedGlslTracksColorProcessor)
   if (!pq.contains(QStringLiteral("HdrRollOff(col.r, 1000)"))) {
     std::cout << " - a positive mastering peak did not reach HdrRollOff";
     return __LINE__;
+  }
+
+  // 7. Patch 0064: no GLSL reserved word may be used as an identifier in the text that reaches the
+  //    GPU. Patch 0061 shipped `vec4 SceneLinearToCIEXYZ_d65(vec4 in)` - a parameter literally
+  //    named `in` - so the built-in colour shader failed to compile at *runtime* and the viewer
+  //    went black. No C++ compiler can catch that, and the tests only looked at
+  //    GenerateBuiltinGlslShader(), so the CIEXYZ helper was never asserted on at all. It now comes
+  //    from GenerateBuiltinGlslAuxFunctions() so it can be.
+  {
+    const QString aux = GenerateBuiltinGlslAuxFunctions();
+
+    // `<type> <reserved>` is the shape of the 0061 defect. Legitimate uses of these words are as
+    // *qualifiers* before a type (`in vec3 x`), which this deliberately does not match.
+    static const char *kReserved[] = { "in",       "out",      "inout",     "uniform",
+                                       "varying",  "attribute", "layout",   "flat",
+                                       "smooth",   "centroid", "patch",     "this",
+                                       "class",    "template", "namespace", "typedef",
+                                       "asm",      "union",    "enum",      "static" };
+
+    // Assert on what the renderer actually assembles, not just the helper.
+    const QString assembled = basic + aux;
+
+    for (const char *kw : kReserved) {
+      const QRegularExpression re(
+          QStringLiteral("\\b(float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|bvec2|bvec3|bvec4|"
+                         "mat2|mat3|mat4)\\s+")
+          + QString::fromLatin1(kw) + QStringLiteral("\\b"));
+      if (re.match(assembled).hasMatch()) {
+        std::cout << " - GLSL reserved word used as an identifier: " << kw;
+        return __LINE__;
+      }
+    }
+
+    // Positive half: the helper is present and its parameter carries the fixed name.
+    if (!aux.contains(QStringLiteral("vec4 SceneLinearToCIEXYZ_d65(vec4 c)"))) {
+      std::cout << " - CIEXYZ helper missing, or its parameter is not named `c`";
+      return __LINE__;
+    }
   }
 
   OLIVE_TEST_END;

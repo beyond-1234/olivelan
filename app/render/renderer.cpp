@@ -245,15 +245,13 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
 
     // F-4 fix: `peak_nits` is resolved above from the source VideoParams (see
     // ResolveMasteringPeakNits); it is no longer hardcoded to 0.0 here.
+    //
+    // The CIEXYZ helper is appended from colorprocessor.cpp (GenerateBuiltinGlslAuxFunctions)
+    // rather than inlined here, so the regression test can assert on the exact text that reaches
+    // the GPU. A GLSL reserved word used as an identifier is otherwise only caught at runtime -
+    // patch 0061 shipped a parameter literally named `in` and the viewer went black.
     const QString builtin_shader_text = GenerateBuiltinGlslShader(src_tf, dst_tf, has_lut, peak_nits)
-        + QStringLiteral(
-      "vec4 SceneLinearToCIEXYZ_d65(vec4 c) {\n"
-      "  return vec4(\n"
-      "    dot(c.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
-      "    dot(c.rgb, vec3(0.21263900587151036, 0.7151686787677559, 0.07219231536073371)),\n"
-      "    dot(c.rgb, vec3(0.01933081871559185, 0.11919477979462599, 0.9505321522496607)),\n"
-      "    c.a);\n"
-      "}\n");
+        + GenerateBuiltinGlslAuxFunctions();
 
     ShaderCode code;
     if (const Node *shader_src = color_job.CustomShaderSource()) {

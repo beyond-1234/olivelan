@@ -124,6 +124,21 @@ QString GenerateBuiltinGlslShader(BuiltinTransferFunction src,
                                   bool has_cube_lut,
                                   double peak_nits);
 
+/**
+ * @brief GLSL helper functions the built-in engine appends to the generated shader.
+ *
+ * Kept next to GenerateBuiltinGlslShader() so tests can assert on the text that actually reaches
+ * the GPU. ChromaKeyNode calls SceneLinearToCIEXYZ_d65() directly, so this text is part of the
+ * assembled colormanage.frag.
+ *
+ * Why it lives here rather than inline in renderer.cpp (patch 0064): a GLSL reserved word used as
+ * an identifier in this text is a *runtime* shader-compile failure that no C++ compiler can catch.
+ * Patch 0061 shipped exactly that - the parameter was literally named `in` - and the viewer went
+ * black because the whole built-in colour shader failed to compile. Untestable text is how that
+ * survived; this makes it testable.
+ */
+QString GenerateBuiltinGlslAuxFunctions();
+
 }
 
 Q_DECLARE_METATYPE(olive::ColorProcessorPtr)

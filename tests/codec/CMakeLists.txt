@@ -27,6 +27,11 @@ olive_add_test(Codec audio-conform-tests audio-conform-tests.cpp)
 # the top-field-first fix in FFmpegEncoder (requested tff used to be written as bff).
 olive_add_test(Codec interlace-tests interlace-tests.cpp)
 
+# Patch 0064: AudioProcessor must survive repeated Convert() pushes. Covers the patch 0061 fix for
+# the abuffersrc channel-sync regression that patch 0054 had introduced (nothing else in the suite
+# ever called Convert()).
+olive_add_test(Codec audio-processor-tests audio-processor-tests.cpp)
+
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.
 target_compile_definitions(

@@ -604,6 +604,20 @@ QString GenerateBuiltinGlslShader(BuiltinTransferFunction src,
   return out;
 }
 
+QString GenerateBuiltinGlslAuxFunctions()
+{
+  // ChromaKeyNode calls SceneLinearToCIEXYZ_d65() directly, so this must be part of the assembled
+  // built-in shader. Every identifier here must avoid GLSL reserved words (see the header note).
+  return QStringLiteral(
+    "vec4 SceneLinearToCIEXYZ_d65(vec4 c) {\n"
+    "  return vec4(\n"
+    "    dot(c.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
+    "    dot(c.rgb, vec3(0.21263900587151036, 0.7151686787677559, 0.07219231536073371)),\n"
+    "    dot(c.rgb, vec3(0.01933081871559185, 0.11919477979462599, 0.9505321522496607)),\n"
+    "    c.a);\n"
+    "}\n");
+}
+
 struct ColorProcessor::Impl
 {
   QString input;
