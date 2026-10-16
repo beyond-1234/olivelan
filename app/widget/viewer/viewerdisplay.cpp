@@ -854,8 +854,13 @@ bool ViewerDisplayWidget::OnMouseMove(QMouseEvent *event)
   if (hand_dragging_) {
 
     // Emit movement
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     emit HandDragMoved(event->x() - hand_last_drag_pos_.x(),
                        event->y() - hand_last_drag_pos_.y());
+#else
+    emit HandDragMoved(event->position().x() - hand_last_drag_pos_.x(),
+                       event->position().y() - hand_last_drag_pos_.y());
+#endif
 
     hand_last_drag_pos_ = event->pos();
 
@@ -1122,11 +1127,19 @@ void ViewerDisplayWidget::ForwardDragEventToTextEdit(T *e)
     text_edit_->dragLeaveEvent(e);
   } else {
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     T relay(AdjustPosByVAlign(GetVirtualPosForTextEdit(e->pos())).toPoint(),
             e->possibleActions(),
             e->mimeData(),
             e->mouseButtons(),
             e->keyboardModifiers());
+#else
+    T relay(AdjustPosByVAlign(GetVirtualPosForTextEdit(e->position().toPoint())).toPoint(),
+            e->possibleActions(),
+            e->mimeData(),
+            e->buttons(),
+            e->modifiers());
+#endif
 
     if (e->type() == QEvent::DragEnter) {
       text_edit_->dragEnterEvent(static_cast<QDragEnterEvent*>(&relay));
@@ -1174,7 +1187,11 @@ bool ViewerDisplayWidget::ForwardMouseEventToTextEdit(QMouseEvent *event, bool c
 
   local_pos = AdjustPosByVAlign(local_pos);
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   QMouseEvent derived(event->type(), local_pos, event->windowPos(), event->screenPos(), event->button(), event->buttons(), event->modifiers(), event->source());
+#else
+  QMouseEvent derived(event->type(), local_pos, event->scenePosition(), event->globalPosition(), event->button(), event->buttons(), event->modifiers(), event->pointingDevice());
+#endif
   return ForwardEventToTextEdit(&derived);
 }
 

@@ -143,7 +143,11 @@ void TimelineView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void TimelineView::dragEnterEvent(QDragEnterEvent *event)
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->pos(), Qt::NoButton, event->keyboardModifiers());
+#else
+  TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->position().toPoint(), Qt::NoButton, event->modifiers());
+#endif
 
   timeline_event.SetMimeData(event->mimeData());
   timeline_event.SetEvent(event);
@@ -153,7 +157,11 @@ void TimelineView::dragEnterEvent(QDragEnterEvent *event)
 
 void TimelineView::dragMoveEvent(QDragMoveEvent *event)
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->pos(), Qt::NoButton, event->keyboardModifiers());
+#else
+  TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->position().toPoint(), Qt::NoButton, event->modifiers());
+#endif
 
   timeline_event.SetMimeData(event->mimeData());
   timeline_event.SetEvent(event);
@@ -168,7 +176,11 @@ void TimelineView::dragLeaveEvent(QDragLeaveEvent *event)
 
 void TimelineView::dropEvent(QDropEvent *event)
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->pos(), Qt::NoButton, event->keyboardModifiers());
+#else
+  TimelineViewMouseEvent timeline_event = CreateMouseEvent(event->position().toPoint(), Qt::NoButton, event->modifiers());
+#endif
 
   timeline_event.SetMimeData(event->mimeData());
   timeline_event.SetEvent(event);

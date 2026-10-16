@@ -17,5 +17,5 @@
 add_subdirectory(core EXCLUDE_FROM_ALL)
 
 set(KDDockWidgets_STATIC ON CACHE INTERNAL "Force KDDockWidgets to build statically")
-set(KDDockWidgets_QT6 ${BUILD_QT6} CACHE INTERNAL "Conform KDDockWidgets' Qt 6 setting to ours")
+set(KDDockWidgets_QT6 ON CACHE INTERNAL "Force KDDockWidgets to build with Qt 6")
 add_subdirectory(KDDockWidgets EXCLUDE_FROM_ALL)

@@ -662,9 +662,14 @@ void NodeView::dragMoveEvent(QDragMoveEvent *event)
   if (attached_items_.empty()) {
     event->ignore();
   } else {
-    ProcessMovingAttachedNodes(event->pos());
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QPoint mouse_pos = event->pos();
+#else
+    QPoint mouse_pos = event->position().toPoint();
+#endif
+    ProcessMovingAttachedNodes(mouse_pos);
 
-    if (GetContextAtMousePos(event->pos())) {
+    if (GetContextAtMousePos(mouse_pos)) {
       event->accept();
     } else {
       event->ignore();
@@ -674,9 +679,14 @@ void NodeView::dragMoveEvent(QDragMoveEvent *event)
 
 void NodeView::dropEvent(QDropEvent *event)
 {
-  if (Node *drop_ctx = GetContextAtMousePos(event->pos())) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+  QPoint mouse_pos = event->pos();
+#else
+  QPoint mouse_pos = event->position().toPoint();
+#endif
+  if (Node *drop_ctx = GetContextAtMousePos(mouse_pos)) {
     MultiUndoCommand *command = new MultiUndoCommand();
-    QVector<Node*> select_nodes = ProcessDroppingAttachedNodes(command, drop_ctx, event->pos());
+    QVector<Node*> select_nodes = ProcessDroppingAttachedNodes(command, drop_ctx, mouse_pos);
     Core::instance()->undo_stack()->push(command, tr("Dropped %1 Node(s)").arg(select_nodes.size()));
 
     DeselectAll();
