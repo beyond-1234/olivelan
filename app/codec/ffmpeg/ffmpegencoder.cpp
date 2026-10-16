@@ -866,8 +866,10 @@ void FFmpegEncoder::FlushEncoders()
 
   if (fmt_ctx_) {
     // AVFMT_ALLOW_FLUSH was deprecated in FFmpeg 6.1 and removed in 8.0. Upstream's documented
-    // replacement is to simply send a NULL packet to flush the muxer (libavformat no-ops this
-    // internally for muxers that do not support flushing).
+    // replacement is to send a NULL packet unconditionally: av_interleaved_write_frame() with a
+    // NULL packet only drains the muxer's interleaving queue and never forwards a NULL packet to
+    // the muxer's write_packet(), so muxers that do not support flushing are unaffected (there is
+    // simply nothing to drain).
     int r = av_interleaved_write_frame(fmt_ctx_, nullptr);
     if (r < 0) {
       FFmpegError(tr("Failed to write interleaved packet"), r);

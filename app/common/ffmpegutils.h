@@ -24,6 +24,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
 #include <libswscale/swscale.h>
 }
 
@@ -112,7 +113,6 @@ public:
       av_channel_layout_uninit(&layout_);
     }
 
-    AVChannelLayout *ptr() { return &layout_; }
     const AVChannelLayout *get() const { return &layout_; }
 
   private:

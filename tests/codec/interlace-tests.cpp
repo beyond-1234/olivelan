@@ -263,6 +263,15 @@ QString RunCase(VideoParams::Interlacing requested, const QString &dir_path)
 
 OLIVE_ADD_TEST(FfmpegInterlaceRoundTrip)
 {
+  // This test drives Olive's H.264 export path, which resolves to libx264
+  // (FFmpegEncoder::GetEncoder -> avcodec_find_encoder_by_name("libx264")). An FFmpeg build without
+  // libx264 (e.g. one configured without --enable-gpl) has no H.264 encoder, so EncodeFile() would
+  // fail at runtime rather than at build time. Skip instead of reporting a spurious failure.
+  if (!avcodec_find_encoder_by_name("libx264")) {
+    LogLine(QStringLiteral("SKIP: this FFmpeg build has no libx264 H.264 encoder"));
+    OLIVE_TEST_END;
+  }
+
   QTemporaryDir dir;
   OLIVE_ASSERT(dir.isValid());
 
