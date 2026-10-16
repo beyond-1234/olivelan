@@ -33,6 +33,7 @@
 #include "panel/panelmanager.h"
 #include "panel/timeline/timeline.h"
 #include "ui/colorcoding.h"
+#include "ui/style/metrostyleconfig.h"
 #include "widget/timelinewidget/timelinewidget.h"
 
 namespace olive {
@@ -227,18 +228,25 @@ void TimelineView::drawForeground(QPainter *painter, const QRectF &rect)
 
   // Draw selections
   if (selections_ && !selections_->isEmpty()) {
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(QColor(0, 0, 0, 64));
-
     for (auto it=selections_->cbegin(); it!=selections_->cend(); it++) {
       if (it.key().type() == connected_track_list_->type()) {
         int track_index = it.key().index();
 
         foreach (const TimeRange& range, it.value()) {
-          painter->drawRect(TimeToScene(range.in()),
-                            GetTrackY(track_index),
-                            TimeToScene(range.length()),
-                            GetTrackHeight(track_index));
+          QRectF selection_rect(TimeToScene(range.in()),
+                                GetTrackY(track_index),
+                                TimeToScene(range.length()),
+                                GetTrackHeight(track_index));
+
+          // Keep the translucent dim for legibility, and mark the selection with a hard 2px
+          // accent frame (Metro/Fluent; replaces the old glow-style highlight).
+          painter->setPen(Qt::NoPen);
+          painter->setBrush(QColor(0, 0, 0, 64));
+          painter->drawRect(selection_rect);
+
+          painter->setBrush(Qt::NoBrush);
+          painter->setPen(QPen(metro::kAccentColor, metro::kBorderWidth * 2));
+          painter->drawRect(selection_rect.adjusted(1, 1, -1, -1));
         }
       }
     }
@@ -466,15 +474,12 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
           }
         }
 
-        qreal line_bottom = block_top+block_height-1;
+        // Metro/Fluent: a flat 1px hairline outline in place of the old bevel (white top/left +
+        // shadowed bottom/right pseudo-3D).
+        painter->setBrush(Qt::NoBrush);
+        painter->setPen(QPen(metro::kBorderColor, metro::kBorderWidth));
 
-        painter->setPen(Qt::white);
-        painter->drawLine(block_left, block_top, block_right, block_top);
-        painter->drawLine(block_left, block_top, block_left, line_bottom);
-
-        painter->setPen(shadow_color);
-        painter->drawLine(block_left, line_bottom, block_right, line_bottom);
-        painter->drawLine(block_right, line_bottom, block_right, block_top);
+        painter->drawRect(r.adjusted(0, 0, -1, -1));
       } else {
         painter->setPen(Qt::NoPen);
         painter->setBrush(block->is_enabled() ? block->brush(block_top, block_top + block_height) : Qt::gray);
