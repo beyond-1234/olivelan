@@ -28,15 +28,16 @@ void main(void) {
     float radius = ceil(radius_in);
 
     float stroke_weight = 0.0;
+    float step_size = max(1.0, floor(radius / 24.0));
 
-    // Loop over box
-    for (float i=-radius + 0.5; i<=radius; i += 2.0) {
+    // Loop over box with adaptive step size to protect against O(R^2) GPU stalls
+    for (float i=-radius + 0.5 * step_size; i<=radius; i += step_size) {
         float x_coord = i / resolution_in.x;
 
-        for (float j=-radius + 0.5; j<=radius; j += 2.0) {
+        for (float j=-radius + 0.5 * step_size; j<=radius; j += step_size) {
             float y_coord = j / resolution_in.y;
 
-            if (abs(length(vec2(i, j))) < radius) {
+            if (length(vec2(i, j)) <= radius) {
                 // Get pixel here
                 float alpha = texture(tex_in, ove_texcoord + vec2(x_coord, y_coord)).a;
 
@@ -44,7 +45,7 @@ void main(void) {
                     alpha = 1.0 - alpha;
                 }
 
-                stroke_weight += alpha;
+                stroke_weight += alpha * step_size;
 
                 if (stroke_weight >= 1.0) {
                     break;
