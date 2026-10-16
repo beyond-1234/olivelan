@@ -66,6 +66,8 @@ int determine_mode() {
     if (ove_iteration == 1) {
         return MODE_VERTICAL;
     }
+
+    return MODE_NONE;
 }
 
 vec4 add_to_composite(vec4 composite, vec2 pixel_coord, float weight)

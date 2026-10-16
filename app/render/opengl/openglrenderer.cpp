@@ -1503,6 +1503,17 @@ void OpenGLRenderer::Blit(QVariant s, ShaderJob job, Texture *destination, Video
       functions_->glUniform1i(iteration_location, iteration);
     }
 
+    if (iteration > 0) {
+      // If this is not the first iteration, replace the iterative texture with the one we
+      // drew into in the previous iteration (which was output_tex, now held in input_tex after swap)
+      const QString &iterative_input = job.GetIterativeInput();
+      functions_->glActiveTexture(GL_TEXTURE0 + texture_index_map.value(iterative_input));
+      functions_->glBindTexture(GL_TEXTURE_2D, input_tex->id().value<GLuint>());
+
+      // At this time, we only support iterating 2D textures
+      PrepareInputTexture(GL_TEXTURE_2D, job.GetInterpolation(iterative_input));
+    }
+
     // Replace iterative input
     if (iteration == real_iteration_count-1) {
       // This is the last iteration, draw to the destination
@@ -1523,25 +1534,14 @@ void OpenGLRenderer::Blit(QVariant s, ShaderJob job, Texture *destination, Video
       AttachTextureAsDestination(output_tex->id());
     }
 
-    if (iteration > 0) {
-      // If this is not the first iteration, replace the iterative texture with the one we
-      // last drew
-      const QString &iterative_input = job.GetIterativeInput();
-      functions_->glActiveTexture(GL_TEXTURE0 + texture_index_map.value(iterative_input));
-      functions_->glBindTexture(GL_TEXTURE_2D, input_tex->id().value<GLuint>());
-
-      // At this time, we only support iterating 2D textures
-      PrepareInputTexture(GL_TEXTURE_2D, job.GetInterpolation(iterative_input));
-    }
-
-    // Swap so that the next iteration, the texture we draw now will be the input texture next
-    std::swap(output_tex, input_tex);
-
     // Blit this texture through this shader
     {
       PRINT_GL_ERRORS;
       functions_->glDrawArrays(GL_TRIANGLES, 0, blit_vertices.size() / 3);
     }
+
+    // Swap so that the next iteration, the texture we drew now will be the input texture next
+    std::swap(output_tex, input_tex);
   }
 
   if (destination) {
