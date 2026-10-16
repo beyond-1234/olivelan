@@ -84,7 +84,7 @@ public:
 
   static PaStreamParameters GetPortAudioParams(const AudioParams &p, PaDeviceIndex device);
 
-  static const int kMaxMonitoredChannels = 8;
+  static constexpr int kMaxMonitoredChannels = 8;
   void UpdateOutputPeaks(const void *data, unsigned long frames);
   float GetOutputPeak(int channel);
 
