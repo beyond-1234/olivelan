@@ -1128,12 +1128,15 @@ void Core::SetStartupLocale()
   QString use_locale = OLIVE_CONFIG("Language").toString();
 
   if (use_locale.isEmpty()) {
-    // No configured locale, auto-detect the system's locale
-    use_locale = QLocale::system().name();
+    // Treat Chinese (zh_CN) as primary default language
+    use_locale = QStringLiteral("zh_CN");
   }
 
   if (!SetLanguage(use_locale)) {
-    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it";
+    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it; falling back to zh_CN/en_US";
+    if (!SetLanguage(QStringLiteral("zh_CN"))) {
+      SetLanguage(QStringLiteral("en_US"));
+    }
   }
 }
 

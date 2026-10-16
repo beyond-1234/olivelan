@@ -771,7 +771,7 @@ Current driver information: %1 %2 %3</source>
     <message>
         <source>Film Scan 3</source>
         <translatorcomment>胶片扫描2+</translatorcomment>
-        <translation></translation>
+        <translation>胶片扫描 3</translation>
     </message>
     <message>
         <source>Film Scan 2+</source>
@@ -909,7 +909,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Teal</source>
-        <translation></translation>
+        <translation>青色</translation>
     </message>
     <message>
         <source>Blue</source>
@@ -1918,7 +1918,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1 kbps</source>
-        <translation></translation>
+        <translation>%1 kbps</translation>
     </message>
 </context>
 <context>
@@ -1981,23 +1981,23 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>FLAC</source>
-        <translation></translation>
+        <translation>FLAC</translation>
     </message>
     <message>
         <source>Opus</source>
-        <translation></translation>
+        <translation>Opus</translation>
     </message>
     <message>
         <source>Vorbis</source>
-        <translation></translation>
+        <translation>Vorbis</translation>
     </message>
     <message>
         <source>VP9</source>
-        <translation></translation>
+        <translation>VP9</translation>
     </message>
     <message>
         <source>SubRip SRT</source>
-        <translation></translation>
+        <translation>SubRip SRT</translation>
     </message>
 </context>
 <context>
@@ -2187,15 +2187,15 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>MPEG-4 Audio</source>
-        <translation></translation>
+        <translation>MPEG-4 音频</translation>
     </message>
     <message>
         <source>Wave Audio</source>
-        <translation></translation>
+        <translation>Wave 音频</translation>
     </message>
     <message>
         <source>AIFF</source>
-        <translation></translation>
+        <translation>AIFF</translation>
     </message>
     <message>
         <source>MP3</source>
@@ -2203,19 +2203,19 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>FLAC</source>
-        <translation></translation>
+        <translation>FLAC</translation>
     </message>
     <message>
         <source>Ogg</source>
-        <translation></translation>
+        <translation>Ogg</translation>
     </message>
     <message>
         <source>WebM</source>
-        <translation></translation>
+        <translation>WebM</translation>
     </message>
     <message>
         <source>SubRip SRT</source>
-        <translation></translation>
+        <translation>SubRip SRT</translation>
     </message>
 </context>
 <context>
@@ -2426,7 +2426,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1: %2 %3</source>
-        <translation></translation>
+        <translation>%1: %2 %3</translation>
     </message>
     <message>
         <source>Failed to send frame to encoder</source>
@@ -2608,11 +2608,11 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1x%2 %3 FPS</source>
-        <translation></translation>
+        <translation>%1x%2 %3 FPS</translation>
     </message>
     <message>
         <source>%1 Hz %2 channels</source>
-        <translation></translation>
+        <translation>%1 Hz %2 声道</translation>
     </message>
     <message>
         <source>Subtitles</source>
@@ -3252,99 +3252,99 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ctrl+O</source>
-        <translation></translation>
+        <translation>Ctrl+O</translation>
     </message>
     <message>
         <source>Ctrl+S</source>
-        <translation></translation>
+        <translation>Ctrl+S</translation>
     </message>
     <message>
         <source>Ctrl+Shift+S</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+S</translation>
     </message>
     <message>
         <source>F12</source>
-        <translation></translation>
+        <translation>F12</translation>
     </message>
     <message>
         <source>Ctrl+I</source>
-        <translation></translation>
+        <translation>Ctrl+I</translation>
     </message>
     <message>
         <source>Ctrl+M</source>
-        <translation></translation>
+        <translation>Ctrl+M</translation>
     </message>
     <message>
         <source>Shift+F10</source>
-        <translation></translation>
+        <translation>Shift+F10</translation>
     </message>
     <message>
         <source>Ctrl+Z</source>
-        <translation></translation>
+        <translation>Ctrl+Z</translation>
     </message>
     <message>
         <source>Ctrl+Shift+Z</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+Z</translation>
     </message>
     <message>
         <source>Backspace</source>
-        <translation></translation>
+        <translation>Backspace</translation>
     </message>
     <message>
         <source>Ctrl+A</source>
-        <translation></translation>
+        <translation>Ctrl+A</translation>
     </message>
     <message>
         <source>Ctrl+Shift+A</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+A</translation>
     </message>
     <message>
         <source>,</source>
-        <translation></translation>
+        <translation>,</translation>
     </message>
     <message>
         <source>.</source>
-        <translation></translation>
+        <translation>.</translation>
     </message>
     <message>
         <source>Q</source>
-        <translation></translation>
+        <translation>Q</translation>
     </message>
     <message>
         <source>W</source>
-        <translation></translation>
+        <translation>W</translation>
     </message>
     <message>
         <source>Ctrl+Alt+Q</source>
-        <translation></translation>
+        <translation>Ctrl+Alt+Q</translation>
     </message>
     <message>
         <source>Ctrl+Alt+W</source>
-        <translation></translation>
+        <translation>Ctrl+Alt+W</translation>
     </message>
     <message>
         <source>Alt+Left</source>
-        <translation></translation>
+        <translation>Alt+Left</translation>
     </message>
     <message>
         <source>Alt+Right</source>
-        <translation></translation>
+        <translation>Alt+Right</translation>
     </message>
     <message>
         <source>[</source>
-        <translation></translation>
+        <translation>[</translation>
     </message>
     <message>
         <source>]</source>
-        <translation></translation>
+        <translation>]</translation>
     </message>
     <message>
         <source>;</source>
-        <translation></translation>
+        <translation>;</translation>
     </message>
     <message>
         <source>&apos;</source>
-        <translation></translation>
+        <translation>&apos;</translation>
     </message>
     <message>
         <source>M</source>
@@ -3352,67 +3352,67 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>=</source>
-        <translation></translation>
+        <translation>=</translation>
     </message>
     <message>
         <source>-</source>
-        <translation></translation>
+        <translation>-</translation>
     </message>
     <message>
         <source>Ctrl+=</source>
-        <translation></translation>
+        <translation>Ctrl+=</translation>
     </message>
     <message>
         <source>Ctrl+-</source>
-        <translation></translation>
+        <translation>Ctrl+-</translation>
     </message>
     <message>
         <source>\</source>
-        <translation></translation>
+        <translation>\</translation>
     </message>
     <message>
         <source>F11</source>
-        <translation></translation>
+        <translation>F11</translation>
     </message>
     <message>
         <source>Home</source>
-        <translation></translation>
+        <translation>Home</translation>
     </message>
     <message>
         <source>Left</source>
-        <translation></translation>
+        <translation>Left</translation>
     </message>
     <message>
         <source>Space</source>
-        <translation></translation>
+        <translation>Space</translation>
     </message>
     <message>
         <source>Shift+Space</source>
-        <translation></translation>
+        <translation>Shift+Space</translation>
     </message>
     <message>
         <source>Right</source>
-        <translation></translation>
+        <translation>Right</translation>
     </message>
     <message>
         <source>End</source>
-        <translation></translation>
+        <translation>End</translation>
     </message>
     <message>
         <source>Up</source>
-        <translation></translation>
+        <translation>Up</translation>
     </message>
     <message>
         <source>Down</source>
-        <translation></translation>
+        <translation>Down</translation>
     </message>
     <message>
         <source>Shift+I</source>
-        <translation></translation>
+        <translation>Shift+I</translation>
     </message>
     <message>
         <source>Shift+O</source>
-        <translation></translation>
+        <translation>Shift+O</translation>
     </message>
     <message>
         <source>J</source>
@@ -3420,7 +3420,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>K</source>
-        <translation></translation>
+        <translation>K</translation>
     </message>
     <message>
         <source>L</source>
@@ -3428,19 +3428,19 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>`</source>
-        <translation></translation>
+        <translation>`</translation>
     </message>
     <message>
         <source>V</source>
-        <translation></translation>
+        <translation>V</translation>
     </message>
     <message>
         <source>D</source>
-        <translation></translation>
+        <translation>D</translation>
     </message>
     <message>
         <source>X</source>
-        <translation></translation>
+        <translation>X</translation>
     </message>
     <message>
         <source>B</source>
@@ -3448,7 +3448,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>N</source>
-        <translation></translation>
+        <translation>N</translation>
     </message>
     <message>
         <source>C</source>
@@ -3456,7 +3456,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Y</source>
-        <translation></translation>
+        <translation>Y</translation>
     </message>
     <message>
         <source>U</source>
@@ -3464,19 +3464,19 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>H</source>
-        <translation></translation>
+        <translation>H</translation>
     </message>
     <message>
         <source>Z</source>
-        <translation></translation>
+        <translation>Z</translation>
     </message>
     <message>
         <source>T</source>
-        <translation></translation>
+        <translation>T</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>A</translation>
     </message>
     <message>
         <source>R</source>
@@ -3488,11 +3488,11 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ctrl+,</source>
-        <translation></translation>
+        <translation>Ctrl+,</translation>
     </message>
     <message>
         <source>/</source>
-        <translation></translation>
+        <translation>/</translation>
     </message>
     <message>
         <source>Revert</source>
@@ -3504,7 +3504,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Delete (alt)</source>
-        <translation></translation>
+        <translation>Delete (备用)</translation>
     </message>
     <message>
         <source>Nudge Left</source>
@@ -3889,51 +3889,51 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Ctrl+N</source>
-        <translation></translation>
+        <translation>Ctrl+N</translation>
     </message>
     <message>
         <source>Ctrl+Shift+N</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+N</translation>
     </message>
     <message>
         <source>Ctrl+X</source>
-        <translation></translation>
+        <translation>Ctrl+X</translation>
     </message>
     <message>
         <source>Ctrl+C</source>
-        <translation></translation>
+        <translation>Ctrl+C</translation>
     </message>
     <message>
         <source>Ctrl+V</source>
-        <translation></translation>
+        <translation>Ctrl+V</translation>
     </message>
     <message>
         <source>Ctrl+Shift+V</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+V</translation>
     </message>
     <message>
         <source>Ctrl+D</source>
-        <translation></translation>
+        <translation>Ctrl+D</translation>
     </message>
     <message>
         <source>F2</source>
-        <translation></translation>
+        <translation>F2</translation>
     </message>
     <message>
         <source>Del</source>
-        <translation></translation>
+        <translation>Del</translation>
     </message>
     <message>
         <source>Shift+Del</source>
-        <translation></translation>
+        <translation>Shift+Del</translation>
     </message>
     <message>
         <source>Ctrl+K</source>
-        <translation></translation>
+        <translation>Ctrl+K</translation>
     </message>
     <message>
         <source>Ctrl+R</source>
-        <translation></translation>
+        <translation>Ctrl+R</translation>
     </message>
     <message>
         <source>I</source>
@@ -3941,23 +3941,23 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>O</source>
-        <translation></translation>
+        <translation>O</translation>
     </message>
     <message>
         <source>G</source>
-        <translation></translation>
+        <translation>G</translation>
     </message>
     <message>
         <source>Ctrl+Shift+D</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+D</translation>
     </message>
     <message>
         <source>Ctrl+L</source>
-        <translation></translation>
+        <translation>Ctrl+L</translation>
     </message>
     <message>
         <source>Shift+E</source>
-        <translation></translation>
+        <translation>Shift+E</translation>
     </message>
     <message>
         <source>Rename</source>
@@ -4003,7 +4003,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Mosaic</source>
-        <translation></translation>
+        <translation>马赛克</translation>
     </message>
     <message>
         <source>Apply a pixelated mosaic filter to video.</source>
@@ -4277,7 +4277,7 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>-</source>
-        <translation></translation>
+        <translation>-</translation>
     </message>
 </context>
 <context>
@@ -4399,15 +4399,15 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>X</source>
-        <translation></translation>
+        <translation>X</translation>
     </message>
     <message>
         <source>G</source>
-        <translation></translation>
+        <translation>G</translation>
     </message>
     <message>
         <source>Y</source>
-        <translation></translation>
+        <translation>Y</translation>
     </message>
     <message>
         <source>B</source>
@@ -4415,15 +4415,15 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>Z</source>
-        <translation></translation>
+        <translation>Z</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>A</translation>
     </message>
     <message>
         <source>W</source>
-        <translation></translation>
+        <translation>W</translation>
     </message>
 </context>
 <context>
@@ -4741,7 +4741,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;R: %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;G: %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;B: %3 (%7)&lt;/font&gt;&lt;br&gt;A: %4 (%8)&lt;/html&gt;</source>
-        <translation></translation>
+        <translation>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;红(R): %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;绿(G): %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;蓝(B): %3 (%7)&lt;/font&gt;&lt;br&gt;Alpha: %4 (%8)&lt;/html&gt;</translation>
     </message>
 </context>
 <context>
@@ -4992,7 +4992,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>OpenGL</source>
-        <translation></translation>
+        <translation>OpenGL</translation>
     </message>
     <message>
         <source>Use glFinish</source>
@@ -5218,7 +5218,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Root</source>
-        <translation></translation>
+        <translation>根目录</translation>
     </message>
 </context>
 <context>
@@ -5633,7 +5633,7 @@ Are you sure you wish to delete this footage?</source>
     <name>olive::RationalSlider</name>
     <message>
         <source>NaN</source>
-        <translation></translation>
+        <translation>非数字 (NaN)</translation>
     </message>
     <message>
         <source>Float</source>
@@ -6072,7 +6072,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>---</source>
-        <translation></translation>
+        <translation>---</translation>
     </message>
 </context>
 <context>
@@ -6773,11 +6773,11 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>V</source>
-        <translation></translation>
+        <translation>视频</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>音频</translation>
     </message>
     <message>
         <source>S</source>
@@ -6831,11 +6831,11 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>&amp;Delete</source>
-        <translation></translation>
+        <translation>删除(&amp;D)</translation>
     </message>
     <message>
         <source>Delete All &amp;Empty</source>
-        <translation></translation>
+        <translation>删除所有空轨道(&amp;E)</translation>
     </message>
     <message>
         <source>Delete All Empty</source>

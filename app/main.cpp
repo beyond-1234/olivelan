@@ -35,6 +35,7 @@ extern "C" {
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFontDatabase>
 #include <QMessageBox>
 #include <QSurfaceFormat>
 
@@ -307,6 +308,26 @@ int main(int argc, char *argv[])
 #endif // _WIN32
 
     a.reset(new QApplication(argc, argv));
+
+    // Initialize Chinese font stack & embedded font for primary language support
+    int font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.ttf"));
+    QFont app_font = QApplication::font();
+    if (font_id != -1) {
+      const QStringList font_families = QFontDatabase::applicationFontFamilies(font_id);
+      if (!font_families.isEmpty()) {
+        app_font.setFamily(font_families.first());
+      }
+    } else {
+      // Fallback Chinese font stack
+#if defined(Q_OS_WIN)
+      app_font.setFamilies({QStringLiteral("Microsoft YaHei UI"), QStringLiteral("SimHei")});
+#elif defined(Q_OS_MAC)
+      app_font.setFamilies({QStringLiteral("PingFang SC"), QStringLiteral("Heiti SC")});
+#else
+      app_font.setFamilies({QStringLiteral("Noto Sans CJK SC"), QStringLiteral("WenQuanYi Micro Hei")});
+#endif
+    }
+    QApplication::setFont(app_font);
   } else {
     a.reset(new QCoreApplication(argc, argv));
   }

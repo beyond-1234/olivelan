@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/fonts">
+        <file alias="DefaultSans.ttf">LXGWWenKaiLite-Regular.ttf</file>
+    </qresource>
+</RCC>
