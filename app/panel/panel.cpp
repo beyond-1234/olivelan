@@ -32,7 +32,7 @@
 
 namespace olive {
 
-#define super KDDockWidgets::DockWidget
+#define super KDDockWidgets::QtWidgets::DockWidget
 
 PanelWidget::PanelWidget(const QString &object_name) :
   super(object_name),
@@ -42,6 +42,16 @@ PanelWidget::PanelWidget(const QString &object_name) :
   setFocusPolicy(Qt::ClickFocus);
 
   connect(this, &PanelWidget::shown, this, static_cast<void(PanelWidget::*)()>(&PanelWidget::setFocus));
+
+  // KDDockWidgets 2.x no longer provides `shown()`/`hidden()` signals; re-emit them from
+  // `isOpenChanged` so the existing connections (and MainWindow's manual emit) keep working.
+  connect(this, &PanelWidget::isOpenChanged, this, [this](bool open) {
+    if (open) {
+      emit shown();
+    } else {
+      emit hidden();
+    }
+  });
 
   PanelManager::instance()->RegisterPanel(this);
 }

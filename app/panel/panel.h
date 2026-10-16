@@ -31,7 +31,7 @@ namespace olive {
 /**
  * @brief A widget that is always dockable within the MainWindow.
  */
-class PanelWidget : public KDDockWidgets::DockWidget
+class PanelWidget : public KDDockWidgets::QtWidgets::DockWidget
 {
   Q_OBJECT
 public:
@@ -46,6 +46,15 @@ public:
   PanelWidget(const QString& object_name);
 
   virtual ~PanelWidget() override;
+
+  /**
+   * @brief Re-exposes the zero-argument QWidget::setFocus().
+   *
+   * KDDockWidgets::QtWidgets::View overrides QWidget::setFocus(Qt::FocusReason) *without* the
+   * default argument, which hides QWidget's zero-argument form. Olive calls setFocus() on panels,
+   * so we provide it again here.
+   */
+  void setFocus() { QWidget::setFocus(); }
 
   /**
    * @brief Set visibility of panel's highlighted border, mostly used for showing panel focus
@@ -180,6 +189,20 @@ public:
 
 signals:
   void CloseRequested();
+
+  /**
+   * @brief Compatibility signal emitted when this panel becomes visible.
+   *
+   * KDDockWidgets 1.x emitted a `shown()` signal from its DockWidget; 2.x removed it in favour of
+   * `isOpenChanged(bool)`. Olive's panels connect to this in a few places, so we re-provide it and
+   * emit it from PanelWidget::isOpenChanged() (see panel.cpp).
+   */
+  void shown();
+
+  /**
+   * @brief Compatibility counterpart to shown() (see above); emitted when the panel becomes hidden.
+   */
+  void hidden();
 
 protected:
   /**

@@ -39,6 +39,8 @@ extern "C" {
 #include <QMessageBox>
 #include <QSurfaceFormat>
 
+#include <kddockwidgets/KDDockWidgets.h>
+
 #include "core.h"
 #include "common/commandlineparser.h"
 #include "common/debug.h"
@@ -330,6 +332,10 @@ int main(int argc, char *argv[])
 #endif
     }
     QApplication::setFont(app_font);
+
+    // KDDockWidgets 2.x requires a frontend to be selected before any MainWindow/DockWidget is
+    // created. Olive only links the QtWidgets frontend (see ext/CMakeLists.txt).
+    KDDockWidgets::initFrontend(KDDockWidgets::FrontendType::QtWidgets);
   } else {
     a.reset(new QCoreApplication(argc, argv));
   }

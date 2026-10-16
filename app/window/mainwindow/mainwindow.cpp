@@ -25,6 +25,8 @@
 #include <QMessageBox>
 #include <QScreen>
 
+#include <kddockwidgets/LayoutSaver.h>
+
 #ifdef Q_OS_LINUX
 #include <QOffscreenSurface>
 #endif
@@ -36,7 +38,7 @@
 
 namespace olive {
 
-#define super KDDockWidgets::MainWindow
+#define super KDDockWidgets::QtWidgets::MainWindow
 
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
@@ -153,7 +155,16 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
     }
   }
 
-  KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()));
+  // KDDockWidgets 2.x serializes layouts as JSON, which is incompatible with the opaque binary
+  // format used by 1.x. Older Olive projects therefore carry a state blob that can't be restored.
+  // LayoutSaver::restoreLayout() parses with allow_exceptions=false and rejects such data safely
+  // (returns false, leaving the current layout untouched), so we simply fall back to the default
+  // layout rather than leaving panels in an undefined state.
+  if (!KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()))) {
+    qWarning() << "Failed to restore saved dock layout (incompatible with KDDockWidgets 2.x or corrupt);"
+               << "applying default layout.";
+    SetDefaultLayout();
+  }
 }
 
 QString TransformNameForSerialization(const QString &unique, int i)
