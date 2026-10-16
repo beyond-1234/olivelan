@@ -1,7 +1,7 @@
 /***
 
   Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Copyright (C) 2024 Olive Team
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,15 +27,25 @@
 
 namespace olive {
 
+class ProjectThumbnailCache;
+
 /**
  * @brief The delegate that's used to draw items when ProjectExplorer is in Icon view
+ *
+ * Draws a Metro/Fluent "tile card": a 16:9 cover thumbnail on top, metadata badges overlaid on the
+ * thumbnail, and a dark metadata bar (name + duration) at the bottom. Thumbnails are supplied
+ * asynchronously by a ProjectThumbnailCache; while one is missing a placeholder tile is drawn and
+ * the decode is requested.
  */
 class ProjectExplorerIconViewItemDelegate : public QStyledItemDelegate {
 public:
-  ProjectExplorerIconViewItemDelegate(QObject *parent = nullptr);
+  ProjectExplorerIconViewItemDelegate(ProjectThumbnailCache *thumbnail_cache, QObject *parent = nullptr);
 
   virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
   virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
+
+private:
+  ProjectThumbnailCache *thumbnail_cache_;
 };
 
 }

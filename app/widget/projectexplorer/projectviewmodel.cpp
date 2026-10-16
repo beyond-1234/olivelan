@@ -27,8 +27,49 @@
 #include "common/qtutils.h"
 #include "core.h"
 #include "node/nodeundo.h"
+#include "node/project/footage/footage.h"
 
 namespace olive {
+
+namespace {
+
+/**
+ * @brief Short metadata badges for a Footage tile (e.g. "4K", "10bit", "60FPS", "WAV").
+ *
+ * Reads only the already-parsed stream parameters -- no decoding or file I/O -- so it is safe to
+ * call while the view is painting. Once patch 0072b's tile view is in use this is the single place
+ * that turns decoded media metadata into user-facing labels.
+ */
+QStringList ComputeBadges(Footage *footage)
+{
+  QStringList badges;
+
+  const VideoParams video = footage->GetVideoParams();
+  const AudioParams audio = footage->GetAudioParams();
+
+  const bool has_video = video.width() > 0 && video.height() > 0;
+  const bool has_audio = audio.enabled() && audio.sample_rate() > 0;
+
+  if (has_video) {
+    if (video.width() >= 3840 || video.height() >= 2160) {
+      badges.append(QStringLiteral("4K"));
+    }
+
+    if (VideoParams::GetBytesPerChannel(video.format()) > 1) {
+      badges.append(QStringLiteral("10bit"));
+    }
+
+    if (video.frame_rate().toDouble() >= 59.94) {
+      badges.append(QStringLiteral("60FPS"));
+    }
+  } else if (has_audio) {
+    badges.append(QStringLiteral("WAV"));
+  }
+
+  return badges;
+}
+
+}
 
 ProjectViewModel::ProjectViewModel(QObject *parent) :
   QAbstractItemModel(parent),
@@ -182,6 +223,20 @@ QVariant ProjectViewModel::data(const QModelIndex &index, int role) const
     break;
   case Qt::ToolTipRole:
     return internal_item->data(Node::TOOLTIP);
+  case kThumbnailKeyRole:
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        return footage->filename();
+      }
+    }
+    break;
+  case kBadgeRole:
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        return ComputeBadges(footage);
+      }
+    }
+    break;
   }
 
   return QVariant();

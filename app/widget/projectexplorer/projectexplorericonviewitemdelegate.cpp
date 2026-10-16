@@ -1,7 +1,7 @@
 /***
 
   Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Copyright (C) 2024 Olive Team
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -23,11 +23,34 @@
 #include <QPainter>
 
 #include "common/qtutils.h"
+#include "projectthumbnailcache.h"
+#include "projectviewmodel.h"
+#include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
-ProjectExplorerIconViewItemDelegate::ProjectExplorerIconViewItemDelegate(QObject *parent) :
-  QStyledItemDelegate (parent)
+namespace {
+
+QColor BadgeColor(const QString &badge)
+{
+  if (badge == QStringLiteral("4K")) {
+    return metro::kAccentColor;
+  } else if (badge == QStringLiteral("10bit")) {
+    return QColor(0x87, 0x64, 0xB8);
+  } else if (badge == QStringLiteral("60FPS")) {
+    return metro::kTrackVideo;
+  } else if (badge == QStringLiteral("WAV")) {
+    return metro::kTrackAudio;
+  }
+
+  return metro::kBorderColor;
+}
+
+}
+
+ProjectExplorerIconViewItemDelegate::ProjectExplorerIconViewItemDelegate(ProjectThumbnailCache *thumbnail_cache, QObject *parent) :
+  QStyledItemDelegate(parent),
+  thumbnail_cache_(thumbnail_cache)
 {
 }
 
@@ -35,68 +58,124 @@ QSize ProjectExplorerIconViewItemDelegate::sizeHint(const QStyleOptionViewItem &
 {
   Q_UNUSED(option)
 
-  return QSize(256, 256);
+  // 16:9 cover + a metadata bar. Note that ProjectExplorer sets a (square) grid size on the icon
+  // view, so the actual item rect is the grid cell; paint() lays the tile out inside `option.rect`.
+  return QSize(176, 128);
 }
 
 void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
-  QFontMetrics fm = painter->fontMetrics();
-  QRect img_rect = option.rect;
+  const bool selected = option.state & QStyle::State_Selected;
+  const QFontMetrics fm = painter->fontMetrics();
 
-  // Draw Text
-  if (fm.height() < option.rect.height() / 2) {
-    img_rect.setHeight(img_rect.height()-fm.height());
+  const int bar_height = fm.height() + 6;
 
-    QRect text_rect = option.rect;
-    text_rect.setTop(text_rect.top() + option.rect.height() - fm.height());
+  const QRect cell = option.rect;
+  const int thumb_height = qBound(0, cell.width() * 9 / 16, qMax(0, cell.height() - bar_height));
+  const QRect tile(cell.x(), cell.y(), cell.width(), thumb_height + bar_height);
 
-    QColor text_bgcolor;
-    QColor text_fgcolor;
+  if (tile.width() <= 2 || tile.height() <= 2) {
+    return;
+  }
 
-    if (option.state & QStyle::State_Selected) {
-      text_bgcolor = option.palette.highlight().color();
-      text_fgcolor = option.palette.highlightedText().color();
-    } else {
-      text_bgcolor = Qt::white;
-      text_fgcolor = Qt::black;
+  const QRect thumb_rect(tile.x(), tile.y(), tile.width(), thumb_height);
+  const QRect bar_rect(tile.x(), tile.y() + thumb_height, tile.width(), bar_height);
+
+  // Tile background (doubles as the placeholder colour while a thumbnail is being decoded).
+  painter->fillRect(tile, metro::kTileBg);
+
+  // ---- Thumbnail, or placeholder + async request ----
+  const QString key = index.data(ProjectViewModel::kThumbnailKeyRole).toString();
+  QPixmap thumb;
+
+  if (!key.isEmpty()) {
+    thumb = thumbnail_cache_->Get(key);
+
+    if (thumb.isNull()) {
+      // Not ready yet: request an asynchronous decode and draw a placeholder for now.
+      thumbnail_cache_->Request(key, key);
+    }
+  }
+
+  if (!thumb.isNull()) {
+    painter->drawPixmap(thumb_rect, thumb.scaled(thumb_rect.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+  } else {
+    QIcon ico = index.data(Qt::DecorationRole).value<QIcon>();
+    if (!ico.isNull() && thumb_height > 0) {
+      const QSize ico_size = ico.actualSize(thumb_rect.size());
+      const QRect ico_rect(thumb_rect.x() + (thumb_rect.width() - ico_size.width()) / 2,
+                           thumb_rect.y() + (thumb_rect.height() - ico_size.height()) / 2,
+                           ico_size.width(),
+                           ico_size.height());
+      painter->drawPixmap(ico_rect, ico.pixmap(ico_size));
+    }
+  }
+
+  // ---- Badges, overlaid on the top-left of the thumbnail ----
+  const QStringList badges = index.data(ProjectViewModel::kBadgeRole).toStringList();
+  if (!badges.isEmpty() && thumb_height > fm.height()) {
+    const QFont original_font = painter->font();
+
+    QFont badge_font = original_font;
+    badge_font.setPointSizeF(qMax(6.0, badge_font.pointSizeF() * 0.75));
+
+    const QFontMetrics badge_fm(badge_font);
+
+    int x = thumb_rect.x() + 4;
+    const int y = thumb_rect.y() + 4;
+
+    painter->setFont(badge_font);
+
+    for (const QString &badge : badges) {
+      const int w = badge_fm.horizontalAdvance(badge) + 8;
+      const QRect badge_rect(x, y, w, badge_fm.height());
+
+      if (badge_rect.right() > thumb_rect.right() - 2) {
+        break;
+      }
+
+      painter->fillRect(badge_rect, BadgeColor(badge));
+      painter->setPen(Qt::white);
+      painter->drawText(badge_rect, Qt::AlignCenter, badge);
+
+      x += w + 4;
     }
 
-    painter->fillRect(text_rect, text_bgcolor);
-    painter->setPen(text_fgcolor);
+    painter->setFont(original_font);
+  }
 
-    QString duration_str = index.data(Qt::UserRole).toString();
+  // ---- Metadata bar: name (left) + duration (right) ----
+  painter->fillRect(bar_rect, metro::kCanvasBg);
 
-    int timecode_width = QtUtils::QFontMetricsWidth(fm, duration_str);
+  {
+    const QString duration = index.data(Qt::UserRole).toString();
+    const QRect text_rect = bar_rect.adjusted(4, 0, -4, 0);
+    const int duration_width = QtUtils::QFontMetricsWidth(fm, duration);
 
-    int max_name_width = option.rect.width();
+    int name_width = text_rect.width();
 
-    if (timecode_width < option.rect.width() / 2) {
-      painter->drawText(text_rect, static_cast<int>(Qt::AlignBottom | Qt::AlignRight), index.data(Qt::UserRole).toString());
-      max_name_width -= timecode_width;
+    painter->setPen(option.palette.text().color());
+
+    if (duration_width > 0 && duration_width < text_rect.width() / 2) {
+      painter->drawText(text_rect, static_cast<int>(Qt::AlignRight | Qt::AlignVCenter), duration);
+      name_width -= duration_width + 4;
     }
 
     painter->drawText(text_rect,
-                      static_cast<int>(Qt::AlignBottom | Qt::AlignLeft),
-                      fm.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, max_name_width));
-
+                      static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter),
+                      fm.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, name_width));
   }
 
-  // Draw image
-  QIcon ico = index.data(Qt::DecorationRole).value<QIcon>();
-  QSize icon_size = ico.actualSize(img_rect.size());
-  img_rect = QRect(img_rect.x() + (img_rect.width() / 2 - icon_size.width() / 2),
-                   img_rect.y() + (img_rect.height() / 2 - icon_size.height() / 2),
-                   icon_size.width(),
-                   icon_size.height());
-  painter->drawPixmap(img_rect, ico.pixmap(icon_size));
+  // ---- Border / selection frame (Metro) ----
+  painter->setBrush(Qt::NoBrush);
 
-  if (option.state & QStyle::State_Selected) {
-    QColor highlight_color = option.palette.highlight().color();
-    highlight_color.setAlphaF(0.5);
-
-    painter->setCompositionMode(QPainter::CompositionMode_SourceAtop);
-    painter->fillRect(img_rect, highlight_color);
+  if (selected) {
+    painter->setPen(QPen(metro::kAccentColor, metro::kBorderWidth * 2));
+  } else {
+    painter->setPen(QPen(metro::kBorderColor, metro::kBorderWidth));
   }
+
+  painter->drawRect(tile.adjusted(0, 0, -1, -1));
 }
 
 }

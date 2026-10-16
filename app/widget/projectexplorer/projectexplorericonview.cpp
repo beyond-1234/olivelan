@@ -1,7 +1,7 @@
 /***
 
   Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Copyright (C) 2024 Olive Team
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,14 +20,44 @@
 
 #include "projectexplorericonview.h"
 
+#include "projectviewmodel.h"
+
 namespace olive {
 
 ProjectExplorerIconView::ProjectExplorerIconView(QWidget *parent) :
-  ProjectExplorerListViewBase(parent)
+  ProjectExplorerListViewBase(parent),
+  thumbnail_cache_(this),
+  delegate_(&thumbnail_cache_)
 {
   setViewMode(QListView::IconMode);
 
   setItemDelegate(&delegate_);
+
+  connect(&thumbnail_cache_, &ProjectThumbnailCache::Ready, this, &ProjectExplorerIconView::ThumbnailReady);
+}
+
+void ProjectExplorerIconView::ThumbnailReady(const QString &key)
+{
+  // Repaint just the tile(s) that use this key; fall back to the whole viewport if none matched
+  // (e.g. the item is currently in another folder).
+  QAbstractItemModel *m = model();
+  const QModelIndex parent = rootIndex();
+  bool updated = false;
+
+  if (m) {
+    for (int i = 0; i < m->rowCount(parent); i++) {
+      const QModelIndex index = m->index(i, ProjectViewModel::kName, parent);
+
+      if (index.data(ProjectViewModel::kThumbnailKeyRole).toString() == key) {
+        update(index);
+        updated = true;
+      }
+    }
+  }
+
+  if (!updated) {
+    viewport()->update();
+  }
 }
 
 }

@@ -63,6 +63,12 @@ public:
 
   static const int kInnerTextRole = Qt::UserRole + 1;
 
+  /// Role: thumbnail cache key for a Footage item (its filename), or an empty string otherwise.
+  static const int kThumbnailKeyRole = Qt::UserRole + 2;
+
+  /// Role: QStringList of short metadata badges ("4K", "10bit", "60FPS", "WAV") for a Footage item.
+  static const int kBadgeRole = Qt::UserRole + 3;
+
   /**
    * @brief ProjectViewModel Constructor
    *
