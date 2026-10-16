@@ -16,6 +16,7 @@
 
 add_subdirectory(olive-dark)
 add_subdirectory(olive-light)
+add_subdirectory(olive-metro)
 
 set(OLIVE_RESOURCES
   ${OLIVE_RESOURCES}

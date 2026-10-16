@@ -1,0 +1,178 @@
+/***
+
+  Olive - Non-Linear Video Editor
+  Copyright (C) 2024 Olive Team
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+***/
+
+/* Olive Metro (Microsoft Metro / Fluent flat) theme.
+ * Token values mirror ui/style/metrostyleconfig.h:
+ *   accent #0078D4, tile #252526, hairline #3F3F46, canvas #1E1E1E.
+ * Every surface is a hard-edged rectangle: 0 corner radius, 1px hairlines.
+ */
+
+/* ---------- Buttons: flat rectangles with a hairline border ---------- */
+QPushButton,
+QToolButton {
+  border: 1px solid #3F3F46;
+  border-radius: 0px;
+  padding: 3px 10px;
+}
+
+QPushButton:hover,
+QToolButton:hover {
+  border-color: #0078D4;
+}
+
+QPushButton:checked,
+QPushButton:pressed,
+QToolButton:checked,
+QToolButton:pressed {
+  background: #0078D4;
+  color: #FFFFFF;
+  border-color: #0078D4;
+}
+
+QPushButton:disabled,
+QToolButton:disabled {
+  color: #6D6D6D;
+  border-color: #333333;
+}
+
+/* ---------- Inputs ---------- */
+QLineEdit,
+QPlainTextEdit,
+QTextEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox {
+  border: 1px solid #3F3F46;
+  border-radius: 0px;
+  padding: 2px 4px;
+}
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QSpinBox:focus,
+QComboBox:focus {
+  border-color: #0078D4;
+}
+
+/* ---------- Tabs: the active tab carries a 2px accent line on its top edge ---------- */
+QTabBar {
+  font-size: 9pt;
+}
+
+QTabBar::tab {
+  background: transparent;
+  border: none;
+  border-top: 2px solid transparent;
+  padding: 4px 12px;
+}
+
+QTabBar::tab:selected {
+  border-top: 2px solid #0078D4;
+  color: #0078D4;
+}
+
+QTabBar::tab:hover:!selected {
+  border-top: 2px solid #3F3F46;
+}
+
+/* ---------- Menus / toolbars / status bar ---------- */
+QMenuBar::item:selected,
+QMenu::item:selected {
+  background: #0078D4;
+  color: #FFFFFF;
+}
+
+QMenu {
+  border: 1px solid #3F3F46;
+}
+
+QMenu::separator {
+  height: 1px;
+  background: #3F3F46;
+}
+
+QToolBar {
+  border: none;
+  spacing: 2px;
+}
+
+/* ---------- Headers and item views ---------- */
+QHeaderView::section {
+  border: none;
+  border-bottom: 1px solid #3F3F46;
+  padding: 4px 6px;
+}
+
+QTreeView,
+QListView,
+QTableView {
+  border: none;
+}
+
+/* ---------- Group boxes ---------- */
+QGroupBox {
+  border: 1px solid #3F3F46;
+  border-radius: 0px;
+  margin-top: 12px;
+}
+
+QGroupBox::title {
+  subcontrol-origin: margin;
+  left: 8px;
+  padding: 0 4px;
+}
+
+/* ---------- Minimal 6px auto-hiding single-line scrollbars ---------- */
+QScrollBar:vertical {
+  background: transparent;
+  width: 6px;
+  margin: 0;
+}
+
+QScrollBar::handle:vertical {
+  background: #3F3F46;
+  min-height: 24px;
+}
+
+QScrollBar:horizontal {
+  background: transparent;
+  height: 6px;
+  margin: 0;
+}
+
+QScrollBar::handle:horizontal {
+  background: #3F3F46;
+  min-width: 24px;
+}
+
+QScrollBar::handle:hover {
+  background: #0078D4;
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line,
+QScrollBar::add-page,
+QScrollBar::sub-page {
+  background: none;
+  border: none;
+  width: 0;
+  height: 0;
+}

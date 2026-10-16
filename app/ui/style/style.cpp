@@ -30,6 +30,7 @@
 
 #include "config/config.h"
 #include "ui/icons/icons.h"
+#include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
@@ -130,6 +131,8 @@ void StyleManager::Init()
 
   available_themes_.insert(QStringLiteral("olive-dark"), QStringLiteral("Olive Dark"));
   available_themes_.insert(QStringLiteral("olive-light"), QStringLiteral("Olive Light"));
+  available_themes_.insert(QString::fromLatin1(metro::kThemeName),
+                           QString::fromLatin1(metro::kThemeDisplayName));
 
   QString config_style = OLIVE_CONFIG("Style").toString();
 
