@@ -247,12 +247,12 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     // ResolveMasteringPeakNits); it is no longer hardcoded to 0.0 here.
     const QString builtin_shader_text = GenerateBuiltinGlslShader(src_tf, dst_tf, has_lut, peak_nits)
         + QStringLiteral(
-      "vec4 SceneLinearToCIEXYZ_d65(vec4 in) {\n"
+      "vec4 SceneLinearToCIEXYZ_d65(vec4 c) {\n"
       "  return vec4(\n"
-      "    dot(in.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
-      "    dot(in.rgb, vec3(0.21263900587151036, 0.7151686787677559, 0.07219231536073371)),\n"
-      "    dot(in.rgb, vec3(0.01933081871559185, 0.11919477979462599, 0.9505321522496607)),\n"
-      "    in.a);\n"
+      "    dot(c.rgb, vec3(0.4123907992659595, 0.35758433938387796, 0.1804807884018343)),\n"
+      "    dot(c.rgb, vec3(0.21263900587151036, 0.7151686787677559, 0.07219231536073371)),\n"
+      "    dot(c.rgb, vec3(0.01933081871559185, 0.11919477979462599, 0.9505321522496607)),\n"
+      "    c.a);\n"
       "}\n");
 
     ShaderCode code;
