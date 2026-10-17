@@ -295,18 +295,28 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   void* egl_image_y = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y.data());
   void* egl_image_uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
   if (!egl_image_y || !egl_image_uv) {
-    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M): eglCreateImageKHR returns
-    // EGL_NO_IMAGE_KHR with EGL_BAD_PARAMETER (0x300c) even though ALL of these hold:
-    //   - the display is the current context's (passing EGL_NO_DISPLAY gives EGL_BAD_DISPLAY);
-    //   - EGL_LINUX_DRM_FOURCC_EXT carries the layer's own fourcc (R8 for luma, GR88 for chroma);
-    //   - the plane carries the modifier vaExportSurfaceHandle reported (0x200000010401b04);
-    //   - eglQueryDmaBufFormatsEXT lists both fourccs, and eglQueryDmaBufModifiersEXT lists that
-    //     exact modifier for both of them (4 modifiers for R8/GR88, 3 for NV12/P010).
-    // So the rejection is NOT explained by format or modifier support, and the real cause is still
-    // unidentified - do not assume it is a driver limitation without measuring.
-    // (Two earlier revisions of this note were wrong: one claimed EGL_SUCCESS, one claimed the
+
+    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M). eglCreateImageKHR returns
+    // EGL_NO_IMAGE_KHR with EGL_BAD_PARAMETER (0x300c) for EVERY variant tried:
+    //   - Y (R8) full-size WITH the exported modifier;
+    //   - Y (R8) full-size WITHOUT any modifier (i.e. the linear assumption);
+    //   - UV (GR88) half-size WITH the modifier;
+    //   - UV (GR88) full-size WITH the modifier;
+    //   - composed NV12, both planes in one image, WITH the modifier.
+    // The descriptor is 1 object / 2 layers: R8 num_planes=1 offset=0 pitch=3840; GR88
+    // num_planes=1 offset=6881280 pitch=4096. So there is no auxiliary plane to supply, both
+    // fourccs and the exported modifier are advertised as importable with external_only=0, and the
+    // UV plane is already imported at half size.
+    // In short: format, modifier, plane count, size and offset are all accounted for, yet the call
+    // fails identically in every variant - the cause is common to all of them and is NOT
+    // format/modifier related. The prime suspect is now the buffer/device rather than the
+    // attributes, e.g. the dma-buf coming from a different DRM device than the EGL display.
+    // (Earlier revisions of this note were wrong twice: one claimed EGL_SUCCESS, one claimed the
     // driver accepted only LINEAR. Both were artifacts of malformed eglQueryDmaBuf*EXT calls; see
-    // patches 0084/0085.) Frames fall back to a GPU->CPU readback.
+    // patches 0084/0085/0086.)
+    // For any future composed path: NV12 reports external_only=1, so it must be bound to
+    // GL_TEXTURE_EXTERNAL_OES - GL_TEXTURE_2D would fail at bind time.
+
     qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for plane images (y:"
                << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")"
                << "- plane fourcc" << Qt::hex << prime_desc.layers[0].drm_format
