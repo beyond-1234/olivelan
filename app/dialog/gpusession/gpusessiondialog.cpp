@@ -181,8 +181,26 @@ void GpuSessionDialog::PopulateProbeInfo()
            probe.IsCudaGlInteropBlocked()
                ? tr("Unavailable - the OpenGL context is not on the NVIDIA GPU")
                : (probe.HasNvdecSupport() ? tr("Available") : tr("Unavailable")));
-  add_item(tiers, QStringLiteral("Tier 2 (VA-API DMA-BUF)"),
-           probe.SupportsVaapiDmaBuf() ? tr("Available") : tr("Unavailable"));
+  QString tier2_status;
+  if (!probe.SupportsVaapiDmaBuf()) {
+    tier2_status = tr("Unavailable");
+  } else {
+    switch (probe.GetVaapiImportStatus()) {
+    case VaapiImportStatus::Unknown:
+      tier2_status = tr("Device available - import not yet verified");
+      break;
+    case VaapiImportStatus::Verified:
+      tier2_status = tr("Available - EGL import verified");
+      break;
+    case VaapiImportStatus::Failed:
+      tier2_status = tr("Degraded - import failed for at least one stream; that stream used CPU readback");
+      break;
+    case VaapiImportStatus::Mixed:
+      tier2_status = tr("Partial - some streams verified, others read back");
+      break;
+    }
+  }
+  add_item(tiers, QStringLiteral("Tier 2 (VA-API DMA-BUF)"), tier2_status);
   add_item(tiers, QStringLiteral("Tier 3 (Reinforced CPU decode)"), tr("Available"));
 
   probe_tree_->expandAll();

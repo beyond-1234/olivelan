@@ -380,4 +380,49 @@ OLIVE_ADD_TEST(EglintAbiIs32Bit)
 #endif
 }
 
+OLIVE_ADD_TEST(GpuVaapiImportStatus)
+{
+  // Patch 0094: the UI must distinguish "VA-API device exists" from "a real frame actually
+  // imported". The probe records both outcomes and never lets a later Refresh() erase them.
+  auto& probe = GpuEnvironmentProbe::Instance();
+  probe.ResetVaapiImportStatus();
+
+  if (probe.GetVaapiImportStatus() != VaapiImportStatus::Unknown) {
+    std::cout << " - reset status was not Unknown";
+    return __LINE__;
+  }
+
+  probe.RecordVaapiImportResult(false);
+  if (probe.GetVaapiImportStatus() != VaapiImportStatus::Failed) {
+    std::cout << " - a failed import did not produce Failed";
+    return __LINE__;
+  }
+
+  probe.RecordVaapiImportResult(true);
+  if (probe.GetVaapiImportStatus() != VaapiImportStatus::Mixed) {
+    std::cout << " - success after failure did not produce Mixed";
+    return __LINE__;
+  }
+
+  probe.ResetVaapiImportStatus();
+  probe.RecordVaapiImportResult(true);
+  if (probe.GetVaapiImportStatus() != VaapiImportStatus::Verified) {
+    std::cout << " - a verified import did not produce Verified";
+    return __LINE__;
+  }
+
+  // Repeated failures must not overflow the bitmask or change the state.
+  for (int i = 0; i < 32; i++) {
+    probe.RecordVaapiImportResult(false);
+  }
+  if (probe.GetVaapiImportStatus() != VaapiImportStatus::Mixed) {
+    std::cout << " - repeated failures changed the mixed state";
+    return __LINE__;
+  }
+
+  probe.ResetVaapiImportStatus();
+
+  OLIVE_TEST_END;
+}
+
 } // namespace olive

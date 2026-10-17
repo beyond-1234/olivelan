@@ -1,4 +1,5 @@
 #include "vaapi_dmabuf_pipeline.h"
+#include "gpu_environment_probe.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -108,6 +109,13 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     qWarning() << "[VAAPI-HAL] Renderer context not attached; cannot transfer frame";
     return false;
   }
+
+  // Patch 0094: publish the real outcome of this transfer to the environment probe. The UI must
+  // distinguish "VA-API device exists" from "EGL/DMA-BUF import actually works"; this is the only
+  // place that knows the latter. A false result covers export, EGLImage creation, and composite.
+  bool import_succeeded = false;
+  auto import_result_guard = qScopeGuard(
+      [&]() { GpuEnvironmentProbe::Instance().RecordVaapiImportResult(import_succeeded); });
 
   VASurfaceID surface_id = reinterpret_cast<uintptr_t>(hw_frame->data[3]);
   VADRMPRIMESurfaceDescriptor prime_desc{};
@@ -421,6 +429,7 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   out_frame.pts = hw_frame->pts;
   out_frame.width = hw_frame->width;
   out_frame.height = hw_frame->height;
+  import_succeeded = true;
   return true;
 #endif
 }

@@ -228,7 +228,26 @@ void HALBackendDialog::PopulateProbeInfo()
                ? tr("Unavailable - the OpenGL context is not on the NVIDIA GPU")
                : (probe.HasNvdecSupport() ? tr("Available") : tr("Unavailable")));
   add_item(backends, QStringLiteral("VideoToolbox (Tier 2, macOS)"), probe.SupportsVideoToolbox() ? tr("Available") : tr("Unavailable"));
-  add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), probe.SupportsVaapiDmaBuf() ? tr("Available") : tr("Unavailable"));
+  QString vaapi_status;
+  if (!probe.SupportsVaapiDmaBuf()) {
+    vaapi_status = tr("Unavailable");
+  } else {
+    switch (probe.GetVaapiImportStatus()) {
+    case VaapiImportStatus::Unknown:
+      vaapi_status = tr("Device available - import not yet verified");
+      break;
+    case VaapiImportStatus::Verified:
+      vaapi_status = tr("Available - EGL import verified");
+      break;
+    case VaapiImportStatus::Failed:
+      vaapi_status = tr("Degraded - import failed for at least one stream; that stream used CPU readback");
+      break;
+    case VaapiImportStatus::Mixed:
+      vaapi_status = tr("Partial - some streams verified, others read back");
+      break;
+    }
+  }
+  add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), vaapi_status);
   add_item(backends, QStringLiteral("D3D11 Interop (Tier 2, Windows)"), probe.SupportsD3D11() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), tr("Available"));
 
@@ -250,15 +269,18 @@ void HALBackendDialog::PopulateBackendCombo()
   // blocks exist and the probe would otherwise be flagged unused.
   [[maybe_unused]] auto& probe = GpuEnvironmentProbe::Instance();
 
-  auto add_backend = [this](const QString& display, const QString& backend_id, bool available, const QString& reason = QString()) {
+  auto add_backend = [this](const QString& display, const QString& backend_id, bool available, const QString& reason = QString(), const QString& detail = QString()) {
     QString label = display;
+    if (!detail.isEmpty()) {
+      label += QStringLiteral(" (") + detail + QStringLiteral(")");
+    }
     if (!available) {
       label += QStringLiteral(" (") + (reason.isEmpty() ? tr("detected unavailable") : reason) + QStringLiteral(")");
     }
     backend_combo_->addItem(label, backend_id);
     const int idx = backend_combo_->count() - 1;
     backend_combo_->setItemData(idx, available, Qt::UserRole + 1);
-    // Clean name without the "(unavailable...)" suffix, for the effective-path sentence.
+    // Clean name without the status suffix, for the effective-path sentence.
     backend_combo_->setItemData(idx, display, Qt::UserRole + 2);
   };
 
@@ -283,7 +305,35 @@ void HALBackendDialog::PopulateBackendCombo()
   add_backend(QStringLiteral("VideoToolbox (Tier 2)"), QStringLiteral("videotoolbox"), probe.SupportsVideoToolbox());
 #endif
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
-  add_backend(QStringLiteral("VA-API DMA-BUF (Tier 2)"), QStringLiteral("vaapi"), probe.SupportsVaapiDmaBuf());
+  {
+    const bool device_available = probe.SupportsVaapiDmaBuf();
+    bool available = device_available;
+    QString reason;
+    QString detail;
+
+    if (!device_available) {
+      reason = tr("VA-API device could not be created");
+    } else {
+      switch (probe.GetVaapiImportStatus()) {
+      case VaapiImportStatus::Unknown:
+        detail = tr("device present; import not yet verified");
+        break;
+      case VaapiImportStatus::Verified:
+        detail = tr("EGL import verified");
+        break;
+      case VaapiImportStatus::Failed:
+        // Routing is per-stream: a 10-bit failure must not hide a working 8-bit path.
+        detail = tr("at least one stream fell back to CPU readback");
+        break;
+      case VaapiImportStatus::Mixed:
+        detail = tr("some streams verified; others read back");
+        break;
+      }
+    }
+
+    add_backend(QStringLiteral("VA-API DMA-BUF (Tier 2)"), QStringLiteral("vaapi"), available,
+                reason, detail);
+  }
 #endif
   // Patch 0049 (Phase 8): D3D11 interop is a placeholder - shown on Windows as a
   // greyed-out "Planned" entry so the roadmap is visible, but never selectable and

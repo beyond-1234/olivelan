@@ -354,6 +354,40 @@ bool GpuEnvironmentProbe::SupportsD3D11() const
   return false;
 }
 
+VaapiImportStatus GpuEnvironmentProbe::GetVaapiImportStatus() const
+{
+  const unsigned bits = vaapi_import_bits_.load(std::memory_order_relaxed);
+
+  if ((bits & 3u) == 3u) {
+    return VaapiImportStatus::Mixed;
+  }
+  if (bits & 1u) {
+    return VaapiImportStatus::Verified;
+  }
+  if (bits & 2u) {
+    return VaapiImportStatus::Failed;
+  }
+  return VaapiImportStatus::Unknown;
+}
+
+void GpuEnvironmentProbe::RecordVaapiImportResult(bool success)
+{
+  const unsigned bit = success ? 1u : 2u;
+  const unsigned old_bits = vaapi_import_bits_.fetch_or(bit, std::memory_order_relaxed);
+
+  // Log only the first result of each kind. ProcessHardwareFrame runs per frame; repeating this
+  // would recreate the per-frame log spam patch 0079 removed from the pool path.
+  if (!(old_bits & bit)) {
+    qInfo() << "[HAL Probe] VA-API DMA-BUF import" << (success ? "verified" : "failed")
+            << "- runtime result now:" << static_cast<int>(GetVaapiImportStatus());
+  }
+}
+
+void GpuEnvironmentProbe::ResetVaapiImportStatus()
+{
+  vaapi_import_bits_.store(0, std::memory_order_relaxed);
+}
+
 void GpuEnvironmentProbe::DetectDecodeCapabilityMatrix()
 {
   decode_capability_ = HardwareDecodeCapability{};

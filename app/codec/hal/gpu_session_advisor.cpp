@@ -307,7 +307,12 @@ GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
   // hybrid Wayland session cannot provide.
   assessment.tier1_possible =
       assessment.nvidia_present && probe.HasNvdecSupport() && !probe.IsCudaGlInteropBlocked();
-  assessment.tier2_possible = probe.SupportsVaapiDmaBuf();
+  assessment.tier2_device_available = probe.SupportsVaapiDmaBuf();
+  assessment.tier2_import_status = probe.GetVaapiImportStatus();
+  // Patch 0094: routing is still per-stream (a 10-bit failure must not disable 8-bit streams), so
+  // tier2_possible remains "the device exists". The import status is reported separately instead
+  // of turning device presence into a zero-copy promise.
+  assessment.tier2_possible = assessment.tier2_device_available;
   assessment.nvidia_has_display = probe.HasConnectedDisplayOn(GpuVendor::Nvidia);
   assessment.nvdec_available = probe.HasNvdecSupport();
   const std::string gl_vendor_raw = probe.GetOpenGlVendor();
@@ -344,8 +349,26 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
                         ? Tr("available")
                         : Tr("unavailable - CUDA-GL interop needs the OpenGL context and CUDA on "
                              "the same GPU"));
-  lines << Tr("Tier 2: %1")
-               .arg(assessment.tier2_possible ? Tr("available (VA-API)") : Tr("unavailable"));
+  QString tier2_description;
+  if (!assessment.tier2_device_available) {
+    tier2_description = Tr("unavailable");
+  } else {
+    switch (assessment.tier2_import_status) {
+    case VaapiImportStatus::Unknown:
+      tier2_description = Tr("device present; import not yet verified");
+      break;
+    case VaapiImportStatus::Verified:
+      tier2_description = Tr("available (VA-API, EGL import verified)");
+      break;
+    case VaapiImportStatus::Failed:
+      tier2_description = Tr("degraded - import failed for at least one stream; that stream used CPU readback");
+      break;
+    case VaapiImportStatus::Mixed:
+      tier2_description = Tr("partial - some streams verified, others read back");
+      break;
+    }
+  }
+  lines << Tr("Tier 2: %1").arg(tier2_description);
 
   return lines.join(QStringLiteral("\n"));
 }
@@ -358,13 +381,28 @@ QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)
   }
 
   if (assessment.tier2_possible) {
-    // Deliberately no per-driver claim here. Whether the dmabuf import succeeds depends on the
-    // stream *and* the driver, and patch 0087 showed that a driver we had written off
-    // (Mesa/radeonsi) does establish zero-copy once the EGLint attrib array is passed with the
-    // correct ABI. The runtime probe tree and the [VAAPI-HAL] log carry the actual import status;
-    // the only thing this sentence must promise is that decoding runs on the display GPU.
-    return Tr("Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3.")
-        .arg(assessment.display_gpu);
+    // Patch 0094: say what has actually been proven. Before the first frame only device creation is
+    // known; after a real transfer the probe reports whether EGLImage import succeeded, failed, or
+    // varied by stream. Never turn device presence into a zero-copy promise.
+    QString import_state;
+    switch (assessment.tier2_import_status) {
+    case VaapiImportStatus::Unknown:
+      import_state = Tr("The device is present; EGL import will be verified when the first frame "
+                        "is decoded.");
+      break;
+    case VaapiImportStatus::Verified:
+      import_state = Tr("EGL import has been verified for this session.");
+      break;
+    case VaapiImportStatus::Mixed:
+      import_state = Tr("Some streams imported successfully; others fall back to CPU readback.");
+      break;
+    case VaapiImportStatus::Failed:
+      import_state = Tr("A real EGL import attempt has failed, so that stream used CPU readback; "
+                        "other streams are still attempted.");
+      break;
+    }
+    return Tr("Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3. %2")
+        .arg(assessment.display_gpu, import_state);
   }
 
   return Tr("Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode "

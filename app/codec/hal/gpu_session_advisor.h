@@ -24,6 +24,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "gpu_environment_probe.h"
+
 namespace olive {
 
 /**
@@ -110,6 +112,8 @@ public:
     bool nvidia_present{false};
     bool tier1_possible{false};
     bool tier2_possible{false};
+    bool tier2_device_available{false};
+    VaapiImportStatus tier2_import_status{VaapiImportStatus::Unknown};
     bool nvidia_has_display{false};
     bool nvdec_available{false};
     QString display_gpu;          // vendor driving the display, "unknown" if not yet known

@@ -31,6 +31,20 @@ enum class DisplayServer {
   Unknown
 };
 
+/**
+ * @brief Patch 0094 (P2-10): what the VA-API DMA-BUF path has actually proven at runtime.
+ *
+ * Device creation alone is not import capability. The pipeline records the result of every real
+ * vaExportSurfaceHandle/EGLImage attempt, so the UI can say "device present, import unverified"
+ * instead of advertising zero-copy before a single frame has crossed the boundary.
+ */
+enum class VaapiImportStatus {
+  Unknown,
+  Verified,
+  Failed,
+  Mixed
+};
+
 struct GpuDeviceInfo {
   GpuVendor vendor{GpuVendor::Unknown};
   std::string device_name;
@@ -149,6 +163,18 @@ public:
    *        cannot honour.
    */
   bool SupportsVaapiDmaBuf() const { return has_vaapi_dmabuf_support_; }
+
+  /**
+   * @brief Patch 0094: actual DMA-BUF import state reported by the VA-API pipeline.
+   *
+   * Unknown until the first real frame is processed; Verified/Failed afterwards, or Mixed when
+   * different streams produced different results. UI must not present Unknown as "Available".
+   */
+  VaapiImportStatus GetVaapiImportStatus() const;
+  void RecordVaapiImportResult(bool success);
+
+  /// Test/diagnostic reset only. Normal Refresh() deliberately keeps runtime import history.
+  void ResetVaapiImportStatus();
   bool SupportsVideoToolbox() const { return has_videotoolbox_support_; }
 
   /**
@@ -209,6 +235,9 @@ private:
   mutable std::mutex gl_vendor_mutex_;
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
+  // Patch 0094: bit 0 = at least one real import succeeded, bit 1 = at least one failed.
+  // Atomic because decoder threads record while the UI reads.
+  std::atomic<unsigned> vaapi_import_bits_{0};
   bool has_videotoolbox_support_{false};
   // Patch 0049: has_d3d11_support_ removed - D3D11 interop is a placeholder and
   // SupportsD3D11() answers a hard false from the .cpp.
