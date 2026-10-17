@@ -7527,8 +7527,8 @@ Please check your audio preferences and try again.</source>
         <translation>【保持当前】不更改会话，走上面「本次会话实际会走」的那条路径（%1）。</translation>
     </message>
     <message>
-        <source>This session will use:</source>
-        <translation>本次会话实际会走：</translation>
+        <source>Expected path:</source>
+        <translation>预期路径：</translation>
     </message>
     <message>
         <source>Options:</source>
@@ -7797,8 +7797,8 @@ Please check your audio preferences and try again.</source>
         <translation>本次会话使用的后端：</translation>
     </message>
     <message>
-        <source>Will actually use: %1</source>
-        <translation>实际会走：%1</translation>
+        <source>Expected path (auto routing): %1</source>
+        <translation>预期路径（自动路由）：%1</translation>
     </message>
     <message>
         <source>Will attempt: %1 (forced for this process only). If it fails to initialize, Olive falls back to automatic routing.</source>

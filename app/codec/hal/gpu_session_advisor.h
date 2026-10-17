@@ -127,7 +127,7 @@ public:
   static QString DescribeSituation(const Assessment& assessment);
 
   /**
-   * @brief Which decode tier this session will actually use, and what that costs.
+   * @brief Which decode tier this session is expected to use, and what that costs.
    *
    * Says Tier 2 when Tier 2 is available - the honest answer is whatever the factory will pick.
    */

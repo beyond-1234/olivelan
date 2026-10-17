@@ -44,7 +44,7 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
 
   // Patch 0079/0080 (Phase 9): probe *before* building any UI. This dialog runs before the main
   // window exists, so nothing has reported a GL vendor yet, and both the availability list and the
-  // "what this session will actually use" text depend on it - a pure-NVIDIA desktop would otherwise
+  // the expected-path text depend on it - a pure-NVIDIA desktop would otherwise
   // be told Tier 1 is unavailable simply because the vendor was still unknown.
   {
     auto& probe = GpuEnvironmentProbe::Instance();
@@ -85,7 +85,7 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
   PopulateBackendCombo();
 
   // Patch 0090 (P2-1): the label used to be computed once and then ignored the combo. Keep it in
-  // sync with the actual selection so "will actually use" cannot name Tier 2 while the user has
+  // sync with the actual selection so the expected-path text cannot name Tier 2 while the user has
   // selected Tier 3 (or a forced backend that is known to be unavailable).
   connect(backend_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this](int) { UpdateEffectivePathLabel(); });
@@ -114,9 +114,10 @@ QWidget* HALBackendDialog::CreateSelectionSection()
   backend_combo_ = new QComboBox(widget);
   layout->addWidget(backend_combo_);
 
-  // Patch 0080 (Phase 9): state what this session will actually use, derived from the probe, rather
-  // than leaving the user to infer it from a list of backend names. Patch 0090 (P2-1): the text is
-  // filled by UpdateEffectivePathLabel() once the combo exists, and follows its current selection.
+  // Patch 0080 (Phase 9): state the expected routing, derived from the probe, rather than leaving
+  // the user to infer it from a list of backend names. Patch 0090 (P2-1): the text is filled by
+  // UpdateEffectivePathLabel() once the combo exists, and follows its current selection. Patch 0098:
+  // auto routing is a prediction until a real frame imports, so it is labelled as such.
   effective_label_ = new QLabel(widget);
   effective_label_->setWordWrap(true);
   layout->addWidget(effective_label_);
@@ -356,7 +357,7 @@ void HALBackendDialog::UpdateEffectivePathLabel()
 
   if (backend_id.isEmpty() || backend_id == QStringLiteral("auto")) {
     effective_label_->setText(
-        tr("Will actually use: %1").arg(
+        tr("Expected path (auto routing): %1").arg(
             GpuSessionAdvisor::DescribeEffectivePath(GpuSessionAdvisor::Assess())));
     return;
   }

@@ -44,7 +44,7 @@ private:
   void PopulateProbeInfo();
   void PopulateBackendCombo();
 
-  /// Patch 0090 (P2-1): recompute the "will actually use" sentence from the current combo entry.
+  /// Patch 0090 (P2-1): recompute the expected-path sentence from the current combo entry.
   void UpdateEffectivePathLabel();
 
   static QString VendorToString(GpuVendor vendor);

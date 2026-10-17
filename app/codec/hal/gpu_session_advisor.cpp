@@ -465,7 +465,7 @@ QString GpuSessionAdvisor::DescribeAdvice()
 
   QStringList blocks;
   blocks << DescribeSituation(assessment);
-  blocks << Tr("This session will use:") + QStringLiteral("\n  ") + DescribeEffectivePath(assessment);
+  blocks << Tr("Expected path:") + QStringLiteral("\n  ") + DescribeEffectivePath(assessment);
   blocks << Tr("Options:") + QStringLiteral("\n  ")
                 + RecommendedActions(assessment).join(QStringLiteral("\n  "));
   return blocks.join(QStringLiteral("\n\n"));
