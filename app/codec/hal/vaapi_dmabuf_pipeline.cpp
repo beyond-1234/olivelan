@@ -199,7 +199,7 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
 
   typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
   typedef void* (*PFNEGLGETCURRENTDISPLAY)(void);
-  typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const intptr_t*);
+  typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const int32_t*);
   typedef void* EGLImageKHRHandle;
   typedef void (*PFNEGLDESTROYIMAGEKHR)(void*, EGLImageKHRHandle);
   typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
@@ -265,29 +265,29 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
 
   auto make_plane_attribs = [&](int plane_width, int plane_height, uint32_t fourcc, int fd,
                                 int offset, int pitch, uint64_t modifier) {
-    std::vector<intptr_t> attribs = {
-      EGL_WIDTH, static_cast<intptr_t>(plane_width),
-      EGL_HEIGHT, static_cast<intptr_t>(plane_height),
-      EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(fourcc),
-      EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(fd),
-      EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(offset),
-      EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(pitch),
+    std::vector<int32_t> attribs = {
+      static_cast<int32_t>(EGL_WIDTH), static_cast<int32_t>(plane_width),
+      static_cast<int32_t>(EGL_HEIGHT), static_cast<int32_t>(plane_height),
+      static_cast<int32_t>(EGL_LINUX_DRM_FOURCC_EXT), static_cast<int32_t>(fourcc),
+      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_FD_EXT), static_cast<int32_t>(fd),
+      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_OFFSET_EXT), static_cast<int32_t>(offset),
+      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_PITCH_EXT), static_cast<int32_t>(pitch),
     };
     if (modifiers_supported) {
-      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT);
-      attribs.push_back(static_cast<intptr_t>(modifier & 0xffffffffull));
-      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT);
-      attribs.push_back(static_cast<intptr_t>(modifier >> 32));
+      attribs.push_back(static_cast<int32_t>(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT));
+      attribs.push_back(static_cast<int32_t>(modifier & 0xffffffffull));
+      attribs.push_back(static_cast<int32_t>(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT));
+      attribs.push_back(static_cast<int32_t>(modifier >> 32));
     }
     attribs.push_back(0x3038); // EGL_NONE
     return attribs;
   };
 
-  const std::vector<intptr_t> attribs_y =
+  const std::vector<int32_t> attribs_y =
       make_plane_attribs(prime_desc.width, prime_desc.height, prime_desc.layers[0].drm_format,
                          prime_desc.objects[y_obj].fd, prime_desc.layers[0].offset[0],
                          prime_desc.layers[0].pitch[0], prime_desc.objects[y_obj].drm_format_modifier);
-  const std::vector<intptr_t> attribs_uv =
+  const std::vector<int32_t> attribs_uv =
       make_plane_attribs(prime_desc.width / 2, prime_desc.height / 2, prime_desc.layers[1].drm_format,
                          prime_desc.objects[uv_obj].fd, prime_desc.layers[1].offset[0],
                          prime_desc.layers[1].pitch[0], prime_desc.objects[uv_obj].drm_format_modifier);
@@ -365,6 +365,13 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
                                                               prime_desc.width, prime_desc.height,
                                                               bits, full_range,
                                                               crv, cbu, cgu, cgv);
+  static bool s_zero_copy_announced = false;
+  if (!s_zero_copy_announced && tex) {
+    s_zero_copy_announced = true;
+    qInfo() << "[VAAPI-HAL] DMA-BUF zero-copy pipeline successfully established on"
+            << prime_desc.width << "x" << prime_desc.height << "surface;"
+            << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks).";
+  }
 
   // The composite has rendered into the pooled GL texture; both EGLImages and the fds
   // are dead weight now. Destroying the images before the fd close keeps the
