@@ -226,10 +226,52 @@ QVariant ProjectViewModel::data(const QModelIndex &index, int role) const
   case kThumbnailKeyRole:
     if (column_type == kName) {
       if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
-        return footage->filename();
+        // Audio-only media has no first frame to decode, so don't queue a worker for it. Stills do
+        // have a frame and must keep their key.
+        if (footage->GetFirstEnabledVideoStream().is_valid()) {
+          return footage->filename();
+        }
       }
     }
     break;
+  case kDurationRole:
+  {
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        const VideoParams video = footage->GetFirstEnabledVideoStream();
+        const AudioParams audio = footage->GetFirstEnabledAudioStream();
+
+        rational duration;
+        rational timebase;
+        Timecode::Display display = Core::instance()
+                                        ? Core::instance()->GetTimecodeDisplay()
+                                        : Timecode::kTimecodeNonDropFrame;
+
+        // duration() is a raw stream duration in time_base units and can be AV_NOPTS_VALUE for
+        // live/partially indexed media; only format a positive value.
+        if (video.is_valid() && video.video_type() != VideoParams::kVideoTypeStill
+            && video.duration() > 0) {
+          duration = Timecode::timestamp_to_time(video.duration(), video.time_base());
+          timebase = video.frame_rate_as_time_base();
+        } else if (audio.is_valid() && audio.sample_rate() > 0 && audio.duration() > 0) {
+          duration = Timecode::timestamp_to_time(audio.duration(), audio.time_base());
+
+          // A frame-based timecode is meaningless without a frame rate; show seconds instead.
+          if (display == Timecode::kTimecodeDropFrame
+              || display == Timecode::kTimecodeNonDropFrame) {
+            display = Timecode::kTimecodeSeconds;
+          }
+
+          timebase = audio.sample_rate_as_time_base();
+        }
+
+        if (!duration.isNull() && !timebase.isNull()) {
+          return QString::fromStdString(Timecode::time_to_timecode(duration, timebase, display));
+        }
+      }
+    }
+    break;
+  }
   case kBadgeRole:
     if (column_type == kName) {
       if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {

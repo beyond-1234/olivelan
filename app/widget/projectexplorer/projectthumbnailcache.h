@@ -95,6 +95,18 @@ private:
 
   /// Keys with a decode currently running in the thread pool.
   QSet<QString> in_flight_;
+
+  /**
+   * @brief Keys whose decode produced no image (audio-only, unreadable, unsupported codec).
+   *
+   * Negative results are cached like successes: without this, the delegate re-queues a full
+   * FFmpeg open on every repaint for a clip that can never have a thumbnail. Bounded by the same
+   * limit as the LRU (FIFO eviction), so a file that becomes readable later is retried eventually.
+   */
+  QSet<QString> failed_;
+
+  /// FIFO order for `failed_`, oldest first.
+  QList<QString> failed_order_;
 };
 
 }

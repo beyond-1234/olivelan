@@ -151,7 +151,10 @@ public:
     const QImage image = DecodeFirstFrame(filename_,
                                           ProjectThumbnailCache::kThumbnailWidth,
                                           ProjectThumbnailCache::kThumbnailHeight);
-    qDebug() << "[Thumbnail] decoded" << filename_ << (image.isNull() ? "(no video)" : "");
+    if (image.isNull()) {
+      qDebug() << "[Thumbnail] no thumbnail for" << filename_
+               << "(audio-only, unreadable or unsupported; result is negative-cached)";
+    }
 
     ProjectThumbnailCache *cache = cache_;
     const QString key = key_;
@@ -191,7 +194,8 @@ QPixmap ProjectThumbnailCache::Get(const QString &key) const
 
 void ProjectThumbnailCache::Request(const QString &key, const QString &filename)
 {
-  if (key.isEmpty() || filename.isEmpty() || cache_.contains(key) || in_flight_.contains(key)) {
+  if (key.isEmpty() || filename.isEmpty() || cache_.contains(key) || in_flight_.contains(key)
+      || failed_.contains(key)) {
     return;
   }
 
@@ -205,6 +209,13 @@ void ProjectThumbnailCache::OnWorkerDone(const QString &key, const QImage &image
   in_flight_.remove(key);
 
   if (image.isNull()) {
+    // Cache the negative result; otherwise every repaint would queue another decode that can only
+    // fail again (audio-only media, unreadable files, unsupported codecs).
+    failed_.insert(key);
+    failed_order_.append(key);
+    while (failed_order_.size() > kMaxEntries) {
+      failed_.remove(failed_order_.takeFirst());
+    }
     return;
   }
 

@@ -148,7 +148,7 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   painter->fillRect(bar_rect, metro::kCanvasBg);
 
   {
-    const QString duration = index.data(Qt::UserRole).toString();
+    const QString duration = index.data(ProjectViewModel::kDurationRole).toString();
     const QRect text_rect = bar_rect.adjusted(4, 0, -4, 0);
     const int duration_width = QtUtils::QFontMetricsWidth(fm, duration);
 

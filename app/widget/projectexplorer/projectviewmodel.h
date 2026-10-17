@@ -63,11 +63,19 @@ public:
 
   static const int kInnerTextRole = Qt::UserRole + 1;
 
-  /// Role: thumbnail cache key for a Footage item (its filename), or an empty string otherwise.
+  /**
+   * @brief Role: thumbnail cache key for a Footage item (its filename), or an empty string.
+   *
+   * Audio-only items deliberately return an empty key: they have no first frame to decode, and
+   * asking for one would only queue an FFmpeg open that is guaranteed to fail.
+   */
   static const int kThumbnailKeyRole = Qt::UserRole + 2;
 
   /// Role: QStringList of short metadata badges ("4K", "10bit", "60FPS", "WAV") for a Footage item.
   static const int kBadgeRole = Qt::UserRole + 3;
+
+  /// Role: human-readable duration ("00:01:23:14", or seconds for audio-only) for a Footage item.
+  static const int kDurationRole = Qt::UserRole + 4;
 
   /**
    * @brief ProjectViewModel Constructor
