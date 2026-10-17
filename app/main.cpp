@@ -38,6 +38,7 @@ extern "C" {
 #include <QFontDatabase>
 #include <QMessageBox>
 #include <QSurfaceFormat>
+#include <QTranslator>
 
 #include <kddockwidgets/KDDockWidgets.h>
 
@@ -399,9 +400,32 @@ int main(int argc, char *argv[])
   // HAL backend selection dialog (phase5-07). GUI mode only, shown before Core
   // startup so the forced backend applies to every decoder instance. Cancelled
   // dialog keeps whatever was set from -hal-backend / OLIVE_HAL_BACKEND.
+  //
+  // Patch 0081 (Phase 9): the translator is normally installed by Core::SetStartupLocale(), which
+  // runs inside Core::Start() - i.e. *after* this dialog. Without installing one here too, this
+  // dialog is the one piece of UI that could never be translated. Declared at this scope so it
+  // outlives the dialog; Core later installs its own, which takes precedence in Qt's
+  // reverse-order translator lookup.
+  QTranslator early_translator;
+
   if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
       && hal_dialog_option->IsSet()
       && dynamic_cast<QApplication*>(a.get())) {
+    bool early_loaded = false;
+    if (!startup_params.startup_language().isEmpty()) {
+      early_loaded = early_translator.load(startup_params.startup_language());
+    } else {
+      QString locale = olive::Config::Current()[QStringLiteral("Language")].toString();
+      if (locale.isEmpty()) {
+        locale = QStringLiteral("zh_CN");
+      }
+      early_loaded = early_translator.load(QStringLiteral(":/ts/%1").arg(locale));
+    }
+
+    if (early_loaded) {
+      QCoreApplication::installTranslator(&early_translator);
+    }
+
     olive::HALBackendDialog hal_dialog;
     if (hal_dialog.exec() == QDialog::Accepted) {
       olive::HardwarePipelineFactory::SetForcedBackend(hal_dialog.SelectedBackend());

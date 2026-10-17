@@ -7400,4 +7400,477 @@ Please check your audio preferences and try again.</source>
         <translation>垂直</translation>
     </message>
 </context>
+<context>
+    <name>GpuSessionAdvisor</name>
+    <message>
+        <source>unknown</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>(none detected)</source>
+        <translation>（未检测到）</translation>
+    </message>
+    <message>
+        <source>Session: %1 (Xwayland %2)</source>
+        <translation>会话：%1（Xwayland %2）</translation>
+    </message>
+    <message>
+        <source>native Wayland</source>
+        <translation>原生 Wayland</translation>
+    </message>
+    <message>
+        <source>X11</source>
+        <translation>X11</translation>
+    </message>
+    <message>
+        <source>reachable</source>
+        <translation>可达</translation>
+    </message>
+    <message>
+        <source>not reachable</source>
+        <translation>不可达</translation>
+    </message>
+    <message>
+        <source>Display (OpenGL) GPU: %1</source>
+        <translation>显示（OpenGL）GPU：%1</translation>
+    </message>
+    <message>
+        <source>Connected displays: %1</source>
+        <translation>已连接显示器：%1</translation>
+    </message>
+    <message>
+        <source>Discrete GPU: %1</source>
+        <translation>独立显卡：%1</translation>
+    </message>
+    <message>
+        <source>NVDEC: %1</source>
+        <translation>NVDEC：%1</translation>
+    </message>
+    <message>
+        <source>available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Connected display on the discrete GPU: %1</source>
+        <translation>独显上的已连接显示器：%1</translation>
+    </message>
+    <message>
+        <source>yes</source>
+        <translation>有</translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation>没有</translation>
+    </message>
+    <message>
+        <source>Discrete GPU: no NVIDIA GPU detected</source>
+        <translation>独立显卡：未检测到 NVIDIA GPU</translation>
+    </message>
+    <message>
+        <source>Tier 1: %1</source>
+        <translation>Tier 1：%1</translation>
+    </message>
+    <message>
+        <source>unavailable - CUDA-GL interop needs the OpenGL context and CUDA on the same GPU</source>
+        <translation>不可用——CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 GPU</translation>
+    </message>
+    <message>
+        <source>Tier 2: %1</source>
+        <translation>Tier 2：%1</translation>
+    </message>
+    <message>
+        <source>available (VA-API)</source>
+        <translation>可用（VA-API）</translation>
+    </message>
+    <message>
+        <source>Tier 1 - CUDA-NVDEC decode with CUDA-GL same-GPU zero-copy. Already the best path on this machine.</source>
+        <translation>Tier 1——CUDA-NVDEC 解码，CUDA-GL 同卡零拷贝。已经是这台机器上的最优路径。</translation>
+    </message>
+    <message>
+        <source>Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3.</source>
+        <translation>Tier 2——VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。</translation>
+    </message>
+    <message>
+        <source> This driver (Mesa/radeonsi) does not accept the plane formats VA-API exports, so the dmabuf zero-copy import cannot be established and every frame takes a GPU-&gt;CPU readback before upload; the decode itself still runs on the GPU.</source>
+        <translation>该驱动（Mesa/radeonsi）不接受 VA-API 导出的平面格式，dmabuf 零拷贝导入无法建立，每帧会经 GPU-&gt;CPU 回读后再上传；解码本身仍在 GPU 上。</translation>
+    </message>
+    <message>
+        <source> Whether the dmabuf zero-copy import can be established depends on the driver.</source>
+        <translation>dmabuf 零拷贝导入能否建立取决于驱动。</translation>
+    </message>
+    <message>
+        <source>Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode is available.</source>
+        <translation>Tier 3——强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。</translation>
+    </message>
+    <message>
+        <source>No change needed: Tier 1 (zero-copy) is available on this machine.</source>
+        <translation>无需更改：本机 Tier 1（零拷贝）可用。</translation>
+    </message>
+    <message>
+        <source>[Best] Discrete GPU direct: a display on the discrete GPU is already connected (%1). Make that screen the primary one, or move the Olive window onto it, and the OpenGL context lands on the discrete GPU - keeping the native session and getting Tier 1.</source>
+        <translation>【最优】独显直连：独显上已有已连接的显示器（%1）。把那块屏幕设为主屏，或把 Olive 窗口移过去，OpenGL 上下文就会落在独显上——保留原生会话且拿到 Tier 1。</translation>
+    </message>
+    <message>
+        <source>[Best] Discrete GPU direct: the discrete GPU (%1) currently has no connected display - the display is driven by %2, so the OpenGL context cannot land on the discrete GPU. This needs a firmware/MUX switch to discrete-only graphics, or a monitor connected to the discrete GPU's output. After that the OpenGL context and CUDA share a card: native session kept, Tier 1 available.</source>
+        <translation>【最优】独显直连：独显（%1）当前没有已连接的显示器——显示由 %2 驱动，所以 OpenGL 上下文无法落在独显上。这需要固件/MUX 切到「独显直连」，或把显示器接到独显的输出口。之后 OpenGL 上下文与 CUDA 同卡：保留原生会话，且 Tier 1 可用。</translation>
+    </message>
+    <message>
+        <source>This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two options are the only ones.</source>
+        <translation>本机没有 NVIDIA GPU，Tier 1 不适用；下面两项是仅有的选择。</translation>
+    </message>
+    <message>
+        <source>[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context lands on the discrete GPU, which makes Tier 1 reachable. The cost is the native session (per-monitor fractional scaling, native input methods). Takes effect on the next start.</source>
+        <translation>【次优】Xwayland + PRIME：切到 X11（xcb），让 OpenGL 上下文落在独显，从而拿到 Tier 1。代价是放弃原生会话（逐屏分数缩放、原生输入法）。下次启动生效。</translation>
+    </message>
+    <message>
+        <source>Xwayland is not available (no reachable X display), so that option cannot be selected on this machine.</source>
+        <translation>Xwayland 不可用（没有可达的 X 显示），该选项在本机无法选择。</translation>
+    </message>
+    <message>
+        <source>[Keep current] Leave the session as it is and use the path shown above (%1).</source>
+        <translation>【保持当前】不更改会话，走上面「本次会话实际会走」的那条路径（%1）。</translation>
+    </message>
+    <message>
+        <source>This session will use:</source>
+        <translation>本次会话实际会走：</translation>
+    </message>
+    <message>
+        <source>Options:</source>
+        <translation>可选的改进：</translation>
+    </message>
+</context>
+<context>
+    <name>olive::GpuSessionDialog</name>
+    <message>
+        <source>GPU Session Selection</source>
+        <translation>GPU 会话选择</translation>
+    </message>
+    <message>
+        <source>Detected display session and GPU topology:</source>
+        <translation>检测到的显示会话与 GPU 拓扑：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Wayland session</source>
+        <translation>Wayland 会话</translation>
+    </message>
+    <message>
+        <source>Xwayland reachable</source>
+        <translation>Xwayland 可达</translation>
+    </message>
+    <message>
+        <source>Configured mode</source>
+        <translation>当前配置模式</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME</source>
+        <translation>Xwayland + PRIME</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>原生</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>GPU</source>
+        <translation>GPU</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Active OpenGL vendor</source>
+        <translation>当前 OpenGL 厂商</translation>
+    </message>
+    <message>
+        <source>Unknown (no live GL context yet)</source>
+        <translation>未知（尚无活动的 GL 上下文）</translation>
+    </message>
+    <message>
+        <source>Decode path on this session</source>
+        <translation>本次会话的解码路径</translation>
+    </message>
+    <message>
+        <source>Tier 1 (CUDA-NVDEC + CUDA-GL interop)</source>
+        <translation>Tier 1（CUDA-NVDEC + CUDA-GL 互操作）</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Tier 2 (VA-API DMA-BUF)</source>
+        <translation>Tier 2（VA-API DMA-BUF）</translation>
+    </message>
+    <message>
+        <source>Tier 3 (Reinforced CPU decode)</source>
+        <translation>Tier 3（强化 CPU 解码）</translation>
+    </message>
+    <message>
+        <source>Session to use on the next start</source>
+        <translation>下次启动使用的会话</translation>
+    </message>
+    <message>
+        <source>Native session (recommended default)</source>
+        <translation>原生会话（推荐默认）</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME offload (enables Tier 1 zero-copy)</source>
+        <translation>Xwayland + PRIME 卸载（可启用 Tier 1 零拷贝）</translation>
+    </message>
+    <message>
+        <source>No reachable X display was found on this system.</source>
+        <translation>本机未找到可达的 X 显示。</translation>
+    </message>
+    <message>
+        <source>Recommendation</source>
+        <translation>建议</translation>
+    </message>
+    <message>
+        <source>Don't ask again</source>
+        <translation>不再提示</translation>
+    </message>
+    <message>
+        <source>Restart required</source>
+        <translation>需要重启</translation>
+    </message>
+    <message>
+        <source>Saved. This session is unchanged; Olive will restart under Xwayland with PRIME offload next time it starts.</source>
+        <translation>已保存。本次会话不变；Olive 下次启动时会以 Xwayland + PRIME 卸载运行。</translation>
+    </message>
+    <message>
+        <source>Saved. This session is unchanged; Olive will use the native session next time it starts.</source>
+        <translation>已保存。本次会话不变；Olive 下次启动时会使用原生会话。</translation>
+    </message>
+</context>
+<context>
+    <name>olive::HALBackendDialog</name>
+    <message>
+        <source>HAL Backend Selection</source>
+        <translation>HAL 后端选择</translation>
+    </message>
+    <message>
+        <source>Detected hardware environment (GpuEnvironmentProbe):</source>
+        <translation>检测到的硬件环境（GpuEnvironmentProbe）：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Environment</source>
+        <translation>环境</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Vendor</source>
+        <translation>厂商</translation>
+    </message>
+    <message>
+        <source>Total VRAM</source>
+        <translation>显存总量</translation>
+    </message>
+    <message>
+        <source>%1 MB</source>
+        <translation>%1 MB</translation>
+    </message>
+    <message>
+        <source>Display server</source>
+        <translation>显示服务器</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>Detected devices</source>
+        <translation>检测到的设备</translation>
+    </message>
+    <message>
+        <source>%1 MB VRAM%2</source>
+        <translation>%1 MB 显存%2</translation>
+    </message>
+    <message>
+        <source>, primary display</source>
+        <translation>，主显示器</translation>
+    </message>
+    <message>
+        <source>Driver</source>
+        <translation>驱动</translation>
+    </message>
+    <message>
+        <source>Backend availability</source>
+        <translation>后端可用性</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Reinforced CPU Decode + Native YUV Upload (Tier 3)</source>
+        <translation>强化 CPU 解码 + 原生 YUV 上传（Tier 3）</translation>
+    </message>
+    <message>
+        <source>VideoToolbox (Tier 2, macOS)</source>
+        <translation>VideoToolbox（Tier 2，macOS）</translation>
+    </message>
+    <message>
+        <source>VA-API DMA-BUF (Tier 2, Linux)</source>
+        <translation>VA-API DMA-BUF（Tier 2，Linux）</translation>
+    </message>
+    <message>
+        <source>D3D11 Interop (Tier 2, Windows)</source>
+        <translation>D3D11 互操作（Tier 2，Windows）</translation>
+    </message>
+    <message>
+        <source>Decode capability matrix</source>
+        <translation>解码能力矩阵</translation>
+    </message>
+    <message>
+        <source>HEVC 8-bit</source>
+        <translation>HEVC 8 位</translation>
+    </message>
+    <message>
+        <source>HEVC 10-bit</source>
+        <translation>HEVC 10 位</translation>
+    </message>
+    <message>
+        <source>AV1 8-bit</source>
+        <translation>AV1 8 位</translation>
+    </message>
+    <message>
+        <source>AV1 10-bit</source>
+        <translation>AV1 10 位</translation>
+    </message>
+    <message>
+        <source>Backend to use for this session:</source>
+        <translation>本次会话使用的后端：</translation>
+    </message>
+    <message>
+        <source>Will actually use: %1</source>
+        <translation>实际会走：%1</translation>
+    </message>
+    <message>
+        <source>The selection applies to this process only and is not saved. Automatic routing can also be forced without a dialog via -hal-backend &lt;name&gt; or the OLIVE_HAL_BACKEND environment variable.</source>
+        <translation>该选择仅对本次进程生效，不会保存。也可以不用对话框强制自动路由：-hal-backend &lt;name&gt; 或环境变量 OLIVE_HAL_BACKEND。</translation>
+    </message>
+    <message>
+        <source>Backend unavailable</source>
+        <translation>后端不可用</translation>
+    </message>
+    <message>
+        <source>CUDA-NVDEC (Tier 1) cannot work in this session: CUDA-GL interop requires the OpenGL context and CUDA to be on the same NVIDIA GPU, but the current OpenGL context is on "%1". The frame pool will fail to register its textures and this stream will produce no picture.</source>
+        <translation>CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 NVIDIA GPU，而当前 OpenGL 上下文在“%1”上。帧池将无法注册纹理，该路流不会出画面。</translation>
+    </message>
+    <message>
+        <source>The probe reports that backend "%1" is unavailable on this system.</source>
+        <translation>探测显示后端“%1”在本机不可用。</translation>
+    </message>
+    <message>
+        <source>Use Tier 2 (VA-API hardware decode)</source>
+        <translation>改用 Tier 2（VA-API 硬件解码）</translation>
+    </message>
+    <message>
+        <source>Use Tier 3 (CPU decode)</source>
+        <translation>改用 Tier 3（CPU 解码）</translation>
+    </message>
+    <message>
+        <source>Switch to Xwayland + PRIME (next start)</source>
+        <translation>改用 Xwayland + PRIME（下次启动生效）</translation>
+    </message>
+    <message>
+        <source>Force %1 anyway</source>
+        <translation>仍然强制 %1</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <translation>已保存</translation>
+    </message>
+    <message>
+        <source>Switched to Xwayland + PRIME. It takes effect the next time Olive starts.
+
+For this session, please select Auto or a backend that works here.</source>
+        <translation>已切换为 Xwayland + PRIME，Olive 下次启动时生效。
+
+本次会话仍请在上方选择「自动」，或一个当前可用的后端。</translation>
+    </message>
+    <message>
+        <source>detected unavailable</source>
+        <translation>探测为不可用</translation>
+    </message>
+    <message>
+        <source>Auto (dynamic probe)</source>
+        <translation>自动（动态探测）</translation>
+    </message>
+    <message>
+        <source>the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Planned - not implemented; Tier 3 is used instead</source>
+        <translation>规划中——尚未实现；实际使用 Tier 3</translation>
+    </message>
+</context>
 </TS>

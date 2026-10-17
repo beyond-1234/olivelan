@@ -109,7 +109,7 @@ QWidget* HALBackendDialog::CreateSelectionSection()
 
   // Patch 0080 (Phase 9): state what this session will actually use, derived from the probe, rather
   // than leaving the user to infer it from a list of backend names.
-  auto* effective = new QLabel(tr("实际会走：%1").arg(
+  auto* effective = new QLabel(tr("Will actually use: %1").arg(
       GpuSessionAdvisor::DescribeEffectivePath(GpuSessionAdvisor::Assess())), widget);
   effective->setWordWrap(true);
   layout->addWidget(effective);
@@ -128,15 +128,17 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
 
   QMessageBox box(this);
   box.setIcon(QMessageBox::Warning);
-  box.setWindowTitle(tr("后端不可用"));
+  box.setWindowTitle(tr("Backend unavailable"));
 
   if (requested == QStringLiteral("cuda") && interop_blocked) {
-    box.setText(tr("CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA "
-                   "位于同一块 NVIDIA GPU，而当前 GL 上下文在 \"%1\"。帧池将无法注册纹理，"
-                   "该路流不会出画面。")
+    box.setText(tr("CUDA-NVDEC (Tier 1) cannot work in this session: CUDA-GL interop requires the "
+                   "OpenGL context and CUDA to be on the same NVIDIA GPU, but the current OpenGL "
+                   "context is on \"%1\". The frame pool will fail to register its textures and "
+                   "this stream will produce no picture.")
                     .arg(QString::fromStdString(probe.GetOpenGlVendor())));
   } else {
-    box.setText(tr("探测显示后端 \"%1\" 在本机不可用。").arg(requested));
+    box.setText(tr("The probe reports that backend \"%1\" is unavailable on this system.")
+                    .arg(requested));
   }
 
   box.setInformativeText(GpuSessionAdvisor::DescribeAdvice());
@@ -144,17 +146,17 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
   // Offer what will actually work, best first.
   const bool tier2_usable = probe.SupportsVaapiDmaBuf();
   QPushButton* use_best_tier = box.addButton(
-      tier2_usable ? tr("改用 Tier 2（VA-API 硬件解码）") : tr("改用 Tier 3（CPU 解码）"),
+      tier2_usable ? tr("Use Tier 2 (VA-API hardware decode)") : tr("Use Tier 3 (CPU decode)"),
       QMessageBox::AcceptRole);
 
   const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
   QPushButton* switch_session = nullptr;
   if (assessment.wayland_session && assessment.xwayland_available && assessment.nvidia_present) {
-    switch_session = box.addButton(tr("改用 Xwayland + PRIME（下次启动生效）"),
+    switch_session = box.addButton(tr("Switch to Xwayland + PRIME (next start)"),
                                    QMessageBox::ActionRole);
   }
 
-  QPushButton* force = box.addButton(tr("仍然强制 %1").arg(requested),
+  QPushButton* force = box.addButton(tr("Force %1 anyway").arg(requested),
                                      QMessageBox::DestructiveRole);
   box.addButton(QMessageBox::Cancel);
   box.exec();
@@ -166,9 +168,9 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
   if (switch_session && box.clickedButton() == switch_session) {
     OLIVE_CONFIG("GpuSessionMode") = static_cast<int>(GpuSessionAdvisor::Mode::XwaylandPrime);
     Config::Save();
-    QMessageBox::information(this, tr("已保存"),
-        tr("已切换为 Xwayland + PRIME，下次启动 Olive 时生效。\n\n"
-           "本次会话仍请在上方选择 Auto，或一个当前可用的后端。"));
+    QMessageBox::information(this, tr("Saved"),
+        tr("Switched to Xwayland + PRIME. It takes effect the next time Olive starts.\n\n"
+           "For this session, please select Auto or a backend that works here."));
     return QString();
   }
 

@@ -87,6 +87,12 @@ bool XSocketIsReachable()
 
 namespace {
 
+/// @brief Shorthand for the translation context of everything in this file.
+QString Tr(const char* text)
+{
+  return QCoreApplication::translate("GpuSessionAdvisor", text);
+}
+
 QString VendorLabel(GpuVendor vendor)
 {
   switch (vendor) {
@@ -94,7 +100,7 @@ QString VendorLabel(GpuVendor vendor)
   case GpuVendor::Amd: return QStringLiteral("AMD");
   case GpuVendor::Intel: return QStringLiteral("Intel");
   case GpuVendor::Apple: return QStringLiteral("Apple");
-  default: return QStringLiteral("unknown");
+  default: return Tr("unknown");
   }
 }
 
@@ -115,7 +121,7 @@ QString ConnectedDisplaySummary()
     parts << QStringLiteral("%1 (%2)").arg(QString::fromStdString(display.connector),
                                            VendorLabel(display.gpu));
   }
-  return parts.isEmpty() ? QStringLiteral("(none detected)") : parts.join(QStringLiteral(", "));
+  return parts.isEmpty() ? Tr("(none detected)") : parts.join(QStringLiteral(", "));
 }
 
 } // namespace
@@ -250,33 +256,30 @@ GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
 QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
 {
   QStringList lines;
-  lines << QStringLiteral("会话：%1（Xwayland %2）")
-               .arg(assessment.wayland_session ? QStringLiteral("原生 Wayland")
-                                               : QStringLiteral("X11"))
-               .arg(assessment.xwayland_available ? QStringLiteral("可达")
-                                                  : QStringLiteral("不可达"));
-  lines << QStringLiteral("显示（OpenGL）GPU：%1").arg(assessment.display_gpu);
-  lines << QStringLiteral("已连接显示器：%1").arg(assessment.connected_displays);
+  lines << Tr("Session: %1 (Xwayland %2)")
+               .arg(assessment.wayland_session ? Tr("native Wayland") : Tr("X11"),
+                    assessment.xwayland_available ? Tr("reachable") : Tr("not reachable"));
+  lines << Tr("Display (OpenGL) GPU: %1").arg(assessment.display_gpu);
+  lines << Tr("Connected displays: %1").arg(assessment.connected_displays);
 
   if (assessment.nvidia_present) {
-    lines << QStringLiteral("独显：%1（NVDEC %2；%3已连接的显示器）")
-                 .arg(assessment.nvidia_name,
-                      GpuEnvironmentProbe::Instance().HasNvdecSupport()
-                          ? QStringLiteral("可用")
-                          : QStringLiteral("不可用"),
-                      assessment.nvidia_has_display ? QStringLiteral("有")
-                                                    : QStringLiteral("没有"));
+    lines << Tr("Discrete GPU: %1").arg(assessment.nvidia_name);
+    lines << Tr("NVDEC: %1").arg(GpuEnvironmentProbe::Instance().HasNvdecSupport()
+                                     ? Tr("available")
+                                     : Tr("unavailable"));
+    lines << Tr("Connected display on the discrete GPU: %1")
+                 .arg(assessment.nvidia_has_display ? Tr("yes") : Tr("no"));
   } else {
-    lines << QStringLiteral("独显：未检测到 NVIDIA GPU");
+    lines << Tr("Discrete GPU: no NVIDIA GPU detected");
   }
 
-  lines << QStringLiteral("Tier 1：%1")
+  lines << Tr("Tier 1: %1")
                .arg(assessment.tier1_possible
-                        ? QStringLiteral("可用")
-                        : QStringLiteral("不可用（CUDA-GL 互操作要求 GL 与 CUDA 同卡）"));
-  lines << QStringLiteral("Tier 2：%1")
-               .arg(assessment.tier2_possible ? QStringLiteral("可用（VA-API）")
-                                              : QStringLiteral("不可用"));
+                        ? Tr("available")
+                        : Tr("unavailable - CUDA-GL interop needs the OpenGL context and CUDA on "
+                             "the same GPU"));
+  lines << Tr("Tier 2: %1")
+               .arg(assessment.tier2_possible ? Tr("available (VA-API)") : Tr("unavailable"));
 
   return lines.join(QStringLiteral("\n"));
 }
@@ -284,30 +287,28 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
 QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)
 {
   if (assessment.tier1_possible) {
-    return QCoreApplication::translate("GpuSessionAdvisor",
-        "Tier 1 - CUDA-NVDEC 解码，CUDA-GL 同卡零拷贝。已经是这台机器上的最优路径。");
+    return Tr("Tier 1 - CUDA-NVDEC decode with CUDA-GL same-GPU zero-copy. Already the best path "
+              "on this machine.");
   }
 
   if (assessment.tier2_possible) {
-    QString text = QCoreApplication::translate("GpuSessionAdvisor",
-        "Tier 2 - VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。")
-        .arg(assessment.display_gpu);
+    QString text = Tr("Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than "
+                      "Tier 3.").arg(assessment.display_gpu);
 
     if (assessment.display_gpu.contains(QStringLiteral("AMD"), Qt::CaseInsensitive)
         || assessment.display_gpu.contains(QStringLiteral("Mesa"), Qt::CaseInsensitive)) {
       // Measured limitation, not a guess: see reports/hal-zero-copy-matrix.md.
-      text += QCoreApplication::translate("GpuSessionAdvisor",
-          "该驱动（Mesa/radeonsi）不接受 VA-API 导出的平面格式，dmabuf 零拷贝导入无法建立，"
-          "每帧会经 GPU->CPU 回读后再上传；解码本身仍在 GPU 上。");
+      text += Tr(" This driver (Mesa/radeonsi) does not accept the plane formats VA-API exports, "
+                 "so the dmabuf zero-copy import cannot be established and every frame takes a "
+                 "GPU->CPU readback before upload; the decode itself still runs on the GPU.");
     } else {
-      text += QCoreApplication::translate("GpuSessionAdvisor",
-          "dmabuf 零拷贝导入能否建立取决于驱动。");
+      text += Tr(" Whether the dmabuf zero-copy import can be established depends on the driver.");
     }
     return text;
   }
 
-  return QCoreApplication::translate("GpuSessionAdvisor",
-      "Tier 3 - 强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。");
+  return Tr("Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode "
+            "is available.");
 }
 
 QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
@@ -315,45 +316,47 @@ QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
   QStringList actions;
 
   if (assessment.tier1_possible) {
-    actions << QCoreApplication::translate("GpuSessionAdvisor",
-        "无需更改：Tier 1（零拷贝）在这台机器上可用。");
+    actions << Tr("No change needed: Tier 1 (zero-copy) is available on this machine.");
     return actions;
   }
 
   if (assessment.nvidia_present) {
     if (assessment.nvidia_has_display) {
-      actions << QCoreApplication::translate("GpuSessionAdvisor",
-          "[最优] 独显直连：检测到独显上已有连接的显示器（%1）。把那块屏幕设为主屏，或把 Olive "
-          "窗口移过去，GL 就会落在独显上——保留原生会话且拿到 Tier 1。")
-          .arg(assessment.connected_displays);
+      actions << Tr("[Best] Discrete GPU direct: a display on the discrete GPU is already "
+                    "connected (%1). Make that screen the primary one, or move the Olive window "
+                    "onto it, and the OpenGL context lands on the discrete GPU - keeping the "
+                    "native session and getting Tier 1.")
+                    .arg(assessment.connected_displays);
     } else {
-      actions << QCoreApplication::translate("GpuSessionAdvisor",
-          "[最优] 独显直连：独显（%1）当前没有已连接的显示器，显示由 %2 驱动，所以 GL 无法落在独显上。"
-          "需要 BIOS/MUX 切到「独显直连/Discrete Graphics」，或把显示器接到独显的输出口。"
-          "之后 GL 与 CUDA 同卡，保留原生会话且拿到 Tier 1。")
-          .arg(assessment.nvidia_name, assessment.display_gpu);
+      actions << Tr("[Best] Discrete GPU direct: the discrete GPU (%1) currently has no connected "
+                    "display - the display is driven by %2, so the OpenGL context cannot land on "
+                    "the discrete GPU. This needs a firmware/MUX switch to discrete-only graphics, "
+                    "or a monitor connected to the discrete GPU's output. After that the OpenGL "
+                    "context and CUDA share a card: native session kept, Tier 1 available.")
+                    .arg(assessment.nvidia_name, assessment.display_gpu);
     }
   } else {
-    actions << QCoreApplication::translate("GpuSessionAdvisor",
-        "本机没有 NVIDIA GPU，Tier 1 不适用；下面两条是仅有的选择。");
+    actions << Tr("This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two "
+                  "options are the only ones.");
   }
 
   if (assessment.wayland_session) {
     if (assessment.xwayland_available && assessment.nvidia_present) {
-      actions << QCoreApplication::translate("GpuSessionAdvisor",
-          "[次优] Xwayland + PRIME：切到 X11(xcb)，让 GL 落到独显，从而拿到 Tier 1。"
-          "代价是放弃原生会话（逐屏分数缩放、原生输入法）。下次启动生效。");
+      actions << Tr("[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context "
+                    "lands on the discrete GPU, which makes Tier 1 reachable. The cost is the "
+                    "native session (per-monitor fractional scaling, native input methods). "
+                    "Takes effect on the next start.");
     } else if (!assessment.xwayland_available) {
-      actions << QCoreApplication::translate("GpuSessionAdvisor",
-          "Xwayland 不可用（没有可达的 X 显示），该路径在本机无法选择。");
+      actions << Tr("Xwayland is not available (no reachable X display), so that option cannot be "
+                    "selected on this machine.");
     }
   }
 
-  actions << QCoreApplication::translate("GpuSessionAdvisor",
-      "[保持当前] 不更改会话，走上面「本次会话实际会走」的那条路径（%1）。")
-      .arg(assessment.tier1_possible ? QStringLiteral("Tier 1")
-                                     : (assessment.tier2_possible ? QStringLiteral("Tier 2")
-                                                                  : QStringLiteral("Tier 3")));
+  actions << Tr("[Keep current] Leave the session as it is and use the path shown above "
+                "(%1).").arg(assessment.tier1_possible
+                                 ? QStringLiteral("Tier 1")
+                                 : (assessment.tier2_possible ? QStringLiteral("Tier 2")
+                                                              : QStringLiteral("Tier 3")));
 
   return actions;
 }
@@ -364,8 +367,9 @@ QString GpuSessionAdvisor::DescribeAdvice()
 
   QStringList blocks;
   blocks << DescribeSituation(assessment);
-  blocks << QStringLiteral("本次会话实际会走：\n  ") + DescribeEffectivePath(assessment);
-  blocks << QStringLiteral("可选的改进：\n  ") + RecommendedActions(assessment).join(QStringLiteral("\n  "));
+  blocks << Tr("This session will use:") + QStringLiteral("\n  ") + DescribeEffectivePath(assessment);
+  blocks << Tr("Options:") + QStringLiteral("\n  ")
+                + RecommendedActions(assessment).join(QStringLiteral("\n  "));
   return blocks.join(QStringLiteral("\n\n"));
 }
 
