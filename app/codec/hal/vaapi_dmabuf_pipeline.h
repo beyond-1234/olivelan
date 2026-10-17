@@ -25,6 +25,16 @@ public:
 
   void SetRenderer(Renderer* renderer) override;
 
+  /**
+   * @brief Patch 0096: prefer the decoded frame's colour description over cached project data.
+   *
+   * VideoParams is serialized with the project, so a stream re-imported at a different bit depth
+   * can still carry the old container's matrix/range/transfer tags. The decoded AVFrame carries
+   * the authoritative per-stream values (and per-frame mastering-display side data on HDR streams).
+   * This helper is pure so the merge rules can be tested without a GPU or VA-API device.
+   */
+  static VideoParams ResolveColorMetadata(const VideoParams& params, const AVFrame* frame);
+
 private:
   OpenGLRenderer* renderer_{nullptr};
   AVBufferRef* hw_device_ctx_{nullptr};

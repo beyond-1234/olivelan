@@ -4,6 +4,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/mastering_display_metadata.h>
 }
 
 #include <QDebug>
@@ -30,6 +31,59 @@ extern "C" {
 #endif
 
 namespace olive {
+
+VideoParams VaapiDmaBufPipeline::ResolveColorMetadata(const VideoParams& params,
+                                                       const AVFrame* frame)
+{
+  VideoParams effective = params;
+
+  if (!frame) {
+    return effective;
+  }
+
+  if (frame->colorspace != AVCOL_SPC_UNSPECIFIED) {
+    effective.set_color_space(frame->colorspace);
+  }
+
+  if (frame->color_primaries != AVCOL_PRI_UNSPECIFIED) {
+    effective.set_color_primaries(frame->color_primaries);
+  }
+
+  if (frame->color_trc != AVCOL_TRC_UNSPECIFIED) {
+    effective.set_color_trc(frame->color_trc);
+
+    // Only fill in the HDR display space; an SDR frame must not clear an explicit project
+    // override. The stale-cache case this fixes is an HDR stream whose saved params predate the
+    // import that found PQ/HLG.
+    const QString hdr_colorspace =
+        VideoParams::GetHdrColorSpaceForTransfer(frame->color_trc);
+    if (!hdr_colorspace.isEmpty()) {
+      effective.set_colorspace(hdr_colorspace);
+    }
+  }
+
+  if (frame->color_range == AVCOL_RANGE_JPEG) {
+    effective.set_color_range(VideoParams::kColorRangeFull);
+  } else if (frame->color_range == AVCOL_RANGE_MPEG) {
+    effective.set_color_range(VideoParams::kColorRangeLimited);
+  }
+
+  for (int i = 0; i < frame->nb_side_data; i++) {
+    const AVFrameSideData* side_data = frame->side_data[i];
+    if (side_data
+        && side_data->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA
+        && side_data->size >= int(sizeof(AVMasteringDisplayMetadata))) {
+      const auto* metadata =
+          reinterpret_cast<const AVMasteringDisplayMetadata*>(side_data->data);
+      if (metadata->has_luminance && metadata->max_luminance.den != 0) {
+        effective.set_mastering_peak_nits(VideoParams::MasteringDisplayMaxLuminanceToNits(
+            metadata->max_luminance.num, metadata->max_luminance.den));
+      }
+    }
+  }
+
+  return effective;
+}
 
 void VaapiDmaBufPipeline::ReleaseExportedFds()
 {
@@ -387,10 +441,15 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
                      || prime_desc.layers[1].drm_format == kFccGR1616);
   const int bits = (y16 || uv16) ? 10 : 8;
 
-  // YUV matrix coefficients from the container metadata (patch 0042 fields travel as
-  // plain ints holding FFmpeg's stable ABI constants). Same source as the CPU path.
+  // Patch 0096: per-frame colour metadata wins over the cached project copy. The decoded frame
+  // knows the stream it actually produced; VideoParams may have been serialized by an earlier
+  // 8-bit import or edited after the fact.
+  const VideoParams effective = ResolveColorMetadata(params, hw_frame);
+
+  // YUV matrix coefficients from the resolved metadata (patch 0042 fields travel as plain ints
+  // holding FFmpeg's stable ABI constants). Same source as the CPU path.
   auto* sws_coeffs = sws_getCoefficients(FFmpegUtils::GetSwsColorspaceFromAVColorSpace(
-      static_cast<AVColorSpace>(params.color_space())));
+      static_cast<AVColorSpace>(effective.color_space())));
   float crv = 0.0f, cbu = 0.0f, cgu = 0.0f, cgv = 0.0f;
   if (sws_coeffs) {
     crv = static_cast<float>(sws_coeffs[0]) / 65536.0f;
@@ -398,9 +457,9 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     cgu = static_cast<float>(sws_coeffs[2]) / 65536.0f;
     cgv = static_cast<float>(sws_coeffs[3]) / 65536.0f;
   }
-  const bool full_range = (params.color_range() == VideoParams::kColorRangeFull);
+  const bool full_range = (effective.color_range() == VideoParams::kColorRangeFull);
 
-  TexturePtr tex = renderer_->CompositeTextureFromVaapiPlanes(params, images.y, images.uv,
+  TexturePtr tex = renderer_->CompositeTextureFromVaapiPlanes(effective, images.y, images.uv,
                                                               prime_desc.width, prime_desc.height,
                                                               bits, full_range,
                                                               crv, cbu, cgu, cgv);
@@ -410,7 +469,12 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     if (s_zero_copy_announced.compare_exchange_strong(expected, true)) {
       qInfo() << "[VAAPI-HAL] DMA-BUF zero-copy pipeline successfully established on"
               << prime_desc.width << "x" << prime_desc.height << "surface;"
-              << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks).";
+              << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks);"
+              << "colour matrix" << effective.color_space()
+              << "range" << (full_range ? "full" : "limited")
+              << "transfer" << effective.color_trc()
+              << "display space" << effective.colorspace()
+              << "mastering peak" << effective.mastering_peak_nits();
     }
   }
 

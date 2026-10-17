@@ -37,6 +37,7 @@
 #include "testutil.h"
 
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -50,7 +51,13 @@
 #endif
 
 #include "codec/hal/gpu_environment_probe.h"
+#include "codec/hal/vaapi_dmabuf_pipeline.h"
 #include "core.h"
+
+extern "C" {
+#include <libavutil/frame.h>
+#include <libavutil/mastering_display_metadata.h>
+}
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
 #include "node/color/colormanager/colormanager.h"
@@ -447,6 +454,90 @@ OLIVE_ADD_TEST(CoreAutoplayParamDefault)
     std::cout << " - autoplay could not be disabled";
     return __LINE__;
   }
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(VaapiFrameColorMetadata)
+{
+  // Patch 0096: the hardware path must use the decoded frame's colour tags, not only the
+  // VideoParams serialized into the project. A 10-bit HDR re-import can otherwise keep an
+  // earlier 8-bit/SDR matrix and range while still producing 10-bit planes.
+  VideoParams params(1920, 1080, rational(1, 25), PixelFormat::U8,
+                     VideoParams::kRGBAChannelCount);
+  params.set_color_space(VideoParams::kColorSpaceBt709);
+  params.set_color_range(VideoParams::kColorRangeLimited);
+  params.set_color_primaries(VideoParams::kColorPrimariesBt709);
+  params.set_color_trc(VideoParams::kTransferBt709);
+  params.set_mastering_peak_nits(203.0);
+
+  AVFrame* frame = av_frame_alloc();
+  frame->colorspace = AVCOL_SPC_BT2020_NCL;
+  frame->color_primaries = AVCOL_PRI_BT2020;
+  frame->color_trc = AVCOL_TRC_SMPTE2084;
+  frame->color_range = AVCOL_RANGE_JPEG;
+
+  AVFrameSideData* side_data = av_frame_new_side_data(
+      frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+      sizeof(AVMasteringDisplayMetadata));
+  if (!side_data) {
+    std::cout << " - could not allocate mastering-display side data";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  memset(side_data->data, 0, side_data->size);
+  auto* metadata = reinterpret_cast<AVMasteringDisplayMetadata*>(side_data->data);
+  metadata->has_luminance = 1;
+  metadata->max_luminance.num = 1000;
+  metadata->max_luminance.den = 1;
+
+  const VideoParams effective = VaapiDmaBufPipeline::ResolveColorMetadata(params, frame);
+  if (effective.color_space() != VideoParams::kColorSpaceBt2020Ncl) {
+    std::cout << " - frame matrix did not override the cached matrix";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  if (effective.color_range() != VideoParams::kColorRangeFull) {
+    std::cout << " - frame range did not override the cached range";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  if (effective.color_primaries() != VideoParams::kColorPrimariesBt2020) {
+    std::cout << " - frame primaries did not override the cached primaries";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  if (effective.color_trc() != VideoParams::kTransferSmpte2084) {
+    std::cout << " - frame transfer did not override the cached transfer";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  if (effective.colorspace() != QStringLiteral("Rec.2020 PQ")) {
+    std::cout << " - PQ frame did not select the Rec.2020 PQ display space";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+  if (effective.mastering_peak_nits() != 1000.0) {
+    std::cout << " - frame mastering peak was not applied";
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+
+  // A frame that carries no colour description must leave the cached values alone.
+  AVFrame* unspecified = av_frame_alloc();
+  const VideoParams fallback = VaapiDmaBufPipeline::ResolveColorMetadata(params, unspecified);
+  if (fallback.color_space() != params.color_space()
+      || fallback.color_range() != params.color_range()
+      || fallback.color_trc() != params.color_trc()
+      || fallback.mastering_peak_nits() != params.mastering_peak_nits()) {
+    std::cout << " - unspecified frame metadata clobbered the cached values";
+    av_frame_free(&unspecified);
+    av_frame_free(&frame);
+    return __LINE__;
+  }
+
+  av_frame_free(&unspecified);
+  av_frame_free(&frame);
 
   OLIVE_TEST_END;
 }
