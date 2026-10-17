@@ -14,6 +14,9 @@ extern "C" {
 #include <va/va_drmcommon.h>
 #include <unistd.h>
 
+#include <cstring>
+#include <vector>
+
 // swscale.h must be inside extern "C" (see ffmpegutils.h for the same pattern);
 // including it standalone here mangles the link names.
 extern "C" {
@@ -188,11 +191,14 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   #define EGL_DMA_BUF_PLANE1_FD_EXT 0x3275
   #define EGL_DMA_BUF_PLANE1_OFFSET_EXT 0x3276
   #define EGL_DMA_BUF_PLANE1_PITCH_EXT 0x3277
+  #define EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT 0x3443
+  #define EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT 0x3444
   #define EGL_WIDTH 0x3057
   #define EGL_HEIGHT 0x3056
   #endif
 
   typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
+  typedef void* (*PFNEGLGETCURRENTDISPLAY)(void);
   typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const intptr_t*);
   typedef void* EGLImageKHRHandle;
   typedef void (*PFNEGLDESTROYIMAGEKHR)(void*, EGLImageKHRHandle);
@@ -219,6 +225,21 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
+  // eglCreateImageKHR needs the EGLDisplay the current context is bound to. Passing EGL_NO_DISPLAY
+  // is not a legal "use the current one" shorthand - it fails with EGL_BAD_DISPLAY and returns
+  // EGL_NO_IMAGE_KHR, which silently demoted the DMA-BUF path to a GPU->CPU readback per frame.
+  auto pfn_eglGetCurrentDisplay =
+      reinterpret_cast<PFNEGLGETCURRENTDISPLAY>(pfn_eglGetProcAddress("eglGetCurrentDisplay"));
+  if (!pfn_eglGetCurrentDisplay) {
+    qWarning() << "[VAAPI-HAL] eglGetCurrentDisplay unavailable; cannot import DMA-BUF surface";
+    return false;
+  }
+  void* egl_display = pfn_eglGetCurrentDisplay();
+  if (!egl_display) {
+    qWarning() << "[VAAPI-HAL] No current EGL display; cannot import DMA-BUF surface";
+    return false;
+  }
+
   // Patch 0050: dual-EGLImage import (measured winner). Each layer is a single-plane
   // fourcc (R8/R16 luma, GR88/GR32/GR1616 chroma) with its own width/height/offset -
   // the only attribs an EGLImage of that fourcc is allowed to carry. Plane fds come
@@ -227,37 +248,72 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   const uint32_t y_obj = prime_desc.layers[0].object_index[0];
   const uint32_t uv_obj = prime_desc.layers[1].object_index[0];
 
-  const intptr_t attribs_y[] = {
-    EGL_WIDTH, static_cast<intptr_t>(prime_desc.width),
-    EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height),
-    EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[0].drm_format),
-    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[y_obj].fd),
-    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[0].offset[0]),
-    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[0].pitch[0]),
-    0x3038 // EGL_NONE
-  };
-  const intptr_t attribs_uv[] = {
-    EGL_WIDTH, static_cast<intptr_t>(prime_desc.width / 2),
-    EGL_HEIGHT, static_cast<intptr_t>(prime_desc.height / 2),
-    EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(prime_desc.layers[1].drm_format),
-    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(prime_desc.objects[uv_obj].fd),
-    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(prime_desc.layers[1].offset[0]),
-    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(prime_desc.layers[1].pitch[0]),
-    0x3038 // EGL_NONE
+  // DRM_PRIME_2 exports a tiled surface with a per-object modifier (radeonsi reports e.g.
+  // 0x200000010401b04). When the import-modifiers extension is present the modifier MUST be handed
+  // to eglCreateImageKHR: otherwise Mesa assumes DRM_FORMAT_MOD_LINEAR and rejects the tiled buffer,
+  // which silently demoted this path to a GPU->CPU readback (av_hwframe_transfer_data) every frame.
+  bool modifiers_supported = false;
+  {
+    typedef const char* (*PFNEGLQUERYSTRING)(void*, int);
+    auto pfn_eglQueryString =
+        reinterpret_cast<PFNEGLQUERYSTRING>(pfn_eglGetProcAddress("eglQueryString"));
+    const char* extensions =
+        pfn_eglQueryString ? pfn_eglQueryString(egl_display, 0x3055 /* EGL_EXTENSIONS */) : nullptr;
+    modifiers_supported =
+        extensions && std::strstr(extensions, "EGL_EXT_image_dma_buf_import_modifiers");
+  }
+
+  auto make_plane_attribs = [&](int plane_width, int plane_height, uint32_t fourcc, int fd,
+                                int offset, int pitch, uint64_t modifier) {
+    std::vector<intptr_t> attribs = {
+      EGL_WIDTH, static_cast<intptr_t>(plane_width),
+      EGL_HEIGHT, static_cast<intptr_t>(plane_height),
+      EGL_LINUX_DRM_FOURCC_EXT, static_cast<intptr_t>(fourcc),
+      EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<intptr_t>(fd),
+      EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<intptr_t>(offset),
+      EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<intptr_t>(pitch),
+    };
+    if (modifiers_supported) {
+      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT);
+      attribs.push_back(static_cast<intptr_t>(modifier & 0xffffffffull));
+      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT);
+      attribs.push_back(static_cast<intptr_t>(modifier >> 32));
+    }
+    attribs.push_back(0x3038); // EGL_NONE
+    return attribs;
   };
 
-  void* egl_image_y = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y);
-  void* egl_image_uv = pfn_eglCreateImageKHR(nullptr, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv);
+  const std::vector<intptr_t> attribs_y =
+      make_plane_attribs(prime_desc.width, prime_desc.height, prime_desc.layers[0].drm_format,
+                         prime_desc.objects[y_obj].fd, prime_desc.layers[0].offset[0],
+                         prime_desc.layers[0].pitch[0], prime_desc.objects[y_obj].drm_format_modifier);
+  const std::vector<intptr_t> attribs_uv =
+      make_plane_attribs(prime_desc.width / 2, prime_desc.height / 2, prime_desc.layers[1].drm_format,
+                         prime_desc.objects[uv_obj].fd, prime_desc.layers[1].offset[0],
+                         prime_desc.layers[1].pitch[0], prime_desc.objects[uv_obj].drm_format_modifier);
+
+  void* egl_image_y = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y.data());
+  void* egl_image_uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
   if (!egl_image_y || !egl_image_uv) {
+    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M): eglQueryDmaBufFormatsEXT advertises R8 and
+    // GR88, but eglQueryDmaBufModifiersEXT lists DRM_FORMAT_MOD_LINEAR as their only importable
+    // modifier, while vaExportSurfaceHandle exports the planes with a tiled modifier
+    // (0x200000010401b04). The dual-single-plane strategy therefore cannot be satisfied on this
+    // driver - eglCreateImageKHR returns EGL_NO_IMAGE_KHR (with EGL_SUCCESS reported, i.e. the
+    // combination is rejected without an error code). Frames fall back to a GPU->CPU readback.
     qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for plane images (y:"
-               << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")";
+               << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")"
+               << "- plane fourcc" << Qt::hex << prime_desc.layers[0].drm_format
+               << "/" << prime_desc.layers[1].drm_format << "with modifier"
+               << prime_desc.objects[y_obj].drm_format_modifier
+               << "is not importable by this EGL driver; this stream uses a GPU->CPU readback.";
     if (egl_image_y) {
       auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
-      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(nullptr, egl_image_y);
+      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(egl_display, egl_image_y);
     }
     if (egl_image_uv) {
       auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
-      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(nullptr, egl_image_uv);
+      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(egl_display, egl_image_uv);
     }
     return false;
   }
@@ -300,8 +356,8 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   {
     auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
     if (pfn_eglDestroyImageKHR) {
-      pfn_eglDestroyImageKHR(nullptr, egl_image_y);
-      pfn_eglDestroyImageKHR(nullptr, egl_image_uv);
+      pfn_eglDestroyImageKHR(egl_display, egl_image_y);
+      pfn_eglDestroyImageKHR(egl_display, egl_image_uv);
     }
   }
   ReleaseExportedFds();

@@ -114,25 +114,22 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     return sw_pipeline;
   }
 
-  // 0.5 Capability honesty guard: CUDA-GL interop requires the OpenGL context to live on the same
-  //     NVIDIA GPU as CUDA/NVDEC. On hybrid laptops the window context can land on the iGPU (e.g.
-  //     native Wayland without PRIME offload), where cudaGraphicsGLRegisterImage fails with
-  //     cudaErrorInvalidGraphicsContext - Tier 1 would run but its zero-copy path would silently
-  //     do nothing. Route straight to Tier 3 with an explicit warning instead of pretending.
+  // 1. Tier 1: Dedicated NVIDIA CUDA-NVDEC path
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  // Capability honesty guard: CUDA-GL interop requires the OpenGL context to live on the same
+  // NVIDIA GPU as CUDA/NVDEC. On hybrid laptops the window context can land on the iGPU (native
+  // Wayland composites on the iGPU), where cudaGraphicsGLRegisterImage fails with
+  // cudaErrorInvalidGraphicsContext and Tier 1's zero-copy path silently does nothing.
+  //
+  // Only Tier 1 is skipped - deliberately NOT the whole tier chain: Tier 2 VA-API decodes on the
+  // display GPU itself, so it stays a genuine same-GPU zero-copy path on exactly this topology,
+  // and is the correct answer for native Wayland. Tier 3 remains the final fallback.
   if (probe.IsCudaGlInteropBlocked()) {
     qWarning() << "[HAL Factory] Hybrid GPU topology detected, but the active OpenGL context is on"
                << QString::fromStdString(probe.GetOpenGlVendor())
-               << "- CUDA-GL interop (Tier 1 zero-copy) is unavailable."
-               << "Routing to Tier 3: Reinforced CPU Decode + Native YUV Shader Upload."
-               << "An X11 (xcb) session with PRIME offload is required for Tier 1 on this machine.";
-    auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
-    sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
-    return sw_pipeline;
-  }
-
-  // 1. Tier 1: Dedicated NVIDIA CUDA-NVDEC path
-#if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  if (probe.IsNvidiaGpu() && probe.HasNvdecSupport()) {
+               << "- CUDA-GL interop (Tier 1 zero-copy) is unavailable on this session."
+               << "Skipping Tier 1 and evaluating the remaining tiers.";
+  } else if (probe.IsNvidiaGpu() && probe.HasNvdecSupport()) {
     auto pipeline = std::make_unique<CudaNvdecPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 1:" << pipeline->GetBackendName();
