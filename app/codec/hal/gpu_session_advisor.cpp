@@ -268,9 +268,10 @@ QString GpuSessionAdvisor::DescribeEnvironment()
 {
   auto& probe = GpuEnvironmentProbe::Instance();
 
-  QString gl_vendor = probe.GetOpenGlVendor().empty()
-                          ? QStringLiteral("unknown")
-                          : QString::fromStdString(probe.GetOpenGlVendor());
+  const std::string gl_vendor_raw = probe.GetOpenGlVendor();
+  const QString gl_vendor = gl_vendor_raw.empty()
+                                ? QStringLiteral("unknown")
+                                : QString::fromStdString(gl_vendor_raw);
 
   QString tier1;
   if (probe.IsCudaGlInteropBlocked()) {
@@ -308,9 +309,11 @@ GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
       assessment.nvidia_present && probe.HasNvdecSupport() && !probe.IsCudaGlInteropBlocked();
   assessment.tier2_possible = probe.SupportsVaapiDmaBuf();
   assessment.nvidia_has_display = probe.HasConnectedDisplayOn(GpuVendor::Nvidia);
-  assessment.display_gpu = probe.GetOpenGlVendor().empty()
+  assessment.nvdec_available = probe.HasNvdecSupport();
+  const std::string gl_vendor_raw = probe.GetOpenGlVendor();
+  assessment.display_gpu = gl_vendor_raw.empty()
                                ? QStringLiteral("unknown")
-                               : QString::fromStdString(probe.GetOpenGlVendor());
+                               : QString::fromStdString(gl_vendor_raw);
   assessment.nvidia_name = NvidiaDeviceName();
   assessment.connected_displays = ConnectedDisplaySummary();
   return assessment;
@@ -327,7 +330,7 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
 
   if (assessment.nvidia_present) {
     lines << Tr("Discrete GPU: %1").arg(assessment.nvidia_name);
-    lines << Tr("NVDEC: %1").arg(GpuEnvironmentProbe::Instance().HasNvdecSupport()
+    lines << Tr("NVDEC: %1").arg(assessment.nvdec_available
                                      ? Tr("available")
                                      : Tr("unavailable"));
     lines << Tr("Connected display on the discrete GPU: %1")

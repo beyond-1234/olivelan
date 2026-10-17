@@ -83,6 +83,13 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
 
   PopulateProbeInfo();
   PopulateBackendCombo();
+
+  // Patch 0090 (P2-1): the label used to be computed once and then ignored the combo. Keep it in
+  // sync with the actual selection so "will actually use" cannot name Tier 2 while the user has
+  // selected Tier 3 (or a forced backend that is known to be unavailable).
+  connect(backend_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [this](int) { UpdateEffectivePathLabel(); });
+  UpdateEffectivePathLabel();
 }
 
 QWidget* HALBackendDialog::CreateProbeInfoSection()
@@ -108,11 +115,11 @@ QWidget* HALBackendDialog::CreateSelectionSection()
   layout->addWidget(backend_combo_);
 
   // Patch 0080 (Phase 9): state what this session will actually use, derived from the probe, rather
-  // than leaving the user to infer it from a list of backend names.
-  auto* effective = new QLabel(tr("Will actually use: %1").arg(
-      GpuSessionAdvisor::DescribeEffectivePath(GpuSessionAdvisor::Assess())), widget);
-  effective->setWordWrap(true);
-  layout->addWidget(effective);
+  // than leaving the user to infer it from a list of backend names. Patch 0090 (P2-1): the text is
+  // filled by UpdateEffectivePathLabel() once the combo exists, and follows its current selection.
+  effective_label_ = new QLabel(widget);
+  effective_label_->setWordWrap(true);
+  layout->addWidget(effective_label_);
 
   layout->addWidget(new QLabel(
       tr("The selection applies to this process only and is not saved. "
@@ -251,9 +258,12 @@ void HALBackendDialog::PopulateBackendCombo()
     backend_combo_->addItem(label, backend_id);
     const int idx = backend_combo_->count() - 1;
     backend_combo_->setItemData(idx, available, Qt::UserRole + 1);
+    // Clean name without the "(unavailable...)" suffix, for the effective-path sentence.
+    backend_combo_->setItemData(idx, display, Qt::UserRole + 2);
   };
 
   backend_combo_->addItem(tr("Auto (dynamic probe)"), QStringLiteral("auto"));
+  backend_combo_->setItemData(backend_combo_->count() - 1, tr("Auto"), Qt::UserRole + 2);
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
   // Patch 0079 (Phase 9): NVDEC being present is not enough - Tier 1 also needs the OpenGL context
@@ -283,6 +293,37 @@ void HALBackendDialog::PopulateBackendCombo()
               probe.SupportsD3D11(), tr("Planned - not implemented; Tier 3 is used instead"));
 #endif
   add_backend(QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), QStringLiteral("software"), true);
+}
+
+void HALBackendDialog::UpdateEffectivePathLabel()
+{
+  if (!effective_label_ || !backend_combo_) {
+    return;
+  }
+
+  const int idx = backend_combo_->currentIndex();
+  const QString backend_id = backend_combo_->itemData(idx).toString();
+
+  if (backend_id.isEmpty() || backend_id == QStringLiteral("auto")) {
+    effective_label_->setText(
+        tr("Will actually use: %1").arg(
+            GpuSessionAdvisor::DescribeEffectivePath(GpuSessionAdvisor::Assess())));
+    return;
+  }
+
+  const QString display = backend_combo_->itemData(idx, Qt::UserRole + 2).toString();
+  const QVariant available = backend_combo_->itemData(idx, Qt::UserRole + 1);
+
+  QString text = tr("Will attempt: %1 (forced for this process only). If it fails to initialize, "
+                    "Olive falls back to automatic routing.")
+                     .arg(display);
+
+  if (available.isValid() && !available.toBool()) {
+    text += QStringLiteral(" ") +
+            tr("The probe marks it unavailable here, so OK will offer a working alternative first.");
+  }
+
+  effective_label_->setText(text);
 }
 
 QString HALBackendDialog::VendorToString(GpuVendor vendor)

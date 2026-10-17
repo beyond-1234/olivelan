@@ -44,11 +44,15 @@ private:
   void PopulateProbeInfo();
   void PopulateBackendCombo();
 
+  /// Patch 0090 (P2-1): recompute the "will actually use" sentence from the current combo entry.
+  void UpdateEffectivePathLabel();
+
   static QString VendorToString(GpuVendor vendor);
   static QString DisplayServerToString(DisplayServer server);
 
   QTreeWidget* probe_tree_ = nullptr;
   QComboBox* backend_combo_ = nullptr;
+  QLabel* effective_label_ = nullptr;
   QString selected_backend_;
 };
 

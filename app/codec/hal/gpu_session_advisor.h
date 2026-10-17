@@ -111,6 +111,7 @@ public:
     bool tier1_possible{false};
     bool tier2_possible{false};
     bool nvidia_has_display{false};
+    bool nvdec_available{false};
     QString display_gpu;          // vendor driving the display, "unknown" if not yet known
     QString nvidia_name;          // e.g. "NVIDIA GeForce RTX 4060 Laptop GPU"
     QString connected_displays;   // e.g. "card1-eDP-1 (AMD)"

@@ -41,6 +41,11 @@ GpuSessionDialog::GpuSessionDialog(QWidget* parent) :
   setWindowTitle(tr("GPU Session Selection"));
   setMinimumWidth(620);
 
+  // Patch 0090 (P2-1): take one probe snapshot before building *any* text. Previously the advice
+  // block was constructed first and PopulateProbeInfo() refreshed the probe afterwards, so the
+  // recommendation and the probe tree in the same dialog could describe two different machines.
+  GpuEnvironmentProbe::Instance().Refresh();
+
   auto* layout = new QVBoxLayout(this);
 
   layout->addWidget(new QLabel(tr("Detected display session and GPU topology:")));
@@ -141,7 +146,10 @@ QWidget* GpuSessionDialog::CreateAdviceSection()
 void GpuSessionDialog::PopulateProbeInfo()
 {
   auto& probe = GpuEnvironmentProbe::Instance();
-  probe.Refresh();
+
+  // The probe was refreshed once in the constructor, before the advice text was built. Do not
+  // refresh again here: that would make the tree newer than the recommendation it explains
+  // (patch 0090 / P2-1).
 
   auto add_item = [this](QTreeWidgetItem* parent, const QString& key, const QString& value) {
     auto* item = new QTreeWidgetItem(parent);
@@ -163,9 +171,10 @@ void GpuSessionDialog::PopulateProbeInfo()
   auto* gpu = new QTreeWidgetItem(probe_tree_, {tr("GPU")});
   add_item(gpu, tr("Primary GPU"), QString::fromStdString(probe.GetPrimaryGpuName()));
   add_item(gpu, tr("Hybrid topology"), probe.IsHybridTopology() ? tr("Yes") : tr("No"));
+  const std::string gl_vendor = probe.GetOpenGlVendor();
   add_item(gpu, tr("Active OpenGL vendor"),
-           probe.GetOpenGlVendor().empty() ? tr("Unknown (no live GL context yet)")
-                                           : QString::fromStdString(probe.GetOpenGlVendor()));
+           gl_vendor.empty() ? tr("Unknown (no live GL context yet)")
+                             : QString::fromStdString(gl_vendor));
 
   auto* tiers = new QTreeWidgetItem(probe_tree_, {tr("Decode path on this session")});
   add_item(tiers, QStringLiteral("Tier 1 (CUDA-NVDEC + CUDA-GL interop)"),

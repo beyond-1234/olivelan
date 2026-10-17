@@ -7801,6 +7801,14 @@ Please check your audio preferences and try again.</source>
         <translation>实际会走：%1</translation>
     </message>
     <message>
+        <source>Will attempt: %1 (forced for this process only). If it fails to initialize, Olive falls back to automatic routing.</source>
+        <translation>将尝试：%1（仅对本次进程强制）。若初始化失败，Olive 会回退到自动路由。</translation>
+    </message>
+    <message>
+        <source>The probe marks it unavailable here, so OK will offer a working alternative first.</source>
+        <translation>探测显示它在此处不可用，因此点击“确定”会先提供一个可用的替代方案。</translation>
+    </message>
+    <message>
         <source>The selection applies to this process only and is not saved. Automatic routing can also be forced without a dialog via -hal-backend &lt;name&gt; or the OLIVE_HAL_BACKEND environment variable.</source>
         <translation>该选择仅对本次进程生效，不会保存。也可以不用对话框强制自动路由：-hal-backend &lt;name&gt; 或环境变量 OLIVE_HAL_BACKEND。</translation>
     </message>
