@@ -1,7 +1,9 @@
 #ifndef GPU_ENVIRONMENT_PROBE_H
 #define GPU_ENVIRONMENT_PROBE_H
 
+#include <atomic>
 #include <cstddef>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -93,7 +95,7 @@ public:
   bool IsIntelGpu() const { return primary_vendor_ == GpuVendor::Intel; }
 
   // Topology and backend capability checks
-  bool IsHybridTopology() const { return is_hybrid_topology_; }
+  bool IsHybridTopology() const { return is_hybrid_topology_.load(); }
   bool HasNvdecSupport() const { return has_nvdec_support_; }
 
   /**
@@ -103,8 +105,8 @@ public:
    * because creating a throw-away offscreen context is unreliable on hybrid laptops: it may bind
    * a different GPU than the real window context.
    */
-  const std::string& GetOpenGlVendor() const { return gl_vendor_; }
-  bool IsOpenGlOnNvidia() const { return gl_is_nvidia_; }
+  std::string GetOpenGlVendor() const;
+  bool IsOpenGlOnNvidia() const;
 
   /**
    * @brief True when Tier 1 (CUDA-NVDEC + CUDA-GL interop) cannot work on this machine.
@@ -198,10 +200,13 @@ private:
   DisplayServer display_server_{DisplayServer::Unknown};
   std::string primary_gpu_name_{"Unknown GPU"};
   size_t total_vram_mb_{0};
-  bool is_hybrid_topology_{false};
+  std::atomic<bool> is_hybrid_topology_{false};
   std::string gl_vendor_;
   bool gl_is_nvidia_{false};
   bool gl_vendor_from_render_context_{false};
+  // Patch 0091 (P2-9): decoder threads record the vendor while other decoders and the UI read it.
+  // std::string assignment is not atomic; guard every access to the three fields above.
+  mutable std::mutex gl_vendor_mutex_;
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
   bool has_videotoolbox_support_{false};

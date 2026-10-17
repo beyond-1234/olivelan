@@ -143,6 +143,11 @@ bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor, bool from_rende
     return false;
   }
 
+  // Patch 0091 (P2-9): RecordOpenGlVendor() is called from every decoder thread on its first frame
+  // *and* from the UI/probe paths. Serialize the read-modify-write; the previous unsynchronized
+  // std::string assignment was undefined behaviour when two streams started together.
+  std::lock_guard<std::mutex> lock(gl_vendor_mutex_);
+
   if (!gl_vendor_.empty()) {
     // A render-context reading is authoritative. A platform-level (offscreen) context is only a
     // stand-in recorded before the renderer exists, so it must never displace the real thing.
@@ -156,6 +161,19 @@ bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor, bool from_rende
   gl_vendor_from_render_context_ = from_render_context;
 
   return true;
+}
+
+std::string GpuEnvironmentProbe::GetOpenGlVendor() const
+{
+  // Return a copy: callers must not hold a reference into a string another decoder can rewrite.
+  std::lock_guard<std::mutex> lock(gl_vendor_mutex_);
+  return gl_vendor_;
+}
+
+bool GpuEnvironmentProbe::IsOpenGlOnNvidia() const
+{
+  std::lock_guard<std::mutex> lock(gl_vendor_mutex_);
+  return gl_is_nvidia_;
 }
 
 bool GpuEnvironmentProbe::ProbePlatformOpenGlVendor()
@@ -196,7 +214,8 @@ void GpuEnvironmentProbe::DetectOpenGlDevice()
 
 bool GpuEnvironmentProbe::IsCudaGlInteropBlocked() const
 {
-  return is_hybrid_topology_ && !gl_vendor_.empty() && !gl_is_nvidia_;
+  std::lock_guard<std::mutex> lock(gl_vendor_mutex_);
+  return is_hybrid_topology_.load() && !gl_vendor_.empty() && !gl_is_nvidia_;
 }
 
 void GpuEnvironmentProbe::DetectDisplayServer()

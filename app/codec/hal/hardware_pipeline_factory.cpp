@@ -9,26 +9,40 @@
 #include "render/opengl/openglrenderer.h"
 
 #include <QDebug>
+#include <QSet>
+
+#include <mutex>
 
 namespace olive {
 
 namespace {
 
-// Process-wide forced backend (phase5-07). Empty = dynamic auto routing.
-QString& ForcedBackendRef()
+// Patch 0091 (P2-2): both process-wide forced-backend fields live under one mutex. CreatePipeline()
+// runs on decoder threads, so the previous bare function-static QStrings were a data race the
+// moment two streams started together.
+struct ForcedBackendState {
+  std::mutex mutex;
+  QString backend;
+  // Failure keys are (backend, codec, pix_fmt, width x height), not just the backend: a backend
+  // can fail for one stream (unsupported profile, VA-API quota at 4K) while working for another.
+  // Caching per session made the first failure disable the backend for every later stream.
+  QSet<QString> failed_keys;
+};
+
+ForcedBackendState& State()
 {
-  static QString forced_backend;
-  return forced_backend;
+  static ForcedBackendState state;
+  return state;
 }
 
-// Patch 0079 (Phase 9): a forced backend that already failed physical initialization is not
-// retried for every stream. The failure is a property of the session (wrong codec, no quota, GL on
-// the wrong GPU), so re-attempting per stream added nothing but a repeated warning. Re-armed
-// whenever a backend is explicitly (re)selected.
-QString& ForcedBackendFailureRef()
+QString ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx)
 {
-  static QString failed_backend;
-  return failed_backend;
+  return QStringLiteral("%1|%2|%3|%4x%5")
+      .arg(backend)
+      .arg(static_cast<int>(codec_ctx->codec_id))
+      .arg(static_cast<int>(codec_ctx->pix_fmt))
+      .arg(codec_ctx->width)
+      .arg(codec_ctx->height);
 }
 
 std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
@@ -68,14 +82,18 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
 
 void HardwarePipelineFactory::SetForcedBackend(const QString& name)
 {
-  ForcedBackendRef() = name.toLower().trimmed();
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  state.backend = name.toLower().trimmed();
   // Explicit (re)selection re-arms the attempt even for a backend that failed earlier.
-  ForcedBackendFailureRef().clear();
+  state.failed_keys.clear();
 }
 
-const QString& HardwarePipelineFactory::GetForcedBackend()
+QString HardwarePipelineFactory::GetForcedBackend()
 {
-  return ForcedBackendRef();
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  return state.backend;
 }
 
 std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
@@ -97,8 +115,18 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   //    -hal-backend / -hal-dialog / OLIVE_HAL_BACKEND. Deliberately bypasses the
   //    ShouldUseHardwareDecode pre-filter ("user knows best" semantics), but a failed
   //    physical ProbeAndInitialize still falls back to the normal tiered routing.
-  const QString& forced = GetForcedBackend();
-  if (!forced.isEmpty() && forced != QStringLiteral("auto") && forced != ForcedBackendFailureRef()) {
+  QString forced;
+  bool forced_already_failed = false;
+  {
+    auto& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    forced = state.backend;
+    if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
+      forced_already_failed = state.failed_keys.contains(ForcedFailureKey(forced, codec_ctx));
+    }
+  }
+
+  if (!forced.isEmpty() && forced != QStringLiteral("auto") && !forced_already_failed) {
     if (forced == QStringLiteral("cuda") && probe.IsCudaGlInteropBlocked()) {
       qWarning() << "[HAL Factory] Forcing the CUDA backend, but the active OpenGL context is on"
                  << QString::fromStdString(probe.GetOpenGlVendor())
@@ -112,10 +140,20 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
         qInfo() << "[HAL Factory] Forced backend selected:" << forced_pipeline->GetBackendName();
         return forced_pipeline;
       }
-      ForcedBackendFailureRef() = forced;
+
+      {
+        auto& state = State();
+        std::lock_guard<std::mutex> lock(state.mutex);
+        // Only record the failure if the user has not selected a different backend while this
+        // initialization was running.
+        if (state.backend == forced) {
+          state.failed_keys.insert(ForcedFailureKey(forced, codec_ctx));
+        }
+      }
+
       qWarning() << "[HAL Factory] Forced backend" << forced
-                << "failed physical initialization; falling back to auto routing for the rest of"
-                << "this session (no further retries).";
+                 << "failed physical initialization for this codec/format; other streams will"
+                 << "still try it. Falling back to auto routing for this stream.";
     }
   }
 

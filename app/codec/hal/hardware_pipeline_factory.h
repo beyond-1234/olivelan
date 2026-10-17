@@ -27,7 +27,7 @@ public:
    *        Valid values: "cuda", "videotoolbox", "vaapi", "d3d11", "software".
    */
   static void SetForcedBackend(const QString& name);
-  static const QString& GetForcedBackend();
+  static QString GetForcedBackend();
 };
 
 } // namespace olive
