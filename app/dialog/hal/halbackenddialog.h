@@ -33,6 +33,14 @@ private:
   QWidget* CreateProbeInfoSection();
   QWidget* CreateSelectionSection();
 
+  /**
+   * @brief Patch 0080 (Phase 9): offers real alternatives when the requested backend cannot work.
+   *
+   * @return the backend id to use instead (may be the requested one if the user insists), or an
+   *         empty string if the user cancelled and nothing should be applied.
+   */
+  QString ResolveUnavailableBackend(const QString& requested);
+
   void PopulateProbeInfo();
   void PopulateBackendCombo();
 

@@ -85,6 +85,41 @@ bool XSocketIsReachable()
 
 } // namespace
 
+namespace {
+
+QString VendorLabel(GpuVendor vendor)
+{
+  switch (vendor) {
+  case GpuVendor::Nvidia: return QStringLiteral("NVIDIA");
+  case GpuVendor::Amd: return QStringLiteral("AMD");
+  case GpuVendor::Intel: return QStringLiteral("Intel");
+  case GpuVendor::Apple: return QStringLiteral("Apple");
+  default: return QStringLiteral("unknown");
+  }
+}
+
+QString NvidiaDeviceName()
+{
+  for (const auto& device : GpuEnvironmentProbe::Instance().GetDetectedDevices()) {
+    if (device.vendor == GpuVendor::Nvidia && !device.device_name.empty()) {
+      return QString::fromStdString(device.device_name);
+    }
+  }
+  return QStringLiteral("NVIDIA GPU");
+}
+
+QString ConnectedDisplaySummary()
+{
+  QStringList parts;
+  for (const auto& display : GpuEnvironmentProbe::Instance().GetConnectedDisplays()) {
+    parts << QStringLiteral("%1 (%2)").arg(QString::fromStdString(display.connector),
+                                           VendorLabel(display.gpu));
+  }
+  return parts.isEmpty() ? QStringLiteral("(none detected)") : parts.join(QStringLiteral(", "));
+}
+
+} // namespace
+
 bool GpuSessionAdvisor::IsWaylandSession()
 {
   if (!qgetenv("WAYLAND_DISPLAY").isEmpty()) {
@@ -177,35 +212,161 @@ QString GpuSessionAdvisor::DescribeEnvironment()
     tier1 = QStringLiteral("unavailable");
   }
 
-  return QStringLiteral("session=%1 xwayland=%2 hybrid=%3 nvidia=%4 gl=%5 tier1=%6 mode=%7")
+  return QStringLiteral("session=%1 xwayland=%2 hybrid=%3 nvidia=%4 gl=%5 tier1=%6 nvdisp=%7 mode=%8")
       .arg(IsWaylandSession() ? QStringLiteral("wayland") : QStringLiteral("x11"))
       .arg(IsXwaylandAvailable() ? QStringLiteral("yes") : QStringLiteral("no"))
       .arg(probe.IsHybridTopology() ? QStringLiteral("yes") : QStringLiteral("no"))
       .arg(HasNvidiaDevice() ? QStringLiteral("yes") : QStringLiteral("no"))
-      .arg(gl_vendor, tier1,
-           ConfiguredMode() == Mode::XwaylandPrime ? QStringLiteral("xwayland+prime")
+      .arg(gl_vendor, tier1)
+      .arg(probe.HasConnectedDisplayOn(GpuVendor::Nvidia) ? QStringLiteral("yes")
+                                                          : QStringLiteral("no"))
+      .arg(ConfiguredMode() == Mode::XwaylandPrime ? QStringLiteral("xwayland+prime")
                                                    : QStringLiteral("native"));
+}
+
+GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
+{
+  auto& probe = GpuEnvironmentProbe::Instance();
+
+  Assessment assessment;
+  assessment.wayland_session = IsWaylandSession();
+  assessment.xwayland_available = IsXwaylandAvailable();
+  assessment.hybrid = probe.IsHybridTopology();
+  assessment.nvidia_present = HasNvidiaDevice();
+  // Tier 1 needs NVDEC *and* the GL context on the same NVIDIA GPU - the second half is what a
+  // hybrid Wayland session cannot provide.
+  assessment.tier1_possible =
+      assessment.nvidia_present && probe.HasNvdecSupport() && !probe.IsCudaGlInteropBlocked();
+  assessment.tier2_possible = probe.SupportsVaapiDmaBuf();
+  assessment.nvidia_has_display = probe.HasConnectedDisplayOn(GpuVendor::Nvidia);
+  assessment.display_gpu = probe.GetOpenGlVendor().empty()
+                               ? QStringLiteral("unknown")
+                               : QString::fromStdString(probe.GetOpenGlVendor());
+  assessment.nvidia_name = NvidiaDeviceName();
+  assessment.connected_displays = ConnectedDisplaySummary();
+  return assessment;
+}
+
+QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
+{
+  QStringList lines;
+  lines << QStringLiteral("会话：%1（Xwayland %2）")
+               .arg(assessment.wayland_session ? QStringLiteral("原生 Wayland")
+                                               : QStringLiteral("X11"))
+               .arg(assessment.xwayland_available ? QStringLiteral("可达")
+                                                  : QStringLiteral("不可达"));
+  lines << QStringLiteral("显示（OpenGL）GPU：%1").arg(assessment.display_gpu);
+  lines << QStringLiteral("已连接显示器：%1").arg(assessment.connected_displays);
+
+  if (assessment.nvidia_present) {
+    lines << QStringLiteral("独显：%1（NVDEC %2；%3已连接的显示器）")
+                 .arg(assessment.nvidia_name,
+                      GpuEnvironmentProbe::Instance().HasNvdecSupport()
+                          ? QStringLiteral("可用")
+                          : QStringLiteral("不可用"),
+                      assessment.nvidia_has_display ? QStringLiteral("有")
+                                                    : QStringLiteral("没有"));
+  } else {
+    lines << QStringLiteral("独显：未检测到 NVIDIA GPU");
+  }
+
+  lines << QStringLiteral("Tier 1：%1")
+               .arg(assessment.tier1_possible
+                        ? QStringLiteral("可用")
+                        : QStringLiteral("不可用（CUDA-GL 互操作要求 GL 与 CUDA 同卡）"));
+  lines << QStringLiteral("Tier 2：%1")
+               .arg(assessment.tier2_possible ? QStringLiteral("可用（VA-API）")
+                                              : QStringLiteral("不可用"));
+
+  return lines.join(QStringLiteral("\n"));
+}
+
+QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)
+{
+  if (assessment.tier1_possible) {
+    return QCoreApplication::translate("GpuSessionAdvisor",
+        "Tier 1 - CUDA-NVDEC 解码，CUDA-GL 同卡零拷贝。已经是这台机器上的最优路径。");
+  }
+
+  if (assessment.tier2_possible) {
+    QString text = QCoreApplication::translate("GpuSessionAdvisor",
+        "Tier 2 - VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。")
+        .arg(assessment.display_gpu);
+
+    if (assessment.display_gpu.contains(QStringLiteral("AMD"), Qt::CaseInsensitive)
+        || assessment.display_gpu.contains(QStringLiteral("Mesa"), Qt::CaseInsensitive)) {
+      // Measured limitation, not a guess: see reports/hal-zero-copy-matrix.md.
+      text += QCoreApplication::translate("GpuSessionAdvisor",
+          "该驱动（Mesa/radeonsi）不接受 VA-API 导出的平面格式，dmabuf 零拷贝导入无法建立，"
+          "每帧会经 GPU->CPU 回读后再上传；解码本身仍在 GPU 上。");
+    } else {
+      text += QCoreApplication::translate("GpuSessionAdvisor",
+          "dmabuf 零拷贝导入能否建立取决于驱动。");
+    }
+    return text;
+  }
+
+  return QCoreApplication::translate("GpuSessionAdvisor",
+      "Tier 3 - 强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。");
+}
+
+QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
+{
+  QStringList actions;
+
+  if (assessment.tier1_possible) {
+    actions << QCoreApplication::translate("GpuSessionAdvisor",
+        "无需更改：Tier 1（零拷贝）在这台机器上可用。");
+    return actions;
+  }
+
+  if (assessment.nvidia_present) {
+    if (assessment.nvidia_has_display) {
+      actions << QCoreApplication::translate("GpuSessionAdvisor",
+          "[最优] 独显直连：检测到独显上已有连接的显示器（%1）。把那块屏幕设为主屏，或把 Olive "
+          "窗口移过去，GL 就会落在独显上——保留原生会话且拿到 Tier 1。")
+          .arg(assessment.connected_displays);
+    } else {
+      actions << QCoreApplication::translate("GpuSessionAdvisor",
+          "[最优] 独显直连：独显（%1）当前没有已连接的显示器，显示由 %2 驱动，所以 GL 无法落在独显上。"
+          "需要 BIOS/MUX 切到「独显直连/Discrete Graphics」，或把显示器接到独显的输出口。"
+          "之后 GL 与 CUDA 同卡，保留原生会话且拿到 Tier 1。")
+          .arg(assessment.nvidia_name, assessment.display_gpu);
+    }
+  } else {
+    actions << QCoreApplication::translate("GpuSessionAdvisor",
+        "本机没有 NVIDIA GPU，Tier 1 不适用；下面两条是仅有的选择。");
+  }
+
+  if (assessment.wayland_session) {
+    if (assessment.xwayland_available && assessment.nvidia_present) {
+      actions << QCoreApplication::translate("GpuSessionAdvisor",
+          "[次优] Xwayland + PRIME：切到 X11(xcb)，让 GL 落到独显，从而拿到 Tier 1。"
+          "代价是放弃原生会话（逐屏分数缩放、原生输入法）。下次启动生效。");
+    } else if (!assessment.xwayland_available) {
+      actions << QCoreApplication::translate("GpuSessionAdvisor",
+          "Xwayland 不可用（没有可达的 X 显示），该路径在本机无法选择。");
+    }
+  }
+
+  actions << QCoreApplication::translate("GpuSessionAdvisor",
+      "[保持当前] 不更改会话，走上面「本次会话实际会走」的那条路径（%1）。")
+      .arg(assessment.tier1_possible ? QStringLiteral("Tier 1")
+                                     : (assessment.tier2_possible ? QStringLiteral("Tier 2")
+                                                                  : QStringLiteral("Tier 3")));
+
+  return actions;
 }
 
 QString GpuSessionAdvisor::DescribeAdvice()
 {
-  return QCoreApplication::translate("GpuSessionAdvisor",
-    "Best option, and it needs no software switch: make the discrete GPU drive the display.\n"
-    "  - Set the firmware/MUX graphics mode to discrete-only (often \"Discrete Graphics\" or\n"
-    "    \"dGPU only\" in the BIOS), or connect the monitor to an output wired to the discrete GPU.\n"
-    "  - The compositor then runs on the discrete GPU, so the OpenGL context and CUDA end up on the\n"
-    "    same card: you keep the native session AND get Tier 1 (CUDA-GL zero-copy).\n"
-    "\n"
-    "Otherwise pick one:\n"
-    "  - Native session (default) - keeps every native compositor feature. On a hybrid GPU the\n"
-    "    decode runs on the display GPU (Tier 2), because Tier 1 is structurally impossible when the\n"
-    "    compositor owns the display GPU. Note: on Mesa/radeonsi the Tier 2 zero-copy import is\n"
-    "    currently not functional, so those frames take a GPU->CPU readback.\n"
-    "  - Xwayland + PRIME - switches to an X11 (xcb) session so the OpenGL context is placed on the\n"
-    "    NVIDIA GPU, which makes Tier 1 reachable. Costs the native session (per-monitor fractional\n"
-    "    scaling, native input methods).\n"
-    "\n"
-    "Either change takes effect the next time Olive starts.");
+  const Assessment assessment = Assess();
+
+  QStringList blocks;
+  blocks << DescribeSituation(assessment);
+  blocks << QStringLiteral("本次会话实际会走：\n  ") + DescribeEffectivePath(assessment);
+  blocks << QStringLiteral("可选的改进：\n  ") + RecommendedActions(assessment).join(QStringLiteral("\n  "));
+  return blocks.join(QStringLiteral("\n\n"));
 }
 
 } // namespace olive

@@ -20,15 +20,19 @@
 
 #include "halbackenddialog.h"
 
+#include <QAbstractButton>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
+#include "config/config.h"
 
 namespace olive {
 
@@ -37,6 +41,16 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
 {
   setWindowTitle(tr("HAL Backend Selection"));
   setMinimumWidth(560);
+
+  // Patch 0079/0080 (Phase 9): probe *before* building any UI. This dialog runs before the main
+  // window exists, so nothing has reported a GL vendor yet, and both the availability list and the
+  // "what this session will actually use" text depend on it - a pure-NVIDIA desktop would otherwise
+  // be told Tier 1 is unavailable simply because the vendor was still unknown.
+  {
+    auto& probe = GpuEnvironmentProbe::Instance();
+    probe.Refresh();
+    probe.ProbePlatformOpenGlVendor();
+  }
 
   auto* layout = new QVBoxLayout(this);
 
@@ -48,33 +62,17 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
   connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
     const int idx = backend_combo_->currentIndex();
-    const QString backend_id = backend_combo_->itemData(idx).toString();
+    QString backend_id = backend_combo_->itemData(idx).toString();
 
-    // Warn (but still allow) forcing a backend the probe considers unavailable.
+    // Patch 0080 (Phase 9): when the requested backend cannot work, offer the alternatives that
+    // will rather than a yes/no "continue anyway?" - that confirmed nothing and named no fix.
     const QVariant avail = backend_combo_->itemData(idx, Qt::UserRole + 1);
     if (backend_id != QStringLiteral("auto") && avail.isValid() && !avail.toBool()) {
-      // Patch 0079: give the specific reason when it is an interop problem, since "may fail at
-      // initialization" understates it - the stream simply produces no picture at all.
-      QString explanation;
-      if (backend_id == QStringLiteral("cuda")
-          && GpuEnvironmentProbe::Instance().IsCudaGlInteropBlocked()) {
-        explanation = tr("Tier 1 requires the OpenGL context and CUDA on the same NVIDIA GPU, but "
-                         "on this session the OpenGL context is on \"%1\". The frame pool will fail "
-                         "to register its textures and this stream will produce no picture.\n\n"
-                         "Switch the GPU session to Xwayland + PRIME, or choose Tier 3 instead.")
-                          .arg(QString::fromStdString(
-                              GpuEnvironmentProbe::Instance().GetOpenGlVendor()));
-      } else {
-        explanation = tr("The probe did not detect support for this backend on this system. "
-                         "Forcing it may fail at initialization and fall back to automatic routing. "
-                         "Continue anyway?");
-      }
-
-      const auto answer = QMessageBox::warning(this, tr("Backend unavailable"), explanation,
-                                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-      if (answer != QMessageBox::Yes) {
+      const QString resolved = ResolveUnavailableBackend(backend_id);
+      if (resolved.isEmpty()) {
         return;
       }
+      backend_id = resolved;
     }
 
     selected_backend_ = (backend_id == QStringLiteral("auto")) ? QString() : backend_id;
@@ -109,6 +107,13 @@ QWidget* HALBackendDialog::CreateSelectionSection()
   backend_combo_ = new QComboBox(widget);
   layout->addWidget(backend_combo_);
 
+  // Patch 0080 (Phase 9): state what this session will actually use, derived from the probe, rather
+  // than leaving the user to infer it from a list of backend names.
+  auto* effective = new QLabel(tr("实际会走：%1").arg(
+      GpuSessionAdvisor::DescribeEffectivePath(GpuSessionAdvisor::Assess())), widget);
+  effective->setWordWrap(true);
+  layout->addWidget(effective);
+
   layout->addWidget(new QLabel(
       tr("The selection applies to this process only and is not saved. "
          "Automatic routing can also be forced without a dialog via -hal-backend <name> "
@@ -116,15 +121,67 @@ QWidget* HALBackendDialog::CreateSelectionSection()
   return widget;
 }
 
+QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
+{
+  auto& probe = GpuEnvironmentProbe::Instance();
+  const bool interop_blocked = probe.IsCudaGlInteropBlocked();
+
+  QMessageBox box(this);
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(tr("后端不可用"));
+
+  if (requested == QStringLiteral("cuda") && interop_blocked) {
+    box.setText(tr("CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA "
+                   "位于同一块 NVIDIA GPU，而当前 GL 上下文在 \"%1\"。帧池将无法注册纹理，"
+                   "该路流不会出画面。")
+                    .arg(QString::fromStdString(probe.GetOpenGlVendor())));
+  } else {
+    box.setText(tr("探测显示后端 \"%1\" 在本机不可用。").arg(requested));
+  }
+
+  box.setInformativeText(GpuSessionAdvisor::DescribeAdvice());
+
+  // Offer what will actually work, best first.
+  const bool tier2_usable = probe.SupportsVaapiDmaBuf();
+  QPushButton* use_best_tier = box.addButton(
+      tier2_usable ? tr("改用 Tier 2（VA-API 硬件解码）") : tr("改用 Tier 3（CPU 解码）"),
+      QMessageBox::AcceptRole);
+
+  const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
+  QPushButton* switch_session = nullptr;
+  if (assessment.wayland_session && assessment.xwayland_available && assessment.nvidia_present) {
+    switch_session = box.addButton(tr("改用 Xwayland + PRIME（下次启动生效）"),
+                                   QMessageBox::ActionRole);
+  }
+
+  QPushButton* force = box.addButton(tr("仍然强制 %1").arg(requested),
+                                     QMessageBox::DestructiveRole);
+  box.addButton(QMessageBox::Cancel);
+  box.exec();
+
+  if (box.clickedButton() == use_best_tier) {
+    return tier2_usable ? QStringLiteral("vaapi") : QStringLiteral("software");
+  }
+
+  if (switch_session && box.clickedButton() == switch_session) {
+    OLIVE_CONFIG("GpuSessionMode") = static_cast<int>(GpuSessionAdvisor::Mode::XwaylandPrime);
+    Config::Save();
+    QMessageBox::information(this, tr("已保存"),
+        tr("已切换为 Xwayland + PRIME，下次启动 Olive 时生效。\n\n"
+           "本次会话仍请在上方选择 Auto，或一个当前可用的后端。"));
+    return QString();
+  }
+
+  if (box.clickedButton() == force) {
+    return requested;
+  }
+
+  return QString();
+}
+
 void HALBackendDialog::PopulateProbeInfo()
 {
   auto& probe = GpuEnvironmentProbe::Instance();
-  probe.Refresh();
-
-  // Patch 0079 (Phase 9): this dialog runs before the main window exists, so nothing has reported a
-  // GL vendor yet. Without it every Tier 1 looks available, and the user can force one that cannot
-  // possibly work (CUDA-GL interop needs the GL context on the NVIDIA GPU).
-  probe.ProbePlatformOpenGlVendor();
 
   auto add_item = [this](QTreeWidgetItem* parent, const QString& key, const QString& value) {
     auto* item = new QTreeWidgetItem(parent);

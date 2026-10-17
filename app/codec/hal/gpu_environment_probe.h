@@ -69,6 +69,24 @@ public:
   size_t GetTotalVramMb() const { return total_vram_mb_; }
   const std::vector<GpuDeviceInfo>& GetDetectedDevices() const { return detected_devices_; }
 
+  /**
+   * @brief Patch 0080 (Phase 9): a DRM connector that currently reports "connected", and the GPU
+   *        driving it.
+   *
+   * This is what lets the UI answer "would moving the display to the discrete GPU actually be
+   * possible?" instead of printing the same generic advice everywhere. On a hybrid laptop the
+   * panel is typically wired to the iGPU, so the dGPU may have no connected output at all.
+   */
+  struct DisplayConnection {
+    std::string connector;
+    GpuVendor gpu{GpuVendor::Unknown};
+  };
+
+  const std::vector<DisplayConnection>& GetConnectedDisplays() const { return connected_displays_; }
+
+  /// @brief True when a currently connected display is driven by a GPU of this vendor.
+  bool HasConnectedDisplayOn(GpuVendor vendor) const;
+
   // Vendor convenience checks
   bool IsNvidiaGpu() const { return primary_vendor_ == GpuVendor::Nvidia; }
   bool IsAmdGpu() const { return primary_vendor_ == GpuVendor::Amd; }
@@ -174,6 +192,7 @@ private:
   void DetectBackendCapabilities();
   void DetectDecodeCapabilityMatrix();
   void DetectOpenGlDevice();
+  void DetectConnectedDisplays();
 
   GpuVendor primary_vendor_{GpuVendor::Unknown};
   DisplayServer display_server_{DisplayServer::Unknown};
@@ -190,6 +209,7 @@ private:
   // SupportsD3D11() answers a hard false from the .cpp.
   HardwareDecodeCapability decode_capability_;
   std::vector<GpuDeviceInfo> detected_devices_;
+  std::vector<DisplayConnection> connected_displays_;
 };
 
 } // namespace olive

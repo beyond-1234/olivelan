@@ -401,7 +401,8 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
       qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err)
                  << "- if this is a hybrid-GPU laptop, the OpenGL context may be on the iGPU while"
                  << "CUDA/NVDEC is on the NVIDIA GPU (CUDA-GL interop cannot work across GPUs)."
-                 << "Use an X11 (xcb) session with PRIME offload, or force -hal-backend software."
+                 << "Use the GPU session selection to move GL onto the NVIDIA GPU, or pick a"
+                 << "different backend in the HAL backend dialog."
                  << "(This will not be repeated for every frame.)";
     }
     if (slot.gl_tex_id) {

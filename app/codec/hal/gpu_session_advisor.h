@@ -22,6 +22,7 @@
 #define GPU_SESSION_ADVISOR_H
 
 #include <QString>
+#include <QStringList>
 
 namespace olive {
 
@@ -74,10 +75,45 @@ public:
    */
   static void ApplySessionPreference();
 
-  /// @brief One-line classification, for the log and the dialog.
+  /// @brief One-line classification, for the log.
   static QString DescribeEnvironment();
 
-  /// @brief User-facing explanation of the options, including the discrete-GPU-direct advice.
+  /**
+   * @brief Patch 0080 (Phase 9): what the probe actually found on this machine.
+   *
+   * The advice has to come from this rather than from a fixed paragraph - "use Tier 3" is wrong
+   * when Tier 2 is available, and "switch the display to the discrete GPU" is not actionable
+   * without knowing whether the dGPU has a connected output at all.
+   */
+  struct Assessment {
+    bool wayland_session{false};
+    bool xwayland_available{false};
+    bool hybrid{false};
+    bool nvidia_present{false};
+    bool tier1_possible{false};
+    bool tier2_possible{false};
+    bool nvidia_has_display{false};
+    QString display_gpu;          // vendor driving the display, "unknown" if not yet known
+    QString nvidia_name;          // e.g. "NVIDIA GeForce RTX 4060 Laptop GPU"
+    QString connected_displays;   // e.g. "card1-eDP-1 (AMD)"
+  };
+
+  static Assessment Assess();
+
+  /// @brief The detected facts, one per line, for the UI.
+  static QString DescribeSituation(const Assessment& assessment);
+
+  /**
+   * @brief Which decode tier this session will actually use, and what that costs.
+   *
+   * Says Tier 2 when Tier 2 is available - the honest answer is whatever the factory will pick.
+   */
+  static QString DescribeEffectivePath(const Assessment& assessment);
+
+  /// @brief Ranked, actionable options derived from the assessment.
+  static QStringList RecommendedActions(const Assessment& assessment);
+
+  /// @brief Situation + effective path + actions, as one block of text.
   static QString DescribeAdvice();
 };
 

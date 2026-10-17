@@ -6,6 +6,8 @@
 #include <sstream>
 
 #include <QDebug>
+#include <QDir>
+#include <QFile>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
@@ -70,6 +72,69 @@ void GpuEnvironmentProbe::Refresh()
   DetectBackendCapabilities();
   DetectDecodeCapabilityMatrix();
   DetectOpenGlDevice();
+  DetectConnectedDisplays();
+}
+
+bool GpuEnvironmentProbe::HasConnectedDisplayOn(GpuVendor vendor) const
+{
+  for (const auto& display : connected_displays_) {
+    if (display.gpu == vendor) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void GpuEnvironmentProbe::DetectConnectedDisplays()
+{
+  connected_displays_.clear();
+
+#if defined(__linux__)
+  QDir drm(QStringLiteral("/sys/class/drm"));
+  if (!drm.exists()) {
+    return;
+  }
+
+  const QStringList entries =
+      drm.entryList({QStringLiteral("card*-*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+
+  for (const QString& entry : entries) {
+    // "card0-HDMI-A-1" -> card "card0", connector "HDMI-A-1"
+    const int dash = entry.indexOf(QLatin1Char('-'));
+    if (dash <= 0) {
+      continue;
+    }
+
+    QFile status(drm.filePath(entry + QStringLiteral("/status")));
+    if (!status.open(QIODevice::ReadOnly)) {
+      continue;
+    }
+    if (status.readAll().trimmed() != QByteArrayLiteral("connected")) {
+      continue;
+    }
+
+    // The connector belongs to the card in its own name; that card's PCI vendor tells us which GPU
+    // is actually driving the panel.
+    QFile vendor_file(QStringLiteral("/sys/class/drm/%1/device/vendor").arg(entry.left(dash)));
+    GpuVendor vendor = GpuVendor::Unknown;
+    if (vendor_file.open(QIODevice::ReadOnly)) {
+      const QString id = QString::fromLatin1(vendor_file.readAll()).trimmed().toLower();
+
+      if (id == QLatin1String("0x10de")) {
+        vendor = GpuVendor::Nvidia;
+      } else if (id == QLatin1String("0x1002") || id == QLatin1String("0x1022")) {
+        vendor = GpuVendor::Amd;
+      } else if (id == QLatin1String("0x8086")) {
+        vendor = GpuVendor::Intel;
+      }
+    }
+
+    DisplayConnection connection;
+    connection.connector = entry.toStdString();
+    connection.gpu = vendor;
+    connected_displays_.push_back(connection);
+  }
+#endif
 }
 
 bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor, bool from_render_context)
