@@ -45,6 +45,7 @@
 #include <QCoreApplication>
 #include <QImage>
 #include <QString>
+#include <QStringList>
 
 #if __has_include(<EGL/egl.h>)
 #include <EGL/egl.h>
@@ -55,6 +56,7 @@
 #include "core.h"
 
 extern "C" {
+#include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
 #include <libavutil/mastering_display_metadata.h>
 }
@@ -371,6 +373,51 @@ OLIVE_ADD_TEST(HardwarePipelineForcedBackendState)
   }
 
   HardwarePipelineFactory::SetForcedBackend(old_value);
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(ForcedBackendFallbackNotification)
+{
+  // Patch 0097: an unknown/unavailable forced backend must reach the UI once, not only qWarning().
+  const QString old_backend = HardwarePipelineFactory::GetForcedBackend();
+  QStringList notices;
+  HardwarePipelineFactory::SetFallbackHandler([&notices](const QString& message) {
+    notices.append(message);
+  });
+  HardwarePipelineFactory::SetForcedBackend(QStringLiteral("definitely-not-a-backend"));
+
+  AVCodecContext* codec = avcodec_alloc_context3(nullptr);
+  codec->codec_id = AV_CODEC_ID_PRORES;
+  codec->width = 1920;
+  codec->height = 1080;
+  codec->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+
+  // ProRes takes the CPU pre-filter after the forced backend fails, so this test does not need a
+  // GPU or a display. Two calls also pin the duplicate-suppression behavior.
+  auto first = HardwarePipelineFactory::CreatePipeline(codec, 1920, 1080, nullptr);
+  auto second = HardwarePipelineFactory::CreatePipeline(codec, 1920, 1080, nullptr);
+
+  if (!first || !second) {
+    std::cout << " - CPU fallback pipeline was not created";
+    avcodec_free_context(&codec);
+    HardwarePipelineFactory::SetForcedBackend(old_backend);
+    HardwarePipelineFactory::SetFallbackHandler({});
+    return __LINE__;
+  }
+  if (notices.size() != 1 || !notices.first().contains(QStringLiteral("unknown forced backend"))) {
+    std::cout << " - fallback notification was missing or duplicated: " << notices.size();
+    avcodec_free_context(&codec);
+    HardwarePipelineFactory::SetForcedBackend(old_backend);
+    HardwarePipelineFactory::SetFallbackHandler({});
+    return __LINE__;
+  }
+
+  first.reset();
+  second.reset();
+  avcodec_free_context(&codec);
+  HardwarePipelineFactory::SetForcedBackend(old_backend);
+  HardwarePipelineFactory::SetFallbackHandler({});
 
   OLIVE_TEST_END;
 }

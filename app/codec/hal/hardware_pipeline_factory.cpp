@@ -12,6 +12,7 @@
 #include <QSet>
 
 #include <mutex>
+#include <utility>
 
 namespace olive {
 
@@ -27,12 +28,35 @@ struct ForcedBackendState {
   // can fail for one stream (unsupported profile, VA-API quota at 4K) while working for another.
   // Caching per session made the first failure disable the backend for every later stream.
   QSet<QString> failed_keys;
+  // Patch 0097: one notice per distinct reason. A forced backend can fail on every stream; a
+  // status-bar message per frame would be noise, and a modal per frame would be unusable.
+  QSet<QString> notified_fallbacks;
+  HardwarePipelineFactory::FallbackHandler fallback_handler;
 };
 
 ForcedBackendState& State()
 {
   static ForcedBackendState state;
   return state;
+}
+
+void NotifyFallback(const QString& message)
+{
+  HardwarePipelineFactory::FallbackHandler handler;
+  {
+    auto& state = State();
+    std::lock_guard<std::mutex> lock(state.mutex);
+    if (state.notified_fallbacks.contains(message)) {
+      return;
+    }
+    state.notified_fallbacks.insert(message);
+    handler = state.fallback_handler;
+  }
+
+  // Call outside the lock: a GUI handler may queue work that comes back through this factory.
+  if (handler) {
+    handler(message);
+  }
 }
 
 QString ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx)
@@ -53,18 +77,21 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     return std::make_unique<CudaNvdecPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'cuda' not compiled in (OLIVE_ENABLE_CUDA_NVDEC off); ignoring.";
+    NotifyFallback(QStringLiteral("forced backend \"cuda\" is not compiled in; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("videotoolbox")) {
 #if defined(__APPLE__)
     return std::make_unique<VideoToolboxPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'videotoolbox' only exists on macOS; ignoring.";
+    NotifyFallback(QStringLiteral("forced backend \"videotoolbox\" is unavailable on this platform; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("vaapi")) {
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
     return std::make_unique<VaapiDmaBufPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'vaapi' not compiled in (needs Linux + OLIVE_ENABLE_VAAPI_DMABUF); ignoring.";
+    NotifyFallback(QStringLiteral("forced backend \"vaapi\" is not compiled in; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("d3d11")) {
     // Patch 0049 (Phase 8): the D3D11 interop pipeline is a placeholder and is not
@@ -72,8 +99,12 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     // (reinforced CPU decode). The pipeline class is kept as the starting point for
     // future development.
     qWarning() << "[HAL Factory] Forced backend 'd3d11' is a placeholder, not implemented; ignoring (Windows uses Tier 3 fallback).";
+    NotifyFallback(QStringLiteral("forced backend \"d3d11\" is not implemented; using automatic routing"));
   } else if (name == QStringLiteral("software")) {
     return std::make_unique<ReinforcedSoftwarePipeline>(renderer);
+  } else {
+    qWarning() << "[HAL Factory] Unknown forced backend" << name << "; ignoring.";
+    NotifyFallback(QStringLiteral("unknown forced backend \"%1\"; using automatic routing").arg(name));
   }
   return nullptr;
 }
@@ -94,6 +125,13 @@ QString HardwarePipelineFactory::GetForcedBackend()
   auto& state = State();
   std::lock_guard<std::mutex> lock(state.mutex);
   return state.backend;
+}
+
+void HardwarePipelineFactory::SetFallbackHandler(FallbackHandler handler)
+{
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  state.fallback_handler = std::move(handler);
 }
 
 std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
@@ -154,6 +192,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
       qWarning() << "[HAL Factory] Forced backend" << forced
                  << "failed physical initialization for this codec/format; other streams will"
                  << "still try it. Falling back to auto routing for this stream.";
+      NotifyFallback(QStringLiteral("forced backend \"%1\" failed to initialize; this stream uses automatic routing").arg(forced));
     }
   }
 

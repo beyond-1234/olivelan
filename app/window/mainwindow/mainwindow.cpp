@@ -24,6 +24,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QScreen>
+#include <QStatusBar>
 #include <QTimer>
 
 #include <kddockwidgets/LayoutSaver.h>
@@ -36,6 +37,7 @@
 #include "dialog/gpusession/gpusessiondialog.h"
 #include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/gpu_session_advisor.h"
+#include "codec/hal/hardware_pipeline_factory.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
@@ -77,6 +79,16 @@ MainWindow::MainWindow(QWidget *parent) :
   status_bar->ConnectTaskManager(TaskManager::instance());
   connect(status_bar, &MainStatusBar::DoubleClicked, this, &MainWindow::StatusBarDoubleClicked);
   setStatusBar(status_bar);
+
+  // Patch 0097: a forced backend that cannot initialize used to fall back with only qWarning().
+  // Surface it in the window so the user knows why the requested tier is not active.
+  HardwarePipelineFactory::SetFallbackHandler([this](const QString& reason) {
+    QMetaObject::invokeMethod(this, [this, reason]() {
+      if (statusBar()) {
+        statusBar()->showMessage(tr("Hardware decode fallback: %1").arg(reason), 15000);
+      }
+    }, Qt::QueuedConnection);
+  });
 
   // Create standard panels
   node_panel_ = new NodePanel();
@@ -135,6 +147,8 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow()
 {
+  HardwarePipelineFactory::SetFallbackHandler({});
+
 #ifdef Q_OS_WINDOWS
   if (taskbar_interface_) {
     taskbar_interface_->Release();

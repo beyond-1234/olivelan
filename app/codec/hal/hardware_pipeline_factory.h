@@ -1,6 +1,7 @@
 #ifndef HARDWARE_PIPELINE_FACTORY_H
 #define HARDWARE_PIPELINE_FACTORY_H
 
+#include <functional>
 #include <memory>
 #include <QString>
 #include "video_hardware_pipeline.h"
@@ -28,6 +29,16 @@ public:
    */
   static void SetForcedBackend(const QString& name);
   static QString GetForcedBackend();
+
+  /**
+   * @brief Patch 0097: receive a visible, de-duplicated notice when a forced backend falls back.
+   *
+   * ProbeAndInitialize() runs on decoder threads. The handler may therefore be called from any
+   * thread; the GUI installs one that queues the text onto the main window's status bar. Keeping
+   * this out of the factory avoids a Qt widget dependency in the codec layer.
+   */
+  using FallbackHandler = std::function<void(const QString&)>;
+  static void SetFallbackHandler(FallbackHandler handler);
 };
 
 } // namespace olive
