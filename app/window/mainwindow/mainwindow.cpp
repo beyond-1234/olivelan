@@ -536,8 +536,14 @@ void MainWindow::TimelinePanelSelectionChanged(const QVector<Block *> &blocks)
 void MainWindow::ShowWelcomeDialog()
 {
   if (OLIVE_CONFIG("ShowWelcomeDialog").toBool()) {
-    AboutDialog ad(true, this);
-    ad.exec();
+    // Shown non-modally on purpose. An application-modal dialog launched around startup competes
+    // for activation with the panels that are being opened while the project/layout settles; on
+    // Wayland (KWin) that makes the main window and the dialog bounce activation back and forth,
+    // with the main window looking frozen/blank. A non-modal welcome dialog can't do that.
+    AboutDialog *ad = new AboutDialog(true, this);
+    ad->setAttribute(Qt::WA_DeleteOnClose);
+    ad->show();
+    ad->raise();
   }
 }
 
@@ -919,6 +925,10 @@ void MainWindow::ApplyInitialLayoutIfNeeded()
 
   initial_layout_applied_ = true;
   SetDefaultLayout();
+
+  // Only now that the dock layout exists is it safe to show the welcome dialog; showing it earlier
+  // (while panels are still being opened) makes it compete for activation with the startup churn.
+  QMetaObject::invokeMethod(this, "ShowWelcomeDialog", Qt::QueuedConnection);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e)
@@ -956,8 +966,6 @@ void MainWindow::showEvent(QShowEvent *e)
       QMetaObject::invokeMethod(this, "ShowNouveauWarning", Qt::QueuedConnection);
     }
 #endif
-
-    QMetaObject::invokeMethod(this, "ShowWelcomeDialog", Qt::QueuedConnection);
 
     first_show_ = false;
   }
