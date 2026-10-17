@@ -295,15 +295,18 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   void* egl_image_y = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y.data());
   void* egl_image_uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
   if (!egl_image_y || !egl_image_uv) {
-    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M): eglQueryDmaBufFormatsEXT advertises R8 and
-    // GR88, but eglQueryDmaBufModifiersEXT lists DRM_FORMAT_MOD_LINEAR as their only importable
-    // modifier, while vaExportSurfaceHandle exports the planes with a tiled modifier
-    // (0x200000010401b04). The dual-single-plane strategy therefore cannot be satisfied on this
-    // driver - eglCreateImageKHR returns EGL_NO_IMAGE_KHR with EGL_BAD_PARAMETER (0x300c).
-    // Measured side by side on the same attributes: with EGL_NO_DISPLAY the call returns
-    // EGL_BAD_DISPLAY (0x3008); with the correct display it returns EGL_BAD_PARAMETER. An earlier
-    // revision of this note claimed EGL_SUCCESS, which was an artifact of reading eglGetError()
-    // after the error had already been consumed. Frames fall back to a GPU->CPU readback.
+    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M): eglCreateImageKHR returns
+    // EGL_NO_IMAGE_KHR with EGL_BAD_PARAMETER (0x300c) even though ALL of these hold:
+    //   - the display is the current context's (passing EGL_NO_DISPLAY gives EGL_BAD_DISPLAY);
+    //   - EGL_LINUX_DRM_FOURCC_EXT carries the layer's own fourcc (R8 for luma, GR88 for chroma);
+    //   - the plane carries the modifier vaExportSurfaceHandle reported (0x200000010401b04);
+    //   - eglQueryDmaBufFormatsEXT lists both fourccs, and eglQueryDmaBufModifiersEXT lists that
+    //     exact modifier for both of them (4 modifiers for R8/GR88, 3 for NV12/P010).
+    // So the rejection is NOT explained by format or modifier support, and the real cause is still
+    // unidentified - do not assume it is a driver limitation without measuring.
+    // (Two earlier revisions of this note were wrong: one claimed EGL_SUCCESS, one claimed the
+    // driver accepted only LINEAR. Both were artifacts of malformed eglQueryDmaBuf*EXT calls; see
+    // patches 0084/0085.) Frames fall back to a GPU->CPU readback.
     qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for plane images (y:"
                << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")"
                << "- plane fourcc" << Qt::hex << prime_desc.layers[0].drm_format
