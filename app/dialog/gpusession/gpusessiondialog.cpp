@@ -99,7 +99,8 @@ QWidget* GpuSessionDialog::CreateProbeInfoSection()
 
 QWidget* GpuSessionDialog::CreateSelectionSection()
 {
-  auto* group = new QGroupBox(tr("Session to use on the next start"), this);
+  // The choice is applied by restarting immediately (patch 0082), so don't label it "next start".
+  auto* group = new QGroupBox(tr("Display session"), this);
   auto* layout = new QVBoxLayout(group);
 
   native_radio_ = new QRadioButton(tr("Native session (recommended default)"), group);

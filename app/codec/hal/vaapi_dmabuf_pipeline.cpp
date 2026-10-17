@@ -296,24 +296,21 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   void* egl_image_uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
   if (!egl_image_y || !egl_image_uv) {
 
-    // Measured on radeonsi (Mesa 25.2.8, Radeon 780M). eglCreateImageKHR returns
-    // EGL_NO_IMAGE_KHR with EGL_BAD_PARAMETER (0x300c) for EVERY variant tried:
-    //   - Y (R8) full-size WITH the exported modifier;
-    //   - Y (R8) full-size WITHOUT any modifier (i.e. the linear assumption);
-    //   - UV (GR88) half-size WITH the modifier;
-    //   - UV (GR88) full-size WITH the modifier;
-    //   - composed NV12, both planes in one image, WITH the modifier.
-    // The descriptor is 1 object / 2 layers: R8 num_planes=1 offset=0 pitch=3840; GR88
-    // num_planes=1 offset=6881280 pitch=4096. So there is no auxiliary plane to supply, both
-    // fourccs and the exported modifier are advertised as importable with external_only=0, and the
-    // UV plane is already imported at half size.
-    // In short: format, modifier, plane count, size and offset are all accounted for, yet the call
-    // fails identically in every variant - the cause is common to all of them and is NOT
-    // format/modifier related. The prime suspect is now the buffer/device rather than the
-    // attributes, e.g. the dma-buf coming from a different DRM device than the EGL display.
-    // (Earlier revisions of this note were wrong twice: one claimed EGL_SUCCESS, one claimed the
-    // driver accepted only LINEAR. Both were artifacts of malformed eglQueryDmaBuf*EXT calls; see
-    // patches 0084/0085/0086.)
+    // Reaching this point means a real driver/stream limitation, NOT an API misuse.
+    //
+    // History, because this note was wrong twice: patches 0077-0086 chased this failure through
+    // dma-buf formats, modifiers, plane counts and the EGL display, and produced two claims that
+    // had to be retracted (a bogus EGL_SUCCESS, and a bogus "the driver only accepts LINEAR" -
+    // both were artifacts of malformed probe calls). Patch 0087 found the actual cause: this
+    // attrib array used to be intptr_t/Mesa reads EGLint (int32_t) on x86_64, so the driver read
+    // the attributes at the wrong stride, misparsed width/height as the next key, and returned
+    // EGL_BAD_PARAMETER (0x300c) for every variant. With the correct EGLint array these same
+    // R8+GR88 planes import successfully on radeonsi (Radeon 780M, Mesa 25.2.8).
+    //
+    // So: if a stream fails here now, log the fourcc/modifier/plane layout below and compare it
+    // against values known to work - but do not revive the old "format/modifier/driver can never
+    // be imported" conclusions without a fresh measurement of this specific case.
+    //
     // For any future composed path: NV12 reports external_only=1, so it must be bound to
     // GL_TEXTURE_EXTERNAL_OES - GL_TEXTURE_2D would fail at bind time.
 

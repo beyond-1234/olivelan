@@ -152,8 +152,8 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
   const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
   QPushButton* switch_session = nullptr;
   if (assessment.wayland_session && assessment.xwayland_available && assessment.nvidia_present) {
-    switch_session = box.addButton(tr("Switch to Xwayland + PRIME (next start)"),
-                                   QMessageBox::ActionRole);
+    // No "(next start)" suffix: picking this restarts Olive straight into the new session (0082).
+    switch_session = box.addButton(tr("Switch to Xwayland + PRIME"), QMessageBox::ActionRole);
   }
 
   QPushButton* force = box.addButton(tr("Force %1 anyway").arg(requested),

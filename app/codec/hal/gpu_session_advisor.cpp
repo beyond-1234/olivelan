@@ -355,19 +355,13 @@ QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)
   }
 
   if (assessment.tier2_possible) {
-    QString text = Tr("Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than "
-                      "Tier 3.").arg(assessment.display_gpu);
-
-    if (assessment.display_gpu.contains(QStringLiteral("AMD"), Qt::CaseInsensitive)
-        || assessment.display_gpu.contains(QStringLiteral("Mesa"), Qt::CaseInsensitive)) {
-      // Measured limitation, not a guess: see reports/hal-zero-copy-matrix.md.
-      text += Tr(" This driver (Mesa/radeonsi) does not accept the plane formats VA-API exports, "
-                 "so the dmabuf zero-copy import cannot be established and every frame takes a "
-                 "GPU->CPU readback before upload; the decode itself still runs on the GPU.");
-    } else {
-      text += Tr(" Whether the dmabuf zero-copy import can be established depends on the driver.");
-    }
-    return text;
+    // Deliberately no per-driver claim here. Whether the dmabuf import succeeds depends on the
+    // stream *and* the driver, and patch 0087 showed that a driver we had written off
+    // (Mesa/radeonsi) does establish zero-copy once the EGLint attrib array is passed with the
+    // correct ABI. The runtime probe tree and the [VAAPI-HAL] log carry the actual import status;
+    // the only thing this sentence must promise is that decoding runs on the display GPU.
+    return Tr("Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3.")
+        .arg(assessment.display_gpu);
   }
 
   return Tr("Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode "
@@ -408,7 +402,7 @@ QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
       actions << Tr("[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context "
                     "lands on the discrete GPU, which makes Tier 1 reachable. The cost is the "
                     "native session (per-monitor fractional scaling, native input methods). "
-                    "Takes effect on the next start.");
+                    "Switching restarts Olive into the new session.");
     } else if (!assessment.xwayland_available) {
       actions << Tr("Xwayland is not available (no reachable X display), so that option cannot be "
                     "selected on this machine.");

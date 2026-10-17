@@ -7495,14 +7495,6 @@ Please check your audio preferences and try again.</source>
         <translation>Tier 2——VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。</translation>
     </message>
     <message>
-        <source> This driver (Mesa/radeonsi) does not accept the plane formats VA-API exports, so the dmabuf zero-copy import cannot be established and every frame takes a GPU-&gt;CPU readback before upload; the decode itself still runs on the GPU.</source>
-        <translation>该驱动（Mesa/radeonsi）不接受 VA-API 导出的平面格式，dmabuf 零拷贝导入无法建立，每帧会经 GPU-&gt;CPU 回读后再上传；解码本身仍在 GPU 上。</translation>
-    </message>
-    <message>
-        <source> Whether the dmabuf zero-copy import can be established depends on the driver.</source>
-        <translation>dmabuf 零拷贝导入能否建立取决于驱动。</translation>
-    </message>
-    <message>
         <source>Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode is available.</source>
         <translation>Tier 3——强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。</translation>
     </message>
@@ -7523,8 +7515,8 @@ Please check your audio preferences and try again.</source>
         <translation>本机没有 NVIDIA GPU，Tier 1 不适用；下面两项是仅有的选择。</translation>
     </message>
     <message>
-        <source>[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context lands on the discrete GPU, which makes Tier 1 reachable. The cost is the native session (per-monitor fractional scaling, native input methods). Takes effect on the next start.</source>
-        <translation>【次优】Xwayland + PRIME：切到 X11（xcb），让 OpenGL 上下文落在独显，从而拿到 Tier 1。代价是放弃原生会话（逐屏分数缩放、原生输入法）。下次启动生效。</translation>
+        <source>[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context lands on the discrete GPU, which makes Tier 1 reachable. The cost is the native session (per-monitor fractional scaling, native input methods). Switching restarts Olive into the new session.</source>
+        <translation>【次优】Xwayland + PRIME：切到 X11（xcb），让 OpenGL 上下文落在独显，从而拿到 Tier 1。代价是放弃原生会话（逐屏分数缩放、原生输入法）。切换后 Olive 会自动重启进入新会话。</translation>
     </message>
     <message>
         <source>Xwayland is not available (no reachable X display), so that option cannot be selected on this machine.</source>
@@ -7642,8 +7634,8 @@ Please check your audio preferences and try again.</source>
         <translation>Tier 3（强化 CPU 解码）</translation>
     </message>
     <message>
-        <source>Session to use on the next start</source>
-        <translation>下次启动使用的会话</translation>
+        <source>Display session</source>
+        <translation>显示会话</translation>
     </message>
     <message>
         <source>Native session (recommended default)</source>
@@ -7833,8 +7825,8 @@ Please check your audio preferences and try again.</source>
         <translation>改用 Tier 3（CPU 解码）</translation>
     </message>
     <message>
-        <source>Switch to Xwayland + PRIME (next start)</source>
-        <translation>改用 Xwayland + PRIME（下次启动生效）</translation>
+        <source>Switch to Xwayland + PRIME</source>
+        <translation>改用 Xwayland + PRIME</translation>
     </message>
     <message>
         <source>Force %1 anyway</source>
