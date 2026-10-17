@@ -53,11 +53,25 @@ HALBackendDialog::HALBackendDialog(QWidget* parent) :
     // Warn (but still allow) forcing a backend the probe considers unavailable.
     const QVariant avail = backend_combo_->itemData(idx, Qt::UserRole + 1);
     if (backend_id != QStringLiteral("auto") && avail.isValid() && !avail.toBool()) {
-      const auto answer = QMessageBox::warning(this, tr("Backend unavailable"),
-          tr("The probe did not detect support for this backend on this system. "
-             "Forcing it may fail at initialization and fall back to automatic routing. "
-             "Continue anyway?"),
-          QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+      // Patch 0079: give the specific reason when it is an interop problem, since "may fail at
+      // initialization" understates it - the stream simply produces no picture at all.
+      QString explanation;
+      if (backend_id == QStringLiteral("cuda")
+          && GpuEnvironmentProbe::Instance().IsCudaGlInteropBlocked()) {
+        explanation = tr("Tier 1 requires the OpenGL context and CUDA on the same NVIDIA GPU, but "
+                         "on this session the OpenGL context is on \"%1\". The frame pool will fail "
+                         "to register its textures and this stream will produce no picture.\n\n"
+                         "Switch the GPU session to Xwayland + PRIME, or choose Tier 3 instead.")
+                          .arg(QString::fromStdString(
+                              GpuEnvironmentProbe::Instance().GetOpenGlVendor()));
+      } else {
+        explanation = tr("The probe did not detect support for this backend on this system. "
+                         "Forcing it may fail at initialization and fall back to automatic routing. "
+                         "Continue anyway?");
+      }
+
+      const auto answer = QMessageBox::warning(this, tr("Backend unavailable"), explanation,
+                                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
       if (answer != QMessageBox::Yes) {
         return;
       }
@@ -107,6 +121,11 @@ void HALBackendDialog::PopulateProbeInfo()
   auto& probe = GpuEnvironmentProbe::Instance();
   probe.Refresh();
 
+  // Patch 0079 (Phase 9): this dialog runs before the main window exists, so nothing has reported a
+  // GL vendor yet. Without it every Tier 1 looks available, and the user can force one that cannot
+  // possibly work (CUDA-GL interop needs the GL context on the NVIDIA GPU).
+  probe.ProbePlatformOpenGlVendor();
+
   auto add_item = [this](QTreeWidgetItem* parent, const QString& key, const QString& value) {
     auto* item = new QTreeWidgetItem(parent);
     item->setText(0, key);
@@ -133,7 +152,10 @@ void HALBackendDialog::PopulateProbeInfo()
   }
 
   auto* backends = new QTreeWidgetItem(probe_tree_, {tr("Backend availability")});
-  add_item(backends, QStringLiteral("CUDA-NVDEC (Tier 1)"), probe.HasNvdecSupport() ? tr("Available") : tr("Unavailable"));
+  add_item(backends, QStringLiteral("CUDA-NVDEC (Tier 1)"),
+           probe.IsCudaGlInteropBlocked()
+               ? tr("Unavailable - the OpenGL context is not on the NVIDIA GPU")
+               : (probe.HasNvdecSupport() ? tr("Available") : tr("Unavailable")));
   add_item(backends, QStringLiteral("VideoToolbox (Tier 2, macOS)"), probe.SupportsVideoToolbox() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), probe.SupportsVaapiDmaBuf() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("D3D11 Interop (Tier 2, Windows)"), probe.SupportsD3D11() ? tr("Available") : tr("Unavailable"));
@@ -170,7 +192,18 @@ void HALBackendDialog::PopulateBackendCombo()
   backend_combo_->addItem(tr("Auto (dynamic probe)"), QStringLiteral("auto"));
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
-  add_backend(QStringLiteral("CUDA-NVDEC (Tier 1)"), QStringLiteral("cuda"), probe.HasNvdecSupport());
+  // Patch 0079 (Phase 9): NVDEC being present is not enough - Tier 1 also needs the OpenGL context
+  // on the same NVIDIA GPU, which is exactly what a hybrid Wayland session cannot provide.
+  if (probe.IsCudaGlInteropBlocked()) {
+    add_backend(QStringLiteral("CUDA-NVDEC (Tier 1)"), QStringLiteral("cuda"), false,
+                tr("the OpenGL context is not on the NVIDIA GPU"));
+    // Logged so a "why is Tier 1 greyed out?" report is answerable without a screenshot.
+    qInfo() << "[HAL Dialog] CUDA-NVDEC listed as unavailable: the OpenGL context is on"
+            << QString::fromStdString(probe.GetOpenGlVendor())
+            << "and CUDA-GL interop requires it on the NVIDIA GPU.";
+  } else {
+    add_backend(QStringLiteral("CUDA-NVDEC (Tier 1)"), QStringLiteral("cuda"), probe.HasNvdecSupport());
+  }
 #endif
 #if defined(__APPLE__)
   add_backend(QStringLiteral("VideoToolbox (Tier 2)"), QStringLiteral("videotoolbox"), probe.SupportsVideoToolbox());

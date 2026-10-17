@@ -5,6 +5,8 @@
 #include <iostream>
 #include <sstream>
 
+#include <QDebug>
+#include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QString>
@@ -89,6 +91,27 @@ bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor, bool from_rende
   gl_vendor_from_render_context_ = from_render_context;
 
   return true;
+}
+
+bool GpuEnvironmentProbe::ProbePlatformOpenGlVendor()
+{
+  QOffscreenSurface surface;
+  surface.create();
+
+  QOpenGLContext context;
+  context.create();
+
+  if (!surface.isValid() || !context.isValid() || !context.makeCurrent(&surface)) {
+    qWarning() << "[GPU Probe] Could not create an offscreen OpenGL context to determine the"
+               << "active GL vendor; interop availability will stay unknown for now.";
+    return false;
+  }
+
+  const char* vendor = reinterpret_cast<const char*>(context.functions()->glGetString(GL_VENDOR));
+  const bool recorded = RecordOpenGlVendor(vendor);
+
+  context.doneCurrent();
+  return recorded;
 }
 
 void GpuEnvironmentProbe::DetectOpenGlDevice()

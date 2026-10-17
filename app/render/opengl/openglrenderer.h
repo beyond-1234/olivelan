@@ -174,6 +174,12 @@ private:
   int cuda_returned_count_ = 0;
   int cuda_in_use_count_ = 0;
 
+  // Patch 0079 (Phase 9): both of these conditions are re-detected on every frame while they hold,
+  // so they are logged on the transition into them rather than once per frame. Without this a
+  // session that cannot do CUDA-GL interop buries its own log in identical warnings.
+  bool cuda_pool_capacity_warned_ = false;
+  bool cuda_pool_registration_failed_ = false;
+
   int AcquireCudaPoolSlot(int width, int height, PixelFormat format);
   bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format);
   void ReleaseCudaPoolSlot(int slot_index);

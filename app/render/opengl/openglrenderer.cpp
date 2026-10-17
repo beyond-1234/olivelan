@@ -355,7 +355,10 @@ int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height, PixelFormat forma
     }
   }
 
-  qWarning() << "[CUDA-GL-Pool] Pool capacity reached (" << cuda_frame_pool_.size() << "slots all in use)";
+  if (!cuda_pool_capacity_warned_) {
+    cuda_pool_capacity_warned_ = true;
+    qWarning() << "[CUDA-GL-Pool] Pool capacity reached (" << cuda_frame_pool_.size() << "slots all in use)";
+  }
   return -1;
 }
 
@@ -393,16 +396,22 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
                                                           GL_TEXTURE_2D,
                                                           cudaGraphicsRegisterFlagsSurfaceLoadStore);
   if (reg_err != cudaSuccess) {
-    qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err)
-               << "- if this is a hybrid-GPU laptop, the OpenGL context may be on the iGPU while"
-               << "CUDA/NVDEC is on the NVIDIA GPU (CUDA-GL interop cannot work across GPUs)."
-               << "Use an X11 (xcb) session with PRIME offload, or force -hal-backend software.";
+    if (!cuda_pool_registration_failed_) {
+      cuda_pool_registration_failed_ = true;
+      qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err)
+                 << "- if this is a hybrid-GPU laptop, the OpenGL context may be on the iGPU while"
+                 << "CUDA/NVDEC is on the NVIDIA GPU (CUDA-GL interop cannot work across GPUs)."
+                 << "Use an X11 (xcb) session with PRIME offload, or force -hal-backend software."
+                 << "(This will not be repeated for every frame.)";
+    }
     if (slot.gl_tex_id) {
       functions_->glDeleteTextures(1, &slot.gl_tex_id);
       slot.gl_tex_id = 0;
     }
     return false;
   }
+
+  cuda_pool_registration_failed_ = false;
 
   slot.width = width;
   slot.height = height;
@@ -426,6 +435,8 @@ int OpenGLRenderer::MarkCudaSlotBorrowed(int slot_index)
   slot.in_use = true;
   cuda_borrowed_count_++;
   cuda_in_use_count_++;
+  // The pool is serving frames again, so the next saturation is worth reporting anew.
+  cuda_pool_capacity_warned_ = false;
   return true;
 }
 

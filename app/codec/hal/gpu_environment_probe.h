@@ -110,6 +110,18 @@ public:
   ///        to be on the NVIDIA GPU. A platform-level context is only a stand-in, recorded before
   ///        any renderer exists, so the routing decision is not left blind until the first frame.
   bool RecordOpenGlVendor(const char* vendor, bool from_render_context = false);
+
+  /**
+   * @brief Probes the platform's GL vendor with a throw-away offscreen context and records it.
+   *
+   * For UI that must judge interop before any renderer exists - the HAL backend dialog runs before
+   * the main window, so nothing has reported a vendor yet and every Tier 1 would otherwise look
+   * available. The reading is recorded as a platform-level (non-authoritative) one, so a later
+   * report from the render context supersedes it.
+   *
+   * @return true if a vendor was obtained and recorded.
+   */
+  bool ProbePlatformOpenGlVendor();
   /**
    * @brief F-7 fix (HAL/Phase6-8 review): true only when a VA-API device could actually
    *        be created at runtime, not merely when the backend was compiled in. A pure

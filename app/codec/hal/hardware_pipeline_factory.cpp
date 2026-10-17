@@ -21,6 +21,16 @@ QString& ForcedBackendRef()
   return forced_backend;
 }
 
+// Patch 0079 (Phase 9): a forced backend that already failed physical initialization is not
+// retried for every stream. The failure is a property of the session (wrong codec, no quota, GL on
+// the wrong GPU), so re-attempting per stream added nothing but a repeated warning. Re-armed
+// whenever a backend is explicitly (re)selected.
+QString& ForcedBackendFailureRef()
+{
+  static QString failed_backend;
+  return failed_backend;
+}
+
 std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     const QString& name, AVCodecContext* codec_ctx, int width, int height, OpenGLRenderer* renderer)
 {
@@ -59,6 +69,8 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
 void HardwarePipelineFactory::SetForcedBackend(const QString& name)
 {
   ForcedBackendRef() = name.toLower().trimmed();
+  // Explicit (re)selection re-arms the attempt even for a backend that failed earlier.
+  ForcedBackendFailureRef().clear();
 }
 
 const QString& HardwarePipelineFactory::GetForcedBackend()
@@ -86,7 +98,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   //    ShouldUseHardwareDecode pre-filter ("user knows best" semantics), but a failed
   //    physical ProbeAndInitialize still falls back to the normal tiered routing.
   const QString& forced = GetForcedBackend();
-  if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
+  if (!forced.isEmpty() && forced != QStringLiteral("auto") && forced != ForcedBackendFailureRef()) {
     if (forced == QStringLiteral("cuda") && probe.IsCudaGlInteropBlocked()) {
       qWarning() << "[HAL Factory] Forcing the CUDA backend, but the active OpenGL context is on"
                  << QString::fromStdString(probe.GetOpenGlVendor())
@@ -100,8 +112,10 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
         qInfo() << "[HAL Factory] Forced backend selected:" << forced_pipeline->GetBackendName();
         return forced_pipeline;
       }
+      ForcedBackendFailureRef() = forced;
       qWarning() << "[HAL Factory] Forced backend" << forced
-                << "failed physical initialization; falling back to auto routing.";
+                << "failed physical initialization; falling back to auto routing for the rest of"
+                << "this session (no further retries).";
     }
   }
 
