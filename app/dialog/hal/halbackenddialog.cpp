@@ -166,11 +166,16 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
   }
 
   if (switch_session && box.clickedButton() == switch_session) {
-    OLIVE_CONFIG("GpuSessionMode") = static_cast<int>(GpuSessionAdvisor::Mode::XwaylandPrime);
-    Config::Save();
-    QMessageBox::information(this, tr("Saved"),
-        tr("Switched to Xwayland + PRIME. It takes effect the next time Olive starts.\n\n"
-           "For this session, please select Auto or a backend that works here."));
+    // Patch 0082 (Phase 9): restart straight into the new session rather than saving and asking the
+    // user to do it themselves. Closing the dialog lets main() see RestartLaunched() and exit.
+    if (!GpuSessionAdvisor::RestartWithSession(GpuSessionAdvisor::Mode::XwaylandPrime)) {
+      QMessageBox::warning(this, tr("Could not restart"),
+          tr("The session preference was saved, but Olive could not restart itself. "
+             "It will take effect the next time you start Olive."),
+          QMessageBox::Ok);
+    } else {
+      reject();
+    }
     return QString();
   }
 

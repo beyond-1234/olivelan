@@ -432,6 +432,12 @@ int main(int argc, char *argv[])
     }
   }
 
+  // Patch 0082 (Phase 9): the user asked to switch display session, which needs a new process. The
+  // replacement is already running, so stop here instead of initialising Core behind its back.
+  if (olive::GpuSessionAdvisor::RestartLaunched()) {
+    return 0;
+  }
+
   // Enable Google Crashpad if compiled with it
 #ifdef USE_CRASHPAD
   if (!InitializeCrashpad()) {

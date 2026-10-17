@@ -7666,16 +7666,12 @@ Please check your audio preferences and try again.</source>
         <translation>不再提示</translation>
     </message>
     <message>
-        <source>Restart required</source>
-        <translation>需要重启</translation>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
     </message>
     <message>
-        <source>Saved. This session is unchanged; Olive will restart under Xwayland with PRIME offload next time it starts.</source>
-        <translation>已保存。本次会话不变；Olive 下次启动时会以 Xwayland + PRIME 卸载运行。</translation>
-    </message>
-    <message>
-        <source>Saved. This session is unchanged; Olive will use the native session next time it starts.</source>
-        <translation>已保存。本次会话不变；Olive 下次启动时会使用原生会话。</translation>
+        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
+        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
     </message>
 </context>
 <context>
@@ -7845,16 +7841,12 @@ Please check your audio preferences and try again.</source>
         <translation>仍然强制 %1</translation>
     </message>
     <message>
-        <source>Saved</source>
-        <translation>已保存</translation>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
     </message>
     <message>
-        <source>Switched to Xwayland + PRIME. It takes effect the next time Olive starts.
-
-For this session, please select Auto or a backend that works here.</source>
-        <translation>已切换为 Xwayland + PRIME，Olive 下次启动时生效。
-
-本次会话仍请在上方选择「自动」，或一个当前可用的后端。</translation>
+        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
+        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
     </message>
     <message>
         <source>detected unavailable</source>

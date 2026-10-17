@@ -23,6 +23,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFileInfo>
+#include <QProcess>
 #include <QStringList>
 
 #include "config/config.h"
@@ -86,6 +87,11 @@ bool XSocketIsReachable()
 } // namespace
 
 namespace {
+
+/// @brief One-shot marker handed to the process we spawn, so it does not ask the same question again.
+const char* const kRestartedEnv = "OLIVE_GPU_SESSION_RESTARTED";
+
+bool g_restart_launched = false;
 
 /// @brief Shorthand for the translation context of everything in this file.
 QString Tr(const char* text)
@@ -165,6 +171,63 @@ bool GpuSessionAdvisor::IsSessionForcedByEnvironment()
 {
   const QByteArray requested = qgetenv("OLIVE_GPU_SESSION").trimmed().toLower();
   return requested == "xwayland" || requested == "xcb" || requested == "native" || requested == "wayland";
+}
+
+bool GpuSessionAdvisor::WasLaunchedByRestart()
+{
+  return !qgetenv(kRestartedEnv).isEmpty();
+}
+
+bool GpuSessionAdvisor::RestartLaunched()
+{
+  return g_restart_launched;
+}
+
+bool GpuSessionAdvisor::RestartWithSession(Mode mode)
+{
+  if (mode == Mode::XwaylandPrime && !IsXwaylandAvailable()) {
+    qWarning() << "[GPU Session] Cannot restart into Xwayland: no reachable X display.";
+    return false;
+  }
+
+  OLIVE_CONFIG("GpuSessionMode") = static_cast<int>(mode);
+  Config::Save();
+
+  // The replacement inherits our environment, so apply the choice to ourselves first.
+  if (mode == Mode::XwaylandPrime) {
+    qputenv("QT_QPA_PLATFORM", "xcb");
+    qputenv("__NV_PRIME_RENDER_OFFLOAD", "1");
+    qputenv("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
+  } else {
+    // Back to the native session: remove exactly what the other branch adds. Leaving PRIME set
+    // without xcb is what blanks the window under native Wayland.
+    qunsetenv("QT_QPA_PLATFORM");
+    qunsetenv("__NV_PRIME_RENDER_OFFLOAD");
+    qunsetenv("__GLX_VENDOR_LIBRARY_NAME");
+  }
+
+  // One-shot marker: the replacement was started because the user just answered this question, so
+  // it must not ask it again immediately.
+  qputenv(kRestartedEnv, "1");
+
+  const QString program = QCoreApplication::applicationFilePath();
+  const QStringList arguments = QCoreApplication::arguments().mid(1);
+
+  if (!QProcess::startDetached(program, arguments)) {
+    qWarning() << "[GPU Session] Failed to restart" << program
+               << "- the preference is saved and will apply on the next start.";
+    qunsetenv(kRestartedEnv);
+    return false;
+  }
+
+  qInfo() << "[GPU Session] Restarted as" << program << "with the session preference applied.";
+  g_restart_launched = true;
+
+  // No effect when the event loop has not started yet (the HAL backend dialog path runs before
+  // Core); main() checks RestartLaunched() for that case.
+  QCoreApplication::quit();
+
+  return true;
 }
 
 void GpuSessionAdvisor::ApplySessionPreference()

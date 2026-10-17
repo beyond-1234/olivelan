@@ -57,21 +57,26 @@ GpuSessionDialog::GpuSessionDialog(QWidget* parent) :
     const auto mode = xwayland_radio_->isChecked() ? GpuSessionAdvisor::Mode::XwaylandPrime
                                                    : GpuSessionAdvisor::Mode::NativeSession;
 
-    OLIVE_CONFIG("GpuSessionMode") = static_cast<int>(mode);
     if (dont_show_again_->isChecked()) {
       OLIVE_CONFIG("GpuSessionPromptDisabled") = true;
+      Config::Save();
     }
-    Config::Save();
 
-    // The QPA platform is bound when QApplication is constructed, so this can only take effect on
-    // the next launch. Say so explicitly rather than implying the session just changed.
-    QMessageBox::information(this, tr("Restart required"),
-        (mode == GpuSessionAdvisor::Mode::XwaylandPrime)
-            ? tr("Saved. This session is unchanged; Olive will restart under Xwayland with PRIME "
-                 "offload next time it starts.")
-            : tr("Saved. This session is unchanged; Olive will use the native session next time it "
-                 "starts."),
-        QMessageBox::Ok);
+    if (mode == GpuSessionAdvisor::ConfiguredMode()) {
+      // Nothing to change, so nothing to restart for.
+      accept();
+      return;
+    }
+
+    // Patch 0082 (Phase 9): a session change needs a new process, because the QPA platform is
+    // bound when QApplication is constructed. Restart into it now rather than leaving the user to
+    // do it by hand.
+    if (!GpuSessionAdvisor::RestartWithSession(mode)) {
+      QMessageBox::warning(this, tr("Could not restart"),
+          tr("The session preference was saved, but Olive could not restart itself. "
+             "It will take effect the next time you start Olive."),
+          QMessageBox::Ok);
+    }
 
     accept();
   });

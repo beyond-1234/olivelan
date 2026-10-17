@@ -66,6 +66,24 @@ public:
   /// @brief True when OLIVE_GPU_SESSION pins the session, i.e. don't ask the user.
   static bool IsSessionForcedByEnvironment();
 
+  /// @brief Patch 0082 (Phase 9): true when this process was launched by RestartWithSession().
+  static bool WasLaunchedByRestart();
+
+  /**
+   * @brief Patch 0082 (Phase 9): saves the preference, relaunches Olive with it applied, and asks
+   *        this process to exit.
+   *
+   * A session change needs a new process because the QPA platform is bound when QApplication is
+   * constructed. Launching the replacement here means the choice takes effect immediately instead
+   * of at some unspecified next start.
+   *
+   * @return true if the replacement process was started; the caller must then let this one exit.
+   */
+  static bool RestartWithSession(Mode mode);
+
+  /// @brief True once RestartWithSession() has launched the replacement process.
+  static bool RestartLaunched();
+
   /**
    * @brief Applies the session preference to the environment.
    *

@@ -572,6 +572,11 @@ void MainWindow::ShowGpuSessionDialogIfNeeded()
     return;
   }
 
+  // Patch 0082 (Phase 9): this process exists because the user just answered this very question.
+  if (GpuSessionAdvisor::WasLaunchedByRestart()) {
+    return;
+  }
+
   // Only a hybrid Wayland session has a real choice; everywhere else both modes put GL on the same
   // GPU and the prompt would be pure noise.
   if (!GpuSessionAdvisor::HasChoice()) {
@@ -581,6 +586,7 @@ void MainWindow::ShowGpuSessionDialogIfNeeded()
   // Non-modal for the same reason as the welcome dialog: an application-modal dialog shown around
   // startup fights the panels being opened nearby for activation, which on Wayland (KWin) makes the
   // main window look frozen.
+  qInfo() << "[GPU Session] Prompting for the display session choice.";
   GpuSessionDialog *dialog = new GpuSessionDialog(this);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   dialog->show();
