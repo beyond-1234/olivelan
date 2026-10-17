@@ -109,6 +109,8 @@ public slots:
 protected:
   virtual void showEvent(QShowEvent* e) override;
 
+  virtual void resizeEvent(QResizeEvent* e) override;
+
   virtual void closeEvent(QCloseEvent* e) override;
 
 #ifdef Q_OS_WINDOWS
@@ -116,6 +118,15 @@ protected:
 #endif
 
 private:
+  /**
+   * @brief Applies the default dock layout once the window actually has a size.
+   *
+   * On Wayland the first showEvent/resize can be delivered while the window is still 0x0. Building
+   * the layout at that point makes KDDockWidgets lay every panel out at zero size, leaving an empty
+   * window. We therefore defer the initial layout until the window reports a non-zero size.
+   */
+  void ApplyInitialLayoutIfNeeded();
+
   TimelinePanel* AppendTimelinePanel();
 
   template <typename T>
@@ -167,6 +178,8 @@ private:
 #endif
 
   bool first_show_;
+
+  bool initial_layout_applied_;
 
   Project *project_;
 

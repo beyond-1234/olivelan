@@ -24,6 +24,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QScreen>
+#include <QTimer>
 
 #include <kddockwidgets/LayoutSaver.h>
 
@@ -42,6 +43,7 @@ namespace olive {
 
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
+  initial_layout_applied_(false),
   project_(nullptr)
 {
   // Resizes main window to desktop geometry on startup. Fixes the following issues:
@@ -122,7 +124,10 @@ MainWindow::MainWindow(QWidget *parent) :
 
   UpdateTitle();
 
-  QMetaObject::invokeMethod(this, &MainWindow::SetDefaultLayout, Qt::QueuedConnection);
+  // NOTE: the default dock layout is deliberately *not* built here. On Wayland the window has no
+  // size yet at this point (and even the first showEvent/resize can still be 0x0), which would make
+  // KDDockWidgets lay every panel out at zero size and leave an empty window. ApplyInitialLayoutIfNeeded()
+  // builds it as soon as the window reports a real size - see showEvent()/resizeEvent().
 }
 
 MainWindow::~MainWindow()
@@ -163,7 +168,7 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
   if (!KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()))) {
     qWarning() << "Failed to restore saved dock layout (incompatible with KDDockWidgets 2.x or corrupt);"
                << "applying default layout.";
-    SetDefaultLayout();
+    ApplyInitialLayoutIfNeeded();
   }
 }
 
@@ -276,9 +281,15 @@ void MainWindow::OpenFolder(Folder *i, bool floating)
   panel->set_root(i);
 
   if (floating) {
+    // Floating panels are intentionally top-level windows.
+    panel->show();
+    panel->raise();
     panel->setFloating(floating);
   } else {
+    // Dock first, then show, so KDDockWidgets doesn't have to spin up a transient FloatingWindow.
     project_panel_->addDockWidgetAsTab(panel);
+    panel->show();
+    panel->raise();
   }
 
   // If the panel is closed, just destroy it
@@ -303,6 +314,11 @@ void MainWindow::OpenNodeInViewer(ViewerOutput *node)
   } else {
     // Create a viewer for this node
     ViewerPanel* viewer = AppendPanelInternal(QStringLiteral("ViewerPanel"), viewer_panels_);
+
+    // Viewers open as floating windows (they aren't docked anywhere), so show them explicitly.
+    // "For some reason raise() on its own doesn't do anything, we need both."
+    viewer->show();
+    viewer->raise();
 
     viewer->ConnectViewerNode(node);
 
@@ -630,8 +646,13 @@ TimelinePanel* MainWindow::AppendTimelinePanel()
   TimelinePanel* panel = AppendPanelInternal(QStringLiteral("TimelinePanel"), timeline_panels_);
 
   if (previous) {
+    // Dock first, then show, so KDDockWidgets doesn't have to spin up a transient FloatingWindow.
     previous->addDockWidgetAsTab(panel);
+    panel->show();
+    panel->raise();
   } else {
+    panel->show();
+    panel->raise();
     panel->SetSignalInsteadOfClose(false);
   }
 
@@ -884,9 +905,40 @@ void MainWindow::SetDefaultLayout()
   premaximized_state_.clear();
 }
 
+void MainWindow::ApplyInitialLayoutIfNeeded()
+{
+  if (initial_layout_applied_) {
+    return;
+  }
+
+  // On Wayland the window is still 0x0 when the first showEvent/resize arrives. Building the dock
+  // layout at that size leaves every panel at zero size (an empty window), so wait for a real size.
+  if (width() <= 0 || height() <= 0) {
+    return;
+  }
+
+  initial_layout_applied_ = true;
+  SetDefaultLayout();
+}
+
+void MainWindow::resizeEvent(QResizeEvent *e)
+{
+  QMainWindow::resizeEvent(e);
+
+  ApplyInitialLayoutIfNeeded();
+}
+
 void MainWindow::showEvent(QShowEvent *e)
 {
   QMainWindow::showEvent(e);
+
+  // The window may already have a real size here (X11), or still be 0x0 (Wayland), in which case
+  // resizeEvent() will build the layout once the compositor has configured the window.
+  ApplyInitialLayoutIfNeeded();
+  if (!initial_layout_applied_) {
+    // Retry once the event loop has processed the platform's configure/resize.
+    QTimer::singleShot(0, this, &MainWindow::ApplyInitialLayoutIfNeeded);
+  }
 
   if (first_show_) {
     QMetaObject::invokeMethod(Core::instance(), "CheckForAutoRecoveries", Qt::QueuedConnection);
@@ -916,9 +968,9 @@ T *MainWindow::AppendPanelInternal(const QString &panel_name, QList<T*>& list)
 {
   T* panel = new T(TransformNameForSerialization(panel_name, list.size()));
 
-  // For some reason raise() on its own doesn't do anything, we need both
-  panel->show();
-  panel->raise();
+  // NOTE: deliberately not shown here. Calling show() on a dock widget that isn't docked yet makes
+  // KDDockWidgets morph it into a FloatingWindow (a real top-level window), which flashes a taskbar
+  // entry before docking removes it again. Callers dock the panel first and then show it.
 
   list.append(panel);
 
