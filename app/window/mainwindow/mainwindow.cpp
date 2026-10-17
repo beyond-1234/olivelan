@@ -172,12 +172,18 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
     qWarning() << "Failed to restore saved dock layout (incompatible with KDDockWidgets 2.x or corrupt);"
                << "rebuilding default layout.";
 
-    // Rebuild unconditionally. restoreLayout() validates the blob before mutating, but its RAII
-    // cleanup still prunes empty groups from the *current* layout, so the initial default layout
-    // can be left partially dismantled. ApplyInitialLayoutIfNeeded() would be a no-op here (it
-    // already ran), so call SetDefaultLayout() directly.
-    initial_layout_applied_ = true;
-    SetDefaultLayout();
+    // Rebuild when a layout was already applied (0075's guarantee: restoreLayout()'s RAII cleanup
+    // can prune empty groups from the *current* layout, so the initial default layout may be left
+    // partially dismantled), and also when the window already has a real size.
+    //
+    // Patch 0092 (P2-3): if neither is true - i.e. we are still at 0x0 before the first Wayland
+    // configure - leave initial_layout_applied_ false and let ApplyInitialLayoutIfNeeded() build the
+    // layout once a real size arrives. Setting the flag here used to bypass that size gate and
+    // permanently leave every panel at zero size.
+    if (initial_layout_applied_ || (width() > 0 && height() > 0)) {
+      initial_layout_applied_ = true;
+      SetDefaultLayout();
+    }
   }
 }
 

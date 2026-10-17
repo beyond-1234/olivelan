@@ -6,6 +6,7 @@ extern "C" {
 }
 
 #include <QDebug>
+#include <QScopeGuard>
 #include "render/opengl/openglrenderer.h"
 
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
@@ -14,6 +15,7 @@ extern "C" {
 #include <va/va_drmcommon.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cstring>
 #include <vector>
 
@@ -100,6 +102,13 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     return false;
   }
 
+  // Patch 0092 (P2-7): check this before exporting a surface or creating any EGLImage. The old
+  // check ran after both images existed, so that branch leaked two images per frame.
+  if (!renderer_) {
+    qWarning() << "[VAAPI-HAL] Renderer context not attached; cannot transfer frame";
+    return false;
+  }
+
   VASurfaceID surface_id = reinterpret_cast<uintptr_t>(hw_frame->data[3]);
   VADRMPRIMESurfaceDescriptor prime_desc{};
   
@@ -124,6 +133,10 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   for (uint32_t i = 0; i < prime_desc.num_objects; ++i) {
     exported_fds_.push_back(prime_desc.objects[i].fd);
   }
+
+  // Every return from here on closes the fds exported above; the normal path explicitly releases
+  // them right after compositing, which makes this a no-op.
+  auto fd_guard = qScopeGuard([this]() { ReleaseExportedFds(); });
 
   // Patch 0050 (item #5): import strategy selected by measurement on Radeon 780M /
   // Mesa radeonsi 25.2.8 (see p010_export_probe / vaapi_import_probe).
@@ -169,9 +182,9 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
                         || (prime_desc.layers[1].drm_format == kFccGR32)
                         || (prime_desc.layers[1].drm_format == kFccGR1616);
   if (is_10bit) {
-    static bool noted = false;
-    if (!noted) {
-      noted = true;
+    static std::atomic<bool> noted{false};
+    bool expected = false;
+    if (noted.compare_exchange_strong(expected, true)) {
       qInfo() << "[VAAPI-HAL] 10-bit surface detected (Y fourcc" << Qt::hex << prime_desc.layers[0].drm_format
               << ", UV fourcc" << prime_desc.layers[1].drm_format << Qt::dec
               << "); 16-bit planes are imported intact (GL_R16/GL_RG16) and composed into a"
@@ -203,6 +216,28 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   typedef void* EGLImageKHRHandle;
   typedef void (*PFNEGLDESTROYIMAGEKHR)(void*, EGLImageKHRHandle);
   typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
+
+  // Patch 0092 (P2-7): images/fds are owned by guards so every early return destroys them in the
+  // order Mesa requires (images before fds). Declaration order matters: `images` is constructed
+  // after `fd_guard` and therefore destroyed first.
+  struct EglImageGuard {
+    void* display = nullptr;
+    void* y = nullptr;
+    void* uv = nullptr;
+    PFNEGLDESTROYIMAGEKHR destroy = nullptr;
+
+    ~EglImageGuard() { Reset(); }
+
+    void Reset()
+    {
+      if (destroy) {
+        if (y) destroy(display, y);
+        if (uv) destroy(display, uv);
+      }
+      y = nullptr;
+      uv = nullptr;
+    }
+  };
 
   // Resolve every extension pointer on each call. A one-time static cache would freeze nullptrs if
   // the first invocation had no current GL context, permanently disabling DMA-BUF import afterwards
@@ -292,9 +327,20 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
                          prime_desc.objects[uv_obj].fd, prime_desc.layers[1].offset[0],
                          prime_desc.layers[1].pitch[0], prime_desc.objects[uv_obj].drm_format_modifier);
 
-  void* egl_image_y = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y.data());
-  void* egl_image_uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
-  if (!egl_image_y || !egl_image_uv) {
+  auto pfn_eglDestroyImageKHR =
+      reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
+  if (!pfn_eglDestroyImageKHR) {
+    qWarning() << "[VAAPI-HAL] eglDestroyImageKHR unavailable; refusing to create images that"
+               << "cannot be released";
+    return false;
+  }
+
+  EglImageGuard images;
+  images.display = egl_display;
+  images.destroy = pfn_eglDestroyImageKHR;
+  images.y = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_y.data());
+  images.uv = pfn_eglCreateImageKHR(egl_display, nullptr, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs_uv.data());
+  if (!images.y || !images.uv) {
 
     // Reaching this point means a real driver/stream limitation, NOT an API misuse.
     //
@@ -315,24 +361,12 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     // GL_TEXTURE_EXTERNAL_OES - GL_TEXTURE_2D would fail at bind time.
 
     qWarning() << "[VAAPI-HAL] eglCreateImageKHR failed for plane images (y:"
-               << static_cast<bool>(egl_image_y) << " uv:" << static_cast<bool>(egl_image_uv) << ")"
+               << static_cast<bool>(images.y) << " uv:" << static_cast<bool>(images.uv) << ")"
                << "- plane fourcc" << Qt::hex << prime_desc.layers[0].drm_format
                << "/" << prime_desc.layers[1].drm_format << "with modifier"
                << prime_desc.objects[y_obj].drm_format_modifier
                << "is not importable by this EGL driver; this stream uses a GPU->CPU readback.";
-    if (egl_image_y) {
-      auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
-      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(egl_display, egl_image_y);
-    }
-    if (egl_image_uv) {
-      auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
-      if (pfn_eglDestroyImageKHR) pfn_eglDestroyImageKHR(egl_display, egl_image_uv);
-    }
-    return false;
-  }
-
-  if (!renderer_) {
-    qWarning() << "[VAAPI-HAL] Renderer context not attached; cannot transfer frame";
+    // EglImageGuard destroys any image that was created; fd_guard closes the exported fds.
     return false;
   }
 
@@ -358,28 +392,24 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   }
   const bool full_range = (params.color_range() == VideoParams::kColorRangeFull);
 
-  TexturePtr tex = renderer_->CompositeTextureFromVaapiPlanes(params, egl_image_y, egl_image_uv,
+  TexturePtr tex = renderer_->CompositeTextureFromVaapiPlanes(params, images.y, images.uv,
                                                               prime_desc.width, prime_desc.height,
                                                               bits, full_range,
                                                               crv, cbu, cgu, cgv);
-  static bool s_zero_copy_announced = false;
-  if (!s_zero_copy_announced && tex) {
-    s_zero_copy_announced = true;
-    qInfo() << "[VAAPI-HAL] DMA-BUF zero-copy pipeline successfully established on"
-            << prime_desc.width << "x" << prime_desc.height << "surface;"
-            << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks).";
+  static std::atomic<bool> s_zero_copy_announced{false};
+  if (tex && !s_zero_copy_announced.load()) {
+    bool expected = false;
+    if (s_zero_copy_announced.compare_exchange_strong(expected, true)) {
+      qInfo() << "[VAAPI-HAL] DMA-BUF zero-copy pipeline successfully established on"
+              << prime_desc.width << "x" << prime_desc.height << "surface;"
+              << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks).";
+    }
   }
 
   // The composite has rendered into the pooled GL texture; both EGLImages and the fds
   // are dead weight now. Destroying the images before the fd close keeps the
-  // image-before-fd destruction order Mesa requires.
-  {
-    auto pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
-    if (pfn_eglDestroyImageKHR) {
-      pfn_eglDestroyImageKHR(egl_display, egl_image_y);
-      pfn_eglDestroyImageKHR(egl_display, egl_image_uv);
-    }
-  }
+  // image-before-fd destruction order Mesa requires. The guards handle every other return path.
+  images.Reset();
   ReleaseExportedFds();
 
   if (!tex) {

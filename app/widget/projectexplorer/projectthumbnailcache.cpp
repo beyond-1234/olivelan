@@ -171,12 +171,17 @@ private:
 ProjectThumbnailCache::ProjectThumbnailCache(QObject *parent) :
   QObject(parent)
 {
+  // Patch 0092 (P2-4): a private pool keeps thumbnail decoding out of the global pool and bounds
+  // it to two workers; otherwise a folder of clips can occupy every core while the UI is opening.
+  pool_.setMaxThreadCount(2);
 }
 
 ProjectThumbnailCache::~ProjectThumbnailCache()
 {
-  // Don't let in-flight workers outlive us (they post results back into this object).
-  QThreadPool::globalInstance()->waitForDone();
+  // Don't let in-flight workers outlive us (they post results back into this object). Clear()
+  // drops queued runnables, and waitForDone() only waits for *our* pool.
+  pool_.clear();
+  pool_.waitForDone();
 }
 
 QPixmap ProjectThumbnailCache::Get(const QString &key) const
@@ -201,7 +206,7 @@ void ProjectThumbnailCache::Request(const QString &key, const QString &filename)
 
   in_flight_.insert(key);
 
-  QThreadPool::globalInstance()->start(new ProjectThumbnailWorker(this, key, filename));
+  pool_.start(new ProjectThumbnailWorker(this, key, filename));
 }
 
 void ProjectThumbnailCache::OnWorkerDone(const QString &key, const QImage &image)

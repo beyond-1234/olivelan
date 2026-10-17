@@ -28,6 +28,7 @@
 #include <QPixmap>
 #include <QSet>
 #include <QString>
+#include <QThreadPool>
 
 #include "common/define.h"
 
@@ -82,6 +83,9 @@ signals:
 
 private:
   friend class ProjectThumbnailWorker;
+  // Test seam for the P2-8 regression suite (patch 0093): lets the negative-cache/FIFO state
+  // machine be exercised without starting real FFmpeg decodes.
+  friend class ProjectThumbnailCacheTest;
 
   /// Delivers a finished decode. Always runs on the GUI thread.
   void OnWorkerDone(const QString &key, const QImage &image);
@@ -107,6 +111,15 @@ private:
 
   /// FIFO order for `failed_`, oldest first.
   QList<QString> failed_order_;
+
+  /**
+   * @brief Private decode pool (patch 0092 / P2-4).
+   *
+   * Kept separate from QThreadPool::globalInstance() so destroying the cache only waits for
+   * thumbnail decodes, not for unrelated global-pool work (and so thumbnail concurrency is
+   * bounded instead of consuming every core).
+   */
+  QThreadPool pool_;
 };
 
 }
