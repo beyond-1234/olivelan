@@ -71,7 +71,7 @@ public:
    */
   static const int kThumbnailKeyRole = Qt::UserRole + 2;
 
-  /// Role: QStringList of short metadata badges ("4K", "10bit", "60FPS", "WAV") for a Footage item.
+  /// Role: QStringList of short metadata badges ("4K", "10bit", "60FPS", "AUDIO") for a Footage item.
   static const int kBadgeRole = Qt::UserRole + 3;
 
   /// Role: human-readable duration ("00:01:23:14", or seconds for audio-only) for a Footage item.

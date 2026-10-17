@@ -129,6 +129,12 @@ elseif(APPLE)
 elseif(UNIX)
   # Set Linux-specific properties for application
   install(TARGETS olive-editor RUNTIME DESTINATION bin)
+
+  # Patch 0093 (P2-5): Source Han Sans SC is distributed under SIL OFL 1.1, which requires the
+  # licence to accompany the font. The qrc embeds it in the binary; this also installs a
+  # filesystem copy for distributors and users.
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/OFL.txt
+          DESTINATION share/olive-editor/licenses)
 endif()
 
 # Set link libraries

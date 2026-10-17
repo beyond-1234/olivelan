@@ -34,7 +34,7 @@ namespace olive {
 namespace {
 
 /**
- * @brief Short metadata badges for a Footage tile (e.g. "4K", "10bit", "60FPS", "WAV").
+ * @brief Short metadata badges for a Footage tile (e.g. "4K", "10bit", "60FPS", "AUDIO").
  *
  * Reads only the already-parsed stream parameters -- no decoding or file I/O -- so it is safe to
  * call while the view is painting. Once patch 0072b's tile view is in use this is the single place
@@ -63,7 +63,10 @@ QStringList ComputeBadges(Footage *footage)
       badges.append(QStringLiteral("60FPS"));
     }
   } else if (has_audio) {
-    badges.append(QStringLiteral("WAV"));
+    // Patch 0093 (P2-6): this branch is "audio-only", not "WAV". The old label claimed a container
+    // for every MP3/AAC/FLAC/Opus file. AudioParams does not carry the codec id, so a generic badge
+    // is the honest answer until the container name is exposed.
+    badges.append(QStringLiteral("AUDIO"));
   }
 
   return badges;

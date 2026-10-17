@@ -39,7 +39,7 @@ QColor BadgeColor(const QString &badge)
     return QColor(0x87, 0x64, 0xB8);
   } else if (badge == QStringLiteral("60FPS")) {
     return metro::kTrackVideo;
-  } else if (badge == QStringLiteral("WAV")) {
+  } else if (badge == QStringLiteral("AUDIO")) {
     return metro::kTrackAudio;
   }
 
