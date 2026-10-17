@@ -97,6 +97,15 @@ public:
 
   void SelectFootage(const QVector<Footage*> &e);
 
+  /**
+   * @brief Patch 0095: starts playback for a fixed duration, then exits the process.
+   *
+   * Hidden `--autoplay` benchmark aid. It waits for the startup project's sequence viewer to
+   * connect, plays continuously from the current playhead, and logs a start/finish pair so an
+   * external harness can measure drop rate, CPU time, and readback counts without injecting input.
+   */
+  void StartAutoplayBenchmark(int seconds);
+
 public slots:
   void SetProject(Project *p);
 
@@ -126,6 +135,8 @@ private:
    * window. We therefore defer the initial layout until the window reports a non-zero size.
    */
   void ApplyInitialLayoutIfNeeded();
+
+  void TryStartAutoplayBenchmark();
 
   TimelinePanel* AppendTimelinePanel();
 
@@ -180,6 +191,9 @@ private:
   bool first_show_;
 
   bool initial_layout_applied_;
+
+  int autoplay_seconds_;
+  int autoplay_wait_attempts_;
 
   Project *project_;
 

@@ -93,6 +93,17 @@ public:
       startup_project_ = p;
     }
 
+    /// Patch 0095: hidden benchmarking aid. 0 disables it.
+    int autoplay_seconds() const
+    {
+      return autoplay_seconds_;
+    }
+
+    void set_autoplay_seconds(int seconds)
+    {
+      autoplay_seconds_ = seconds;
+    }
+
     const QString& startup_language() const
     {
       return startup_language_;
@@ -119,6 +130,8 @@ public:
     QString startup_project_;
 
     QString startup_language_;
+
+    int autoplay_seconds_;
 
     bool run_fullscreen_;
 

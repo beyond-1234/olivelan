@@ -1059,4 +1059,67 @@ void MainWindow::RemovePanelInternal(QList<T *> &list, T *panel)
   list.removeOne(panel);
 }
 
+void MainWindow::StartAutoplayBenchmark(int seconds)
+{
+  if (seconds <= 0) {
+    return;
+  }
+
+  autoplay_seconds_ = seconds;
+  autoplay_wait_attempts_ = 0;
+  qInfo() << "[Autoplay] waiting for the startup project's sequence viewer";
+  TryStartAutoplayBenchmark();
+}
+
+void MainWindow::TryStartAutoplayBenchmark()
+{
+  if (autoplay_seconds_ <= 0) {
+    return;
+  }
+
+  ViewerWidget* viewer = sequence_viewer_panel_ ? sequence_viewer_panel_->GetViewerWidget()
+                                                : nullptr;
+  if (!viewer || !sequence_viewer_panel_->GetConnectedViewer()) {
+    // 250 ms x 120 = 30 s. A project load or a slow first frame should fit comfortably; failing
+    // loudly beats hanging a benchmark harness forever.
+    if (++autoplay_wait_attempts_ >= 120) {
+      qWarning() << "[Autoplay] no sequence became available within 30 seconds; aborting";
+      close();
+      QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+      return;
+    }
+    QTimer::singleShot(250, this, &MainWindow::TryStartAutoplayBenchmark);
+    return;
+  }
+
+  const int seconds = autoplay_seconds_;
+  autoplay_seconds_ = 0;
+  ViewerOutput* node = sequence_viewer_panel_->GetConnectedViewer();
+  const rational start = node->GetPlayhead();
+
+  qInfo() << "[Autoplay] starting continuous playback for" << seconds << "seconds"
+          << "sequence length" << node->GetLength().toDouble();
+  viewer->Play();
+
+  QTimer::singleShot(seconds * 1000, this, [this, viewer, node, start, seconds]() {
+    viewer->Pause();
+    const double advanced = (node->GetPlayhead() - start).toDouble();
+    qInfo() << "[Autoplay] finished continuous playback for" << seconds << "seconds;"
+            << "playhead advanced" << advanced << "seconds";
+    if (advanced < seconds * 0.95) {
+      qWarning() << "[Autoplay] playback fell behind wall clock by"
+                 << (seconds - advanced) << "seconds";
+    }
+
+    // Let in-flight render tickets and decoder threads drain, then run the normal close path.
+    // Calling QCoreApplication::exit() directly skipped MainWindow::closeEvent(), so Core destroyed
+    // RenderManager before the still-alive ViewerDisplayWidgets (null dereference in makeCurrent).
+    QTimer::singleShot(2000, this, [this]() {
+      qInfo() << "[Autoplay] render drain complete; closing the benchmark session";
+      close();
+      QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+    });
+  });
+}
+
 }

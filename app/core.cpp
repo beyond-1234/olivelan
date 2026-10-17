@@ -170,6 +170,16 @@ void Core::Start()
 
     // If we have a startup
     QMetaObject::invokeMethod(this, "OpenStartupProject", Qt::QueuedConnection);
+
+    // Patch 0095: hidden continuous-playback benchmark. Startup project loading is asynchronous,
+    // so MainWindow polls until a sequence viewer is connected (or gives up after 30 s).
+    if (core_params_.autoplay_seconds() > 0) {
+      QTimer::singleShot(0, this, [this]() {
+        if (main_window_) {
+          main_window_->StartAutoplayBenchmark(core_params_.autoplay_seconds());
+        }
+      });
+    }
     break;
   case CoreParams::kHeadlessExport:
     qInfo() << "Headless export is not fully implemented yet";
@@ -1635,6 +1645,7 @@ void Core::OpenProject()
 
 Core::CoreParams::CoreParams() :
   mode_(kRunNormal),
+  autoplay_seconds_(0),
   run_fullscreen_(false),
   crash_(false)
 {

@@ -50,6 +50,7 @@
 #endif
 
 #include "codec/hal/gpu_environment_probe.h"
+#include "core.h"
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
 #include "node/color/colormanager/colormanager.h"
@@ -421,6 +422,31 @@ OLIVE_ADD_TEST(GpuVaapiImportStatus)
   }
 
   probe.ResetVaapiImportStatus();
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(CoreAutoplayParamDefault)
+{
+  // Patch 0095: autoplay is opt-in, and a zero/negative value must never start a benchmark by
+  // accident. The actual playback path is exercised by the remote GUI benchmark.
+  Core::CoreParams params;
+  if (params.autoplay_seconds() != 0) {
+    std::cout << " - autoplay was enabled by default";
+    return __LINE__;
+  }
+
+  params.set_autoplay_seconds(7);
+  if (params.autoplay_seconds() != 7) {
+    std::cout << " - autoplay seconds were not stored";
+    return __LINE__;
+  }
+
+  params.set_autoplay_seconds(0);
+  if (params.autoplay_seconds() != 0) {
+    std::cout << " - autoplay could not be disabled";
+    return __LINE__;
+  }
 
   OLIVE_TEST_END;
 }

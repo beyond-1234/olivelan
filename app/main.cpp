@@ -236,6 +236,10 @@ int main(int argc, char *argv[])
   // Hidden crash option for debugging the crash handling
   auto crash_option = parser.AddOption({QStringLiteral("-crash")}, QString(), true, QString(), true);
 
+  // Patch 0095: hidden continuous-playback benchmark. Not part of the user-facing CLI.
+  auto autoplay_option = parser.AddOption({QStringLiteral("-autoplay")}, QString(), true,
+                                          QStringLiteral("seconds"), true);
+
   parser.Process(args);
 
   if (help_option->IsSet()) {
@@ -268,6 +272,16 @@ int main(int argc, char *argv[])
 
   if (crash_option->IsSet()) {
     startup_params.set_crash_on_startup(true);
+  }
+
+  if (autoplay_option->IsSet()) {
+    bool ok = false;
+    const int seconds = autoplay_option->GetSetting().toInt(&ok);
+    if (ok && seconds > 0) {
+      startup_params.set_autoplay_seconds(seconds);
+    } else {
+      qWarning() << "--autoplay expects a positive number of seconds";
+    }
   }
 
   // HAL backend forcing (phase5-07). Environment variable is the lowest-priority source;
