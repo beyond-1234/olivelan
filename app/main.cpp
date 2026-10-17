@@ -327,22 +327,22 @@ int main(int argc, char *argv[])
     // can be asserted from a log rather than guessed.
     qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
 
-    // Initialize Chinese font stack & embedded font for primary language support
-    int font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.ttf"));
+    // Initialize Chinese font stack & embedded font for primary language support (Adobe Source Han Sans / 思源黑体)
+    int font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.otf"));
     QFont app_font = QApplication::font();
     if (font_id != -1) {
       const QStringList font_families = QFontDatabase::applicationFontFamilies(font_id);
       if (!font_families.isEmpty()) {
-        app_font.setFamily(font_families.first());
+        app_font.setFamilies(font_families);
       }
     } else {
-      // Fallback Chinese font stack
+      // Fallback geometric sans Chinese font stack
 #if defined(Q_OS_WIN)
-      app_font.setFamilies({QStringLiteral("Microsoft YaHei UI"), QStringLiteral("SimHei")});
+      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("SimHei")});
 #elif defined(Q_OS_MAC)
-      app_font.setFamilies({QStringLiteral("PingFang SC"), QStringLiteral("Heiti SC")});
+      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("PingFang SC"), QStringLiteral("Heiti SC")});
 #else
-      app_font.setFamilies({QStringLiteral("Noto Sans CJK SC"), QStringLiteral("WenQuanYi Micro Hei")});
+      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("Noto Sans CJK SC"), QStringLiteral("WenQuanYi Micro Hei")});
 #endif
     }
     QApplication::setFont(app_font);
