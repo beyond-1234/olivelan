@@ -167,8 +167,14 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
   // layout rather than leaving panels in an undefined state.
   if (!KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()))) {
     qWarning() << "Failed to restore saved dock layout (incompatible with KDDockWidgets 2.x or corrupt);"
-               << "applying default layout.";
-    ApplyInitialLayoutIfNeeded();
+               << "rebuilding default layout.";
+
+    // Rebuild unconditionally. restoreLayout() validates the blob before mutating, but its RAII
+    // cleanup still prunes empty groups from the *current* layout, so the initial default layout
+    // can be left partially dismantled. ApplyInitialLayoutIfNeeded() would be a no-op here (it
+    // already ran), so call SetDefaultLayout() directly.
+    initial_layout_applied_ = true;
+    SetDefaultLayout();
   }
 }
 
