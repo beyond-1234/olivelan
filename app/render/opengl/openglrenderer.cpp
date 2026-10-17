@@ -393,7 +393,10 @@ bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, i
                                                           GL_TEXTURE_2D,
                                                           cudaGraphicsRegisterFlagsSurfaceLoadStore);
   if (reg_err != cudaSuccess) {
-    qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err);
+    qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err)
+               << "- if this is a hybrid-GPU laptop, the OpenGL context may be on the iGPU while"
+               << "CUDA/NVDEC is on the NVIDIA GPU (CUDA-GL interop cannot work across GPUs)."
+               << "Use an X11 (xcb) session with PRIME offload, or force -hal-backend software.";
     if (slot.gl_tex_id) {
       functions_->glDeleteTextures(1, &slot.gl_tex_id);
       slot.gl_tex_id = 0;

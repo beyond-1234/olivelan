@@ -5,6 +5,10 @@
 #include <iostream>
 #include <sstream>
 
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+#include <QString>
+
 extern "C" {
 #include <libavutil/hwcontext.h>
 #include <libavutil/pixdesc.h>
@@ -63,6 +67,43 @@ void GpuEnvironmentProbe::Refresh()
   DetectGpuTopology();
   DetectBackendCapabilities();
   DetectDecodeCapabilityMatrix();
+  DetectOpenGlDevice();
+}
+
+bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor)
+{
+  if (!vendor || !*vendor) {
+    return false;
+  }
+
+  // First non-empty vendor wins: the window/render context is what matters and it doesn't change
+  // mid-session.
+  if (gl_vendor_.empty()) {
+    gl_vendor_ = vendor;
+    gl_is_nvidia_ = QString::fromLatin1(vendor).contains(QStringLiteral("NVIDIA"), Qt::CaseInsensitive);
+  }
+
+  return true;
+}
+
+void GpuEnvironmentProbe::DetectOpenGlDevice()
+{
+  // Only trust a context that is already current on this thread. Creating a throw-away offscreen
+  // context here is deliberately avoided: on hybrid laptops it can bind a different GPU than the
+  // real window context, which would make this check report the wrong device.
+  QOpenGLContext* ctx = QOpenGLContext::currentContext();
+  if (!ctx || !ctx->isValid()) {
+    return;
+  }
+
+  if (QOpenGLFunctions* functions = ctx->functions()) {
+    RecordOpenGlVendor(reinterpret_cast<const char*>(functions->glGetString(GL_VENDOR)));
+  }
+}
+
+bool GpuEnvironmentProbe::IsCudaGlInteropBlocked() const
+{
+  return is_hybrid_topology_ && !gl_vendor_.empty() && !gl_is_nvidia_;
 }
 
 void GpuEnvironmentProbe::DetectDisplayServer()

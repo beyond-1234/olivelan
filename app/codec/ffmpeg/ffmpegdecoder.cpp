@@ -37,10 +37,14 @@ extern "C" {
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
 #include <QString>
 #include <QtMath>
 #include <QThread>
 #include <QtConcurrent/QtConcurrent>
+
+#include "codec/hal/gpu_environment_probe.h"
 
 #include "codec/planarfiledevice.h"
 #include "codec/hal/hardware_pipeline_factory.h"
@@ -279,6 +283,18 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
     // viewport renderer is constructed, so the pipeline cannot hold one any earlier.
     if (auto* gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
       instance_.hw_pipeline()->SetRenderer(gl_renderer);
+
+      // Record which GPU the real render context lives on. Tier 1's CUDA-GL interop only works
+      // when that is the same NVIDIA GPU as CUDA/NVDEC; the probe uses this to stop advertising
+      // Tier 1 on hybrid machines whose window context landed on the iGPU.
+      if (QOpenGLContext* ctx = QOpenGLContext::currentContext()) {
+        if (ctx->isValid()) {
+          if (QOpenGLFunctions* functions = ctx->functions()) {
+            GpuEnvironmentProbe::Instance().RecordOpenGlVendor(
+                reinterpret_cast<const char*>(functions->glGetString(GL_VENDOR)));
+          }
+        }
+      }
     }
   }
 

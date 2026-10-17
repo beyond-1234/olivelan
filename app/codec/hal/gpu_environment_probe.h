@@ -77,6 +77,33 @@ public:
   // Topology and backend capability checks
   bool IsHybridTopology() const { return is_hybrid_topology_; }
   bool HasNvdecSupport() const { return has_nvdec_support_; }
+
+  /**
+   * @brief Vendor string of the OpenGL context the app actually renders with (may be empty).
+   *
+   * Only recorded when a GL context is current on the calling thread (or explicitly provided),
+   * because creating a throw-away offscreen context is unreliable on hybrid laptops: it may bind
+   * a different GPU than the real window context.
+   */
+  const std::string& GetOpenGlVendor() const { return gl_vendor_; }
+  bool IsOpenGlOnNvidia() const { return gl_is_nvidia_; }
+
+  /**
+   * @brief True when Tier 1 (CUDA-NVDEC + CUDA-GL interop) cannot work on this machine.
+   *
+   * CUDA-GL interop requires the OpenGL context to live on the same NVIDIA GPU as CUDA/NVDEC.
+   * On hybrid laptops the window context can land on the iGPU (e.g. native Wayland without PRIME
+   * offload), in which case cudaGraphicsGLRegisterImage fails with
+   * cudaErrorInvalidGraphicsContext and the "zero-copy" path silently does nothing. In that case
+   * the factory routes straight to Tier 3 instead of pretending Tier 1 is available.
+   *
+   * Only answers true once the GL vendor is actually known; an empty vendor keeps the old
+   * behaviour so headless/import-time decodes are unaffected.
+   */
+  bool IsCudaGlInteropBlocked() const;
+
+  /// @brief Records the OpenGL vendor of the current (or supplied) context. First non-empty wins.
+  bool RecordOpenGlVendor(const char* vendor);
   /**
    * @brief F-7 fix (HAL/Phase6-8 review): true only when a VA-API device could actually
    *        be created at runtime, not merely when the backend was compiled in. A pure
@@ -128,12 +155,15 @@ private:
   void DetectGpuTopology();
   void DetectBackendCapabilities();
   void DetectDecodeCapabilityMatrix();
+  void DetectOpenGlDevice();
 
   GpuVendor primary_vendor_{GpuVendor::Unknown};
   DisplayServer display_server_{DisplayServer::Unknown};
   std::string primary_gpu_name_{"Unknown GPU"};
   size_t total_vram_mb_{0};
   bool is_hybrid_topology_{false};
+  std::string gl_vendor_;
+  bool gl_is_nvidia_{false};
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
   bool has_videotoolbox_support_{false};

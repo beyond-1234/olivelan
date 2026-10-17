@@ -87,6 +87,13 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   //    physical ProbeAndInitialize still falls back to the normal tiered routing.
   const QString& forced = GetForcedBackend();
   if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
+    if (forced == QStringLiteral("cuda") && probe.IsCudaGlInteropBlocked()) {
+      qWarning() << "[HAL Factory] Forcing the CUDA backend, but the active OpenGL context is on"
+                 << QString::fromStdString(probe.GetOpenGlVendor())
+                 << "- CUDA-GL interop will fail (cudaErrorInvalidGraphicsContext) and the"
+                 << "zero-copy path will not actually be active.";
+    }
+
     auto forced_pipeline = CreateForcedPipeline(forced, codec_ctx, width, height, renderer);
     if (forced_pipeline) {
       if (forced_pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
@@ -102,6 +109,22 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   if (!probe.ShouldUseHardwareDecode(codec_ctx->codec_id, codec_ctx->pix_fmt)) {
     qInfo() << "[HAL Factory] Codec" << avcodec_get_name(codec_ctx->codec_id)
             << "or format is routed directly to Tier 3 CPU decoding (bypassing HW quota).";
+    auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
+    sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
+    return sw_pipeline;
+  }
+
+  // 0.5 Capability honesty guard: CUDA-GL interop requires the OpenGL context to live on the same
+  //     NVIDIA GPU as CUDA/NVDEC. On hybrid laptops the window context can land on the iGPU (e.g.
+  //     native Wayland without PRIME offload), where cudaGraphicsGLRegisterImage fails with
+  //     cudaErrorInvalidGraphicsContext - Tier 1 would run but its zero-copy path would silently
+  //     do nothing. Route straight to Tier 3 with an explicit warning instead of pretending.
+  if (probe.IsCudaGlInteropBlocked()) {
+    qWarning() << "[HAL Factory] Hybrid GPU topology detected, but the active OpenGL context is on"
+               << QString::fromStdString(probe.GetOpenGlVendor())
+               << "- CUDA-GL interop (Tier 1 zero-copy) is unavailable."
+               << "Routing to Tier 3: Reinforced CPU Decode + Native YUV Shader Upload."
+               << "An X11 (xcb) session with PRIME offload is required for Tier 1 on this machine.";
     auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
     sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
     return sw_pipeline;
