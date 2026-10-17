@@ -208,6 +208,13 @@ private slots:
 
   void ShowWelcomeDialog();
 
+  /**
+   * @brief Patch 0078 (Phase 9): offers the display-session choice when it is actually meaningful.
+   *
+   * Logs the session classification on every start regardless of whether the prompt is shown.
+   */
+  void ShowGpuSessionDialogIfNeeded();
+
   void RevealViewerInProject(ViewerOutput *r);
   void RevealViewerInFootageViewer(ViewerOutput *r, const TimeRange &range);
 

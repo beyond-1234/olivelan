@@ -291,7 +291,7 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
         if (ctx->isValid()) {
           if (QOpenGLFunctions* functions = ctx->functions()) {
             GpuEnvironmentProbe::Instance().RecordOpenGlVendor(
-                reinterpret_cast<const char*>(functions->glGetString(GL_VENDOR)));
+                reinterpret_cast<const char*>(functions->glGetString(GL_VENDOR)), true);
           }
         }
       }

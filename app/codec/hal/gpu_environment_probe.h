@@ -102,8 +102,14 @@ public:
    */
   bool IsCudaGlInteropBlocked() const;
 
-  /// @brief Records the OpenGL vendor of the current (or supplied) context. First non-empty wins.
-  bool RecordOpenGlVendor(const char* vendor);
+  /// @brief Records the OpenGL vendor. First non-empty wins, except that a reading taken from the
+  ///        render context supersedes one taken from a platform-level (offscreen) context.
+  ///
+  /// @param from_render_context true when the vendor came from the context that actually renders.
+  ///        That is the authoritative source for CUDA-GL interop, which needs the *render* context
+  ///        to be on the NVIDIA GPU. A platform-level context is only a stand-in, recorded before
+  ///        any renderer exists, so the routing decision is not left blind until the first frame.
+  bool RecordOpenGlVendor(const char* vendor, bool from_render_context = false);
   /**
    * @brief F-7 fix (HAL/Phase6-8 review): true only when a VA-API device could actually
    *        be created at runtime, not merely when the backend was compiled in. A pure
@@ -164,6 +170,7 @@ private:
   bool is_hybrid_topology_{false};
   std::string gl_vendor_;
   bool gl_is_nvidia_{false};
+  bool gl_vendor_from_render_context_{false};
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
   bool has_videotoolbox_support_{false};

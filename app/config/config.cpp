@@ -99,6 +99,11 @@ void Config::SetDefaults()
   SetEntryInternal(QStringLiteral("AutoMergeTracks"), NodeValue::kBoolean, true);
   SetEntryInternal(QStringLiteral("UseSliderLadders"), NodeValue::kBoolean, true);
   SetEntryInternal(QStringLiteral("ShowWelcomeDialog"), NodeValue::kBoolean, true);
+  // Patch 0078 (Phase 9): display-session preference. 0 = native session (default, never exports
+  // PRIME variables), 1 = force Xwayland (xcb) + PRIME offload so Tier 1 zero-copy is reachable on
+  // hybrid GPUs. Applied in main() before QApplication exists, since the QPA platform is bound then.
+  SetEntryInternal(QStringLiteral("GpuSessionMode"), NodeValue::kInt, 0);
+  SetEntryInternal(QStringLiteral("GpuSessionPromptDisabled"), NodeValue::kBoolean, false);
   SetEntryInternal(QStringLiteral("ShowClipWhileDragging"), NodeValue::kBoolean, true);
   SetEntryInternal(QStringLiteral("StopPlaybackOnLastFrame"), NodeValue::kBoolean, false);
   SetEntryInternal(QStringLiteral("UseLegacyColorInInputTab"), NodeValue::kBoolean, false);
@@ -234,11 +239,18 @@ void Config::Load()
   }
 
   if (reader.hasError()) {
-    QMessageBox::critical(Core::instance()->main_window(),
-                          QCoreApplication::translate("Config", "Error loading settings"),
-                          QCoreApplication::translate("Config", "Failed to load application settings. This session will "
-                                                                "use defaults.\n\n%1").arg(reader.errorString()),
-                          QMessageBox::Ok);
+    // Patch 0078 (Phase 9): Load() also runs from main() before QApplication/Core exist (to resolve
+    // the GPU session preference), so this path must not dereference an unconstructed Core.
+    const QString message = QCoreApplication::translate("Config", "Failed to load application settings. This session will "
+                                                                "use defaults.\n\n%1").arg(reader.errorString());
+    if (Core::instance()) {
+      QMessageBox::critical(Core::instance()->main_window(),
+                            QCoreApplication::translate("Config", "Error loading settings"),
+                            message,
+                            QMessageBox::Ok);
+    } else {
+      qCritical().noquote() << message;
+    }
     current_config_.SetDefaults();
   }
 
@@ -253,11 +265,17 @@ void Config::Save()
   QFile config_file(temp_filename);
 
   if (!config_file.open(QFile::WriteOnly)) {
-    QMessageBox::critical(Core::instance()->main_window(),
-                          QCoreApplication::translate("Config", "Error saving settings"),
-                          QCoreApplication::translate("Config", "Failed to save application settings. The application "
-                                                                "may lack write permissions for this location."),
-                          QMessageBox::Ok);
+    const QString message = QCoreApplication::translate("Config", "Failed to save application settings. The application "
+                                                                  "may lack write permissions for this location.");
+    // Patch 0078: see the equivalent guard in Load().
+    if (Core::instance()) {
+      QMessageBox::critical(Core::instance()->main_window(),
+                            QCoreApplication::translate("Config", "Error saving settings"),
+                            message,
+                            QMessageBox::Ok);
+    } else {
+      qCritical().noquote() << message;
+    }
     return;
   }
 

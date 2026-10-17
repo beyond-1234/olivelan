@@ -33,6 +33,9 @@
 #endif
 
 #include "dialog/about/about.h"
+#include "dialog/gpusession/gpusessiondialog.h"
+#include "codec/hal/gpu_environment_probe.h"
+#include "codec/hal/gpu_session_advisor.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
@@ -553,6 +556,37 @@ void MainWindow::ShowWelcomeDialog()
   }
 }
 
+void MainWindow::ShowGpuSessionDialogIfNeeded()
+{
+  // Always record the classification, prompt or not - it is the only trace of why a given tier was
+  // chosen on someone else's machine.
+  qInfo() << "[GPU Session]" << GpuSessionAdvisor::DescribeEnvironment();
+
+  if (OLIVE_CONFIG("GpuSessionPromptDisabled").toBool()) {
+    return;
+  }
+
+  // An explicit OLIVE_GPU_SESSION means the session is already decided (scripted runs, the test
+  // harness); don't interrupt.
+  if (GpuSessionAdvisor::IsSessionForcedByEnvironment()) {
+    return;
+  }
+
+  // Only a hybrid Wayland session has a real choice; everywhere else both modes put GL on the same
+  // GPU and the prompt would be pure noise.
+  if (!GpuSessionAdvisor::HasChoice()) {
+    return;
+  }
+
+  // Non-modal for the same reason as the welcome dialog: an application-modal dialog shown around
+  // startup fights the panels being opened nearby for activation, which on Wayland (KWin) makes the
+  // main window look frozen.
+  GpuSessionDialog *dialog = new GpuSessionDialog(this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->show();
+  dialog->raise();
+}
+
 void MainWindow::RevealViewerInProject(ViewerOutput *r)
 {
   // Rather than just using the resident ProjectPanel, find the most recently focused one since
@@ -935,6 +969,10 @@ void MainWindow::ApplyInitialLayoutIfNeeded()
   // Only now that the dock layout exists is it safe to show the welcome dialog; showing it earlier
   // (while panels are still being opened) makes it compete for activation with the startup churn.
   QMetaObject::invokeMethod(this, "ShowWelcomeDialog", Qt::QueuedConnection);
+
+  // Patch 0078 (Phase 9): same reasoning, and queued after the welcome dialog so the two never
+  // overlap on screen.
+  QMetaObject::invokeMethod(this, "ShowGpuSessionDialogIfNeeded", Qt::QueuedConnection);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *e)
@@ -968,6 +1006,15 @@ void MainWindow::showEvent(QShowEvent *e)
     context.makeCurrent(&surface);
     const char* vendor = reinterpret_cast<const char*>(context.functions()->glGetString(GL_VENDOR));
     qDebug() << "Using graphics driver:" << vendor;
+
+    // Patch 0078 (Phase 9): hand this to the HAL probe. Pipeline routing happens during footage
+    // import, which is after showEvent, and without a vendor the probe cannot tell that Tier 1's
+    // CUDA-GL interop is impossible on a hybrid Wayland session (the log used to report
+    // "gl=unknown" and then select a Tier 1 whose frame pool could never register a texture).
+    // This is a platform-level context rather than the render context, so a later report from the
+    // render path supersedes it.
+    GpuEnvironmentProbe::Instance().RecordOpenGlVendor(vendor);
+
     if (!strcmp(vendor, "nouveau")) {
       QMetaObject::invokeMethod(this, "ShowNouveauWarning", Qt::QueuedConnection);
     }

@@ -6,6 +6,8 @@ set(OLIVE_SOURCES
   codec/hal/video_hardware_pipeline.h
   codec/hal/gpu_environment_probe.h
   codec/hal/gpu_environment_probe.cpp
+  codec/hal/gpu_session_advisor.h
+  codec/hal/gpu_session_advisor.cpp
   codec/hal/hardware_pipeline_factory.h
   codec/hal/hardware_pipeline_factory.cpp
   codec/hal/cuda_nvdec_pipeline.h

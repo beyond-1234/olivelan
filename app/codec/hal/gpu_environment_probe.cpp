@@ -70,18 +70,23 @@ void GpuEnvironmentProbe::Refresh()
   DetectOpenGlDevice();
 }
 
-bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor)
+bool GpuEnvironmentProbe::RecordOpenGlVendor(const char* vendor, bool from_render_context)
 {
   if (!vendor || !*vendor) {
     return false;
   }
 
-  // First non-empty vendor wins: the window/render context is what matters and it doesn't change
-  // mid-session.
-  if (gl_vendor_.empty()) {
-    gl_vendor_ = vendor;
-    gl_is_nvidia_ = QString::fromLatin1(vendor).contains(QStringLiteral("NVIDIA"), Qt::CaseInsensitive);
+  if (!gl_vendor_.empty()) {
+    // A render-context reading is authoritative. A platform-level (offscreen) context is only a
+    // stand-in recorded before the renderer exists, so it must never displace the real thing.
+    if (!from_render_context || gl_vendor_from_render_context_) {
+      return true;
+    }
   }
+
+  gl_vendor_ = vendor;
+  gl_is_nvidia_ = QString::fromLatin1(vendor).contains(QStringLiteral("NVIDIA"), Qt::CaseInsensitive);
+  gl_vendor_from_render_context_ = from_render_context;
 
   return true;
 }

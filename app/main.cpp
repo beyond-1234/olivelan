@@ -44,7 +44,9 @@ extern "C" {
 #include "core.h"
 #include "common/commandlineparser.h"
 #include "common/debug.h"
+#include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
+#include "config/config.h"
 #include "dialog/hal/halbackenddialog.h"
 #include "node/project/serializer/serializer.h"
 #include "version.h"
@@ -128,6 +130,13 @@ int main(int argc, char *argv[])
   QCoreApplication::setApplicationName("Olive");
   QGuiApplication::setDesktopFileName("org.olivevideoeditor.Olive");
   QCoreApplication::setApplicationVersion(olive::kAppVersionLong);
+
+  // Patch 0078 (Phase 9): resolve the display session before anything else. The QPA platform is
+  // bound when QApplication is constructed (see below), so a stored preference has to be turned
+  // into environment variables here or not at all. Config::Load() depends on the organization /
+  // application names set above, and its error paths are safe to reach before Core exists.
+  olive::Config::Load();
+  olive::GpuSessionAdvisor::ApplySessionPreference();
 
 
   //
@@ -312,6 +321,10 @@ int main(int argc, char *argv[])
 #endif // _WIN32
 
     a.reset(new QApplication(argc, argv));
+
+    // Patch 0078 (Phase 9): record the platform that was actually selected, so the session choice
+    // can be asserted from a log rather than guessed.
+    qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
 
     // Initialize Chinese font stack & embedded font for primary language support
     int font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.ttf"));
