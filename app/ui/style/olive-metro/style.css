@@ -72,25 +72,85 @@ QComboBox:focus {
   border-color: #0078D4;
 }
 
-/* ---------- Tabs: the active tab carries a 2px accent line on its top edge ---------- */
+/* ---------- Tabs: Metro Flat design with top accent line ---------- */
 QTabBar {
   font-size: 9pt;
+  background: #252526;
+  border: none;
+  border-bottom: 1px solid #3F3F46;
 }
 
 QTabBar::tab {
-  background: transparent;
+  background: #252526;
+  color: #969696;
   border: none;
   border-top: 2px solid transparent;
-  padding: 4px 12px;
+  padding: 5px 14px;
+  font-weight: 500;
 }
 
 QTabBar::tab:selected {
+  background: #1E1E1E;
   border-top: 2px solid #0078D4;
-  color: #0078D4;
+  color: #FFFFFF;
 }
 
 QTabBar::tab:hover:!selected {
+  background: #2D2D30;
   border-top: 2px solid #3F3F46;
+  color: #E0E0E0;
+}
+
+QTabBar::close-button {
+  subcontrol-position: right;
+  padding: 2px;
+}
+
+QTabBar::close-button:hover {
+  background: #E81123;
+}
+
+/* ---------- KDDockWidgets TitleBar & Dock Areas ---------- */
+KDDockWidgets--QtWidgets--TitleBar {
+  background: #252526;
+  min-height: 22px;
+  max-height: 22px;
+  border: none;
+  border-bottom: 1px solid #3F3F46;
+}
+
+KDDockWidgets--QtWidgets--TitleBar QLabel {
+  color: #CCCCCC;
+  font-size: 8.5pt;
+  font-weight: 600;
+  padding-left: 6px;
+}
+
+KDDockWidgets--QtWidgets--TitleBar QToolButton {
+  border: none;
+  background: transparent;
+  padding: 2px;
+  margin: 1px;
+}
+
+KDDockWidgets--QtWidgets--TitleBar QToolButton:hover {
+  background: #3F3F46;
+}
+
+KDDockWidgets--QtWidgets--FloatingWindow {
+  background: #1E1E1E;
+  border: 1px solid #0078D4;
+}
+
+KDDockWidgets--QtWidgets--Group {
+  background: #1E1E1E;
+  border: 1px solid #3F3F46;
+}
+
+KDDockWidgets--QtWidgets--Separator {
+  background: #252526;
+  width: 2px;
+  height: 2px;
 }
 
 /* ---------- Menus / toolbars / status bar ---------- */
