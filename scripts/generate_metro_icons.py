@@ -9,8 +9,11 @@ import sys
 try:
     from PIL import Image, ImageDraw
 except ImportError:
-    print("[!] 提示: PIL 未安装，跳过图标动态重新生成，使用现有缓存")
-    sys.exit(0)
+    # This script is only invoked when someone explicitly asks for regeneration
+    # (manually or -DOLIVE_REGENERATE_METRO_ICONS=ON), so a silent no-op would
+    # claim success while leaving stale/placeholder assets in place.
+    print("[!] Pillow (PIL) is required to regenerate the Metro icons: pip install Pillow", file=sys.stderr)
+    sys.exit(1)
 
 # 解析目标目录 (支持参数传入或默认路径)
 if len(sys.argv) > 2:
