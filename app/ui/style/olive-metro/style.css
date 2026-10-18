@@ -134,15 +134,38 @@ QRadioButton::indicator {
   border-radius: 0px;
 }
 
+/* A radio button is a circle even when unchecked; the checkbox stays square. */
+QRadioButton::indicator {
+  border-radius: 7px;
+}
+
 QCheckBox::indicator:hover,
 QRadioButton::indicator:hover {
   border-color: #0078D4;
 }
 
-QCheckBox::indicator:checked,
+QCheckBox::indicator:checked {
+  background: #0078D4;
+  border-color: #0078D4;
+  image: url(:/style/olive-metro/png/checkmark.14.png);
+}
+
 QRadioButton::indicator:checked {
   background: #0078D4;
   border-color: #0078D4;
+  image: url(:/style/olive-metro/png/radio-dot.14.png);
+}
+
+QCheckBox::indicator:disabled,
+QRadioButton::indicator:disabled {
+  border-color: #2A2A2E;
+  background: #252528;
+}
+
+QCheckBox::indicator:checked:disabled,
+QRadioButton::indicator:checked:disabled {
+  background: #3A3A3F;
+  border-color: #3A3A3F;
 }
 
 /* ---------- Slider (Fluent thin track & rectangular thumb) ---------- */
