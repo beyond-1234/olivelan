@@ -419,18 +419,6 @@ OLIVE_ADD_TEST(ForcedBackendFallbackNotification)
   first.reset();
   second.reset();
 
-  // Patch 0107: verify stream-scoped fallback context prevents repeating initialization attempts
-  StreamFallbackContext stream_ctx;
-  stream_ctx.failed_backends.insert(QStringLiteral("definitely-not-a-backend"));
-  auto stream_pipeline = HardwarePipelineFactory::CreatePipeline(codec, 1920, 1080, nullptr, &stream_ctx);
-  if (!stream_pipeline) {
-    std::cout << " - pipeline creation with stream fallback context failed";
-    avcodec_free_context(&codec);
-    HardwarePipelineFactory::SetForcedBackend(old_backend);
-    return __LINE__;
-  }
-  stream_pipeline.reset();
-
   avcodec_free_context(&codec);
   HardwarePipelineFactory::SetForcedBackend(old_backend);
   HardwarePipelineFactory::SetFallbackHandler({});
@@ -705,6 +693,59 @@ OLIVE_ADD_TEST(ColorRangeOverridePersistence)
     return __LINE__;
   }
 
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(StreamFallbackContextPrecedence)
+{
+  // Patch 0116: pin the decision the decoder relies on. A forced backend must be
+  // retried when neither cache knows about it, skipped when either the per-stream
+  // context or the process-wide (backend+codec+format+size) cache recorded it, and
+  // never suppressed for an unrelated backend or a different stream shape.
+  AVCodecContext* codec = avcodec_alloc_context3(nullptr);
+  codec->codec_id = AV_CODEC_ID_PRORES;
+  codec->width = 1920;
+  codec->height = 1080;
+  codec->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+
+  const QString backend = QStringLiteral("test-forced-backend");
+  const QString other_backend = QStringLiteral("test-other-backend");
+  QSet<QString> global;
+  StreamFallbackContext stream_ctx;
+
+  if (HardwarePipelineFactory::IsForcedBackendAlreadyFailed(backend, global, nullptr, codec)) {
+    std::cout << " - an unattempted backend was reported as failed";
+    avcodec_free_context(&codec);
+    return __LINE__;
+  }
+
+  stream_ctx.failed_backends.insert(backend);
+  if (!HardwarePipelineFactory::IsForcedBackendAlreadyFailed(backend, global, &stream_ctx, codec)) {
+    std::cout << " - the per-stream context did not suppress its recorded backend";
+    avcodec_free_context(&codec);
+    return __LINE__;
+  }
+  if (HardwarePipelineFactory::IsForcedBackendAlreadyFailed(other_backend, global, &stream_ctx, codec)) {
+    std::cout << " - the per-stream context suppressed an unrelated backend";
+    avcodec_free_context(&codec);
+    return __LINE__;
+  }
+
+  global.insert(HardwarePipelineFactory::ForcedFailureKey(backend, codec));
+  if (!HardwarePipelineFactory::IsForcedBackendAlreadyFailed(backend, global, nullptr, codec)) {
+    std::cout << " - the global cache did not suppress a recorded key";
+    avcodec_free_context(&codec);
+    return __LINE__;
+  }
+
+  codec->width = 1280;
+  if (HardwarePipelineFactory::IsForcedBackendAlreadyFailed(backend, global, nullptr, codec)) {
+    std::cout << " - the global cache ignored the frame dimensions in the key";
+    avcodec_free_context(&codec);
+    return __LINE__;
+  }
+
+  avcodec_free_context(&codec);
   OLIVE_TEST_END;
 }
 

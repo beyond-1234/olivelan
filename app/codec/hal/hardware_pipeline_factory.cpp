@@ -59,16 +59,6 @@ void NotifyFallback(const QString& message)
   }
 }
 
-QString ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx)
-{
-  return QStringLiteral("%1|%2|%3|%4x%5")
-      .arg(backend)
-      .arg(static_cast<int>(codec_ctx->codec_id))
-      .arg(static_cast<int>(codec_ctx->pix_fmt))
-      .arg(codec_ctx->width)
-      .arg(codec_ctx->height);
-}
-
 std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     const QString& name, AVCodecContext* codec_ctx, int width, int height, OpenGLRenderer* renderer)
 {
@@ -134,6 +124,26 @@ void HardwarePipelineFactory::SetFallbackHandler(FallbackHandler handler)
   state.fallback_handler = std::move(handler);
 }
 
+QString HardwarePipelineFactory::ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx)
+{
+  return QStringLiteral("%1|%2|%3|%4x%5")
+      .arg(backend)
+      .arg(static_cast<int>(codec_ctx->codec_id))
+      .arg(static_cast<int>(codec_ctx->pix_fmt))
+      .arg(codec_ctx->width)
+      .arg(codec_ctx->height);
+}
+
+bool HardwarePipelineFactory::IsForcedBackendAlreadyFailed(
+    const QString& backend,
+    const QSet<QString>& global_failed_keys,
+    const StreamFallbackContext* fallback_ctx,
+    AVCodecContext* codec_ctx)
+{
+  return global_failed_keys.contains(ForcedFailureKey(backend, codec_ctx))
+         || (fallback_ctx && fallback_ctx->failed_backends.contains(backend));
+}
+
 std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     AVCodecContext* codec_ctx,
     int width,
@@ -161,8 +171,8 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     std::lock_guard<std::mutex> lock(state.mutex);
     forced = state.backend;
     if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
-      forced_already_failed = state.failed_keys.contains(ForcedFailureKey(forced, codec_ctx)) ||
-                              (fallback_ctx && fallback_ctx->failed_backends.contains(forced));
+      forced_already_failed = IsForcedBackendAlreadyFailed(forced, state.failed_keys,
+                                                           fallback_ctx, codec_ctx);
     }
   }
 

@@ -45,6 +45,27 @@ public:
    */
   using FallbackHandler = std::function<void(const QString&)>;
   static void SetFallbackHandler(FallbackHandler handler);
+
+  /**
+   * @brief Patch 0116: key used to remember a failed forced-backend attempt.
+   *
+   * The key includes the backend, codec, pixel format and dimensions, so a backend
+   * that fails for one stream does not get disabled for unrelated streams.
+   */
+  static QString ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx);
+
+  /**
+   * @brief Patch 0116: whether a forced backend should be skipped for this stream.
+   *
+   * True when the process-wide cache already recorded this exact key, or when the
+   * decoder instance's StreamFallbackContext already recorded this backend. The
+   * per-stream context keeps a repeated initialization from being attempted again
+   * for the lifetime of one stream without leaking into other streams.
+   */
+  static bool IsForcedBackendAlreadyFailed(const QString& backend,
+                                           const QSet<QString>& global_failed_keys,
+                                           const StreamFallbackContext* fallback_ctx,
+                                           AVCodecContext* codec_ctx);
 };
 
 } // namespace olive

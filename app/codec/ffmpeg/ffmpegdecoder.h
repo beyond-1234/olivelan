@@ -37,6 +37,7 @@ extern "C" {
 #include <QWaitCondition>
 
 #include "codec/decoder.h"
+#include "codec/hal/hardware_pipeline_factory.h"
 #include "codec/hal/video_hardware_pipeline.h"
 #include "common/ffmpegutils.h"
 
@@ -131,6 +132,13 @@ private:
     int nvdec_quota_slot_{-1};
     AVBufferRef* hw_device_ctx_{nullptr};
     std::unique_ptr<IVideoHardwarePipeline> hw_pipeline_;
+
+    // Patch 0116: per-stream record of forced backends that already failed physical
+    // initialization. The factory's global cache is keyed by codec/dimensions and is
+    // shared by every stream; this context is scoped to one decoder instance so a
+    // failure on one stream is not re-attempted for the lifetime of that stream (and
+    // is not leaked into unrelated streams).
+    StreamFallbackContext stream_fallback_ctx_;
 
   };
 

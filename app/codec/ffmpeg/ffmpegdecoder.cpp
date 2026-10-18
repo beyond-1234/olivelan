@@ -1266,6 +1266,9 @@ FFmpegDecoder::Instance::Instance() :
 
 bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 {
+  // A new file/stream starts with a clean fallback history.
+  stream_fallback_ctx_.failed_backends.clear();
+
   // Open file in a format context
   int error_code = avformat_open_input(&fmt_ctx_, filename, nullptr, nullptr);
 
@@ -1329,7 +1332,8 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     // Tier (CUDA / VideoToolbox / VA-API / D3D11 / Software) per platform & GPU, so Tier 2 native
     // backends are reachable on non-NVIDIA builds (fixes CR-09: construction was previously gated
     // behind OLIVE_ENABLE_CUDA_NVDEC).
-    hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height);
+    hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height,
+                                                           nullptr, &stream_fallback_ctx_);
     if (hw_pipeline_) {
       if (hw_pipeline_->GetType() != HardwareBackendType::SoftwareFallback) {
         // get_format is a non-capturing C callback; reach the pipeline through codec_ctx->opaque.
@@ -1425,6 +1429,8 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
 void FFmpegDecoder::Instance::Close()
 {
+  stream_fallback_ctx_.failed_backends.clear();
+
   if (codec_ctx_) {
     avcodec_flush_buffers(codec_ctx_);
   }
