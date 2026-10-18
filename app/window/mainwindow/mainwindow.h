@@ -101,8 +101,10 @@ public:
    * @brief Patch 0095: starts playback for a fixed duration, then exits the process.
    *
    * Hidden `--autoplay` benchmark aid. It waits for the startup project's sequence viewer to
-   * connect, plays continuously from the current playhead, and logs a start/finish pair so an
-   * external harness can measure drop rate, CPU time, and readback counts without injecting input.
+   * connect, plays continuously from the current playhead, and logs a start/finish pair with
+   * playhead progress plus presented/expected/skipped frame counters. An external harness can
+   * therefore distinguish actual presentation from playhead advance while also measuring CPU
+   * time and readback counts without injecting input.
    */
   void StartAutoplayBenchmark(int seconds);
 

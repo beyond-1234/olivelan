@@ -62,6 +62,10 @@ ViewerDisplayWidget::ViewerDisplayWidget(QWidget *parent) :
   deinterlace_(false),
   show_fps_(false),
   frames_skipped_(0),
+  presented_frames_(0),
+  presented_frame_pending_(false),
+  has_presented_timestamp_(false),
+  last_presented_timestamp_(0),
   show_widget_background_(false),
   playback_speed_(0),
   push_mode_(kPushNull),
@@ -70,6 +74,16 @@ ViewerDisplayWidget::ViewerDisplayWidget(QWidget *parent) :
   text_edit_(nullptr)
 {
   connect(Core::instance(), &Core::ToolChanged, this, &ViewerDisplayWidget::ToolChanged);
+
+  // Patch 0103: only count a frame after its swap has completed. UpdateFromQueue() sets the
+  // pending flag when it selects a new queue timestamp; a repeated SetImage() for the same
+  // timestamp does not create a second pending frame.
+  connect(this, &ManagedDisplayWidget::frameSwapped, this, [this]() {
+    if (presented_frame_pending_) {
+      presented_frame_pending_ = false;
+      presented_frames_++;
+    }
+  });
 
   // Initializes cursor based on tool
   UpdateCursor();
@@ -244,6 +258,9 @@ void ViewerDisplayWidget::ResetFPSTimer()
   fps_timer_start_ = QDateTime::currentMSecsSinceEpoch();
   fps_timer_update_count_ = 0;
   frames_skipped_ = 0;
+  presented_frames_ = 0;
+  presented_frame_pending_ = false;
+  has_presented_timestamp_ = false;
   frame_rate_average_count_ = 0;
 
   Core::instance()->ClearStatusBarMessage();
@@ -1326,6 +1343,15 @@ void ViewerDisplayWidget::UpdateFromQueue()
       const ViewerPlaybackFrame& pf = queue_.front();
 
       if (pf.timestamp == time) {
+
+        // Patch 0103: remember that a distinct sequence frame has been selected for display.
+        // The counter is incremented on frameSwapped(), so a coalesced update or a second
+        // SetImage() for the same timestamp cannot inflate the presented count.
+        if (!has_presented_timestamp_ || pf.timestamp != last_presented_timestamp_) {
+          has_presented_timestamp_ = true;
+          last_presented_timestamp_ = pf.timestamp;
+          presented_frame_pending_ = true;
+        }
 
         // Frame was in queue, no need to decode anything
         SetImage(pf.frame);

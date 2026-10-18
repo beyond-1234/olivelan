@@ -22,6 +22,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QScreen>
 #include <QStatusBar>
@@ -1113,13 +1114,41 @@ void MainWindow::TryStartAutoplayBenchmark()
 
   qInfo() << "[Autoplay] starting continuous playback for" << seconds << "seconds"
           << "sequence length" << node->GetLength().toDouble();
+  QElapsedTimer wall_timer;
+  wall_timer.start();
   viewer->Play();
 
-  QTimer::singleShot(seconds * 1000, this, [this, viewer, node, start, seconds]() {
+  QTimer::singleShot(seconds * 1000, this, [this, viewer, node, start, seconds, wall_timer]() {
+    // Patch 0103: read before Pause(). A post-pause TimeChangedEvent calls ResetFPSTimer() and
+    // would zero the counters before this harness can report them.
+    const int presented_frames = viewer->GetPresentedFrameCount();
+    const int skipped_frames = viewer->GetSkippedFrameCount();
     viewer->Pause();
     const double advanced = (node->GetPlayhead() - start).toDouble();
+    const double wall_elapsed = double(wall_timer.elapsed()) / 1000.0;
+    const rational frame_time = node->GetVideoParams().frame_rate_as_time_base();
+    const int expected_frames = frame_time.isNull() ? 0 : qRound(advanced / frame_time.toDouble());
+    const int wall_expected_frames =
+        frame_time.isNull() ? 0 : qRound(wall_elapsed / frame_time.toDouble());
+    const int accounted_frames = presented_frames + skipped_frames;
+    const double presentation_ratio =
+        expected_frames > 0 ? double(presented_frames) / double(expected_frames) : 0.0;
+    const double accounted_ratio =
+        expected_frames > 0 ? double(accounted_frames) / double(expected_frames) : 0.0;
     qInfo() << "[Autoplay] finished continuous playback for" << seconds << "seconds;"
-            << "playhead advanced" << advanced << "seconds";
+            << "playhead advanced" << advanced << "seconds"
+            << "wall elapsed" << wall_elapsed << "seconds";
+    qInfo() << "[Autoplay] presented frames" << presented_frames
+            << "expected frames" << expected_frames
+            << "wall-clock expected frames" << wall_expected_frames
+            << "skipped frames" << skipped_frames
+            << "accounted frames" << accounted_frames
+            << "presented/expected" << presentation_ratio
+            << "accounted/expected" << accounted_ratio;
+    if (expected_frames > 0 && presented_frames < expected_frames) {
+      qWarning() << "[Autoplay] presentation shortfall:"
+                 << (expected_frames - presented_frames) << "frame(s) expected but not presented";
+    }
     if (advanced < seconds * 0.95) {
       qWarning() << "[Autoplay] playback fell behind wall clock by"
                  << (seconds - advanced) << "seconds";

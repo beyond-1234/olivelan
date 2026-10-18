@@ -73,6 +73,16 @@ public:
   bool IsPlaying() const;
 
   /**
+   * @brief Patch 0103: number of frames that completed a buffer swap during the last playback.
+   *
+   * `ResetFPSTimer()` (called when playback actually starts) clears both counters. The hidden
+   * --autoplay benchmark reads them before Pause(), because pausing may reset the display timer.
+   */
+  int GetPresentedFrameCount() const;
+
+  int GetSkippedFrameCount() const;
+
+  /**
    * @brief Enable or disable the color management menu
    *
    * While the Viewer is _always_ color managed, In some contexts, the color management may be controlled from an

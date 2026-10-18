@@ -117,6 +117,23 @@ public:
     fps_timer_update_count_++;
   }
 
+  /**
+   * @brief Patch 0103: frames that completed a buffer swap since the last ResetFPSTimer().
+   *
+   * This is deliberately counted on frameSwapped rather than on SetImage(): selecting a frame
+   * for display is not proof that it reached the screen. The --autoplay benchmark compares this
+   * against the number of sequence frames traversed by the playhead.
+   */
+  int GetPresentedFrameCount() const
+  {
+    return presented_frames_;
+  }
+
+  int GetSkippedFrameCount() const
+  {
+    return frames_skipped_;
+  }
+
   TexturePtr GetCurrentTexture() const
   {
     return texture_;
@@ -382,6 +399,12 @@ private:
 
   bool show_fps_;
   int frames_skipped_;
+
+  // Patch 0103: unique queue timestamps selected for display, confirmed by frameSwapped().
+  int presented_frames_;
+  bool presented_frame_pending_;
+  bool has_presented_timestamp_;
+  rational last_presented_timestamp_;
 
   QVector<double> frame_rate_averages_;
   int frame_rate_average_count_;

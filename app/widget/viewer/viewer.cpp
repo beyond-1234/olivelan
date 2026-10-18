@@ -333,6 +333,16 @@ bool ViewerWidget::IsPlaying() const
   return playback_speed_ != 0;
 }
 
+int ViewerWidget::GetPresentedFrameCount() const
+{
+  return display_widget_->GetPresentedFrameCount();
+}
+
+int ViewerWidget::GetSkippedFrameCount() const
+{
+  return display_widget_->GetSkippedFrameCount();
+}
+
 void ViewerWidget::SetColorMenuEnabled(bool enabled)
 {
   color_menu_enabled_ = enabled;
