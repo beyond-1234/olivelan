@@ -53,6 +53,7 @@
 
 #include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/vaapi_dmabuf_pipeline.h"
+#include "common/ffmpegutils.h"
 #include "core.h"
 
 extern "C" {
@@ -585,6 +586,34 @@ OLIVE_ADD_TEST(VaapiFrameColorMetadata)
 
   av_frame_free(&unspecified);
   av_frame_free(&frame);
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(FrameColorRangePriority)
+{
+  // Patch 0104: the decoder must not overwrite an explicit AVFrame range with the project's
+  // cached VideoParams. Only an unspecified frame range falls back to the project value.
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_MPEG, VideoParams::kColorRangeFull)
+      != AVCOL_RANGE_MPEG) {
+    std::cout << " - limited decoded range was overwritten by a full-range project";
+    return __LINE__;
+  }
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_JPEG, VideoParams::kColorRangeLimited)
+      != AVCOL_RANGE_JPEG) {
+    std::cout << " - full decoded range was overwritten by a limited-range project";
+    return __LINE__;
+  }
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_UNSPECIFIED, VideoParams::kColorRangeFull)
+      != AVCOL_RANGE_JPEG) {
+    std::cout << " - unspecified range did not fall back to the full-range project value";
+    return __LINE__;
+  }
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_UNSPECIFIED, VideoParams::kColorRangeLimited)
+      != AVCOL_RANGE_MPEG) {
+    std::cout << " - unspecified range did not fall back to the limited-range project value";
+    return __LINE__;
+  }
 
   OLIVE_TEST_END;
 }

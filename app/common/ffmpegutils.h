@@ -72,6 +72,17 @@ public:
   static int GetSwsColorspaceFromAVColorSpace(AVColorSpace cs);
 
   /**
+   * @brief Resolve video range, preferring explicit decoded-frame metadata.
+   *
+   * Patch 0104: the decoder used to overwrite AVFrame::color_range with the project's cached
+   * VideoParams before the hardware pipeline could see it. That made a limited-range HDR stream
+   * in a project cached as full range render as full. Only fall back to the project value when
+   * the decoded frame does not specify a range.
+   */
+  static AVColorRange ResolveColorRange(AVColorRange decoded,
+                                        VideoParams::ColorRange project_fallback);
+
+  /**
    * @brief Convert "JPEG"/full-range colorspace to its regular counterpart
    *
    * "JPEG "spaces are deprecated in favor of the regular space and setting `color_range`. For the

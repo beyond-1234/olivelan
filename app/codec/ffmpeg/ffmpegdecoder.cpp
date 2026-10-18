@@ -329,7 +329,11 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
   }
 
   AVFramePtr original = f;
-  f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+
+  // Patch 0104: an explicit range on the decoded frame wins over the project's cached params.
+  // The old unconditional assignment turned limited-range HDR into full-range whenever the saved
+  // VideoParams predated the HDR import.
+  f->color_range = FFmpegUtils::ResolveColorRange(f->color_range, p.force_range);
 
   // Any hardware-resident frame (CUDA / VideoToolbox / VA-API) is routed through the active
   // pipeline's ProcessHardwareFrame. The direct GPU-resident path is only valid at full resolution
