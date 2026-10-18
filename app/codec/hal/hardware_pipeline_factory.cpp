@@ -138,7 +138,8 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     AVCodecContext* codec_ctx,
     int width,
     int height,
-    OpenGLRenderer* renderer)
+    OpenGLRenderer* renderer,
+    StreamFallbackContext* fallback_ctx)
 {
   if (!codec_ctx) {
     return nullptr;
@@ -160,7 +161,8 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     std::lock_guard<std::mutex> lock(state.mutex);
     forced = state.backend;
     if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
-      forced_already_failed = state.failed_keys.contains(ForcedFailureKey(forced, codec_ctx));
+      forced_already_failed = state.failed_keys.contains(ForcedFailureKey(forced, codec_ctx)) ||
+                              (fallback_ctx && fallback_ctx->failed_backends.contains(forced));
     }
   }
 
@@ -187,6 +189,10 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
         if (state.backend == forced) {
           state.failed_keys.insert(ForcedFailureKey(forced, codec_ctx));
         }
+      }
+
+      if (fallback_ctx) {
+        fallback_ctx->failed_backends.insert(forced);
       }
 
       qWarning() << "[HAL Factory] Forced backend" << forced

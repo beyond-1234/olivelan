@@ -4,11 +4,16 @@
 #include <functional>
 #include <memory>
 #include <QString>
+#include <QSet>
 #include "video_hardware_pipeline.h"
 
 namespace olive {
 
 class OpenGLRenderer;
+
+struct StreamFallbackContext {
+  QSet<QString> failed_backends;
+};
 
 class HardwarePipelineFactory {
 public:
@@ -20,7 +25,8 @@ public:
       AVCodecContext* codec_ctx,
       int width,
       int height,
-      OpenGLRenderer* renderer = nullptr);
+      OpenGLRenderer* renderer = nullptr,
+      StreamFallbackContext* fallback_ctx = nullptr);
 
   /**
    * @brief Process-wide forced backend override (phase5-07). Empty string means
