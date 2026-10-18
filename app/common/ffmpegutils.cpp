@@ -134,13 +134,19 @@ int FFmpegUtils::GetSwsColorspaceFromAVColorSpace(AVColorSpace cs)
 }
 
 AVColorRange FFmpegUtils::ResolveColorRange(AVColorRange decoded,
-                                            VideoParams::ColorRange project_fallback)
+                                            VideoParams::ColorRange fallback_or_override,
+                                            bool is_user_override)
 {
+  if (is_user_override) {
+    return fallback_or_override == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG
+                                                               : AVCOL_RANGE_MPEG;
+  }
+
   if (decoded != AVCOL_RANGE_UNSPECIFIED) {
     return decoded;
   }
 
-  return project_fallback == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG
+  return fallback_or_override == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG
                                                          : AVCOL_RANGE_MPEG;
 }
 

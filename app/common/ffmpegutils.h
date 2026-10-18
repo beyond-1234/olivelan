@@ -80,7 +80,8 @@ public:
    * the decoded frame does not specify a range.
    */
   static AVColorRange ResolveColorRange(AVColorRange decoded,
-                                        VideoParams::ColorRange project_fallback);
+                                        VideoParams::ColorRange fallback_or_override,
+                                        bool is_user_override = false);
 
   /**
    * @brief Convert "JPEG"/full-range colorspace to its regular counterpart

@@ -416,6 +416,19 @@ OLIVE_ADD_TEST(ForcedBackendFallbackNotification)
 
   first.reset();
   second.reset();
+
+  // Patch 0107: verify stream-scoped fallback context prevents repeating initialization attempts
+  StreamFallbackContext stream_ctx;
+  stream_ctx.failed_backends.insert(QStringLiteral("definitely-not-a-backend"));
+  auto stream_pipeline = HardwarePipelineFactory::CreatePipeline(codec, 1920, 1080, nullptr, &stream_ctx);
+  if (!stream_pipeline) {
+    std::cout << " - pipeline creation with stream fallback context failed";
+    avcodec_free_context(&codec);
+    HardwarePipelineFactory::SetForcedBackend(old_backend);
+    return __LINE__;
+  }
+  stream_pipeline.reset();
+
   avcodec_free_context(&codec);
   HardwarePipelineFactory::SetForcedBackend(old_backend);
   HardwarePipelineFactory::SetFallbackHandler({});
@@ -612,6 +625,23 @@ OLIVE_ADD_TEST(FrameColorRangePriority)
   if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_UNSPECIFIED, VideoParams::kColorRangeLimited)
       != AVCOL_RANGE_MPEG) {
     std::cout << " - unspecified range did not fall back to the limited-range project value";
+    return __LINE__;
+  }
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_UNSPECIFIED, VideoParams::kColorRangeAuto)
+      != AVCOL_RANGE_MPEG) {
+    std::cout << " - unspecified range with kColorRangeAuto did not fall back to limited";
+    return __LINE__;
+  }
+
+  // Patch 0105: explicit user override must win even if the frame specifies range
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_MPEG, VideoParams::kColorRangeFull, true)
+      != AVCOL_RANGE_JPEG) {
+    std::cout << " - user override to full range did not override limited decoded frame";
+    return __LINE__;
+  }
+  if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_JPEG, VideoParams::kColorRangeLimited, true)
+      != AVCOL_RANGE_MPEG) {
+    std::cout << " - user override to limited range did not override full decoded frame";
     return __LINE__;
   }
 

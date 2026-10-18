@@ -47,8 +47,9 @@ public:
   {
     kColorRangeLimited,   // 16_235
     kColorRangeFull,      // 0-255
+    kColorRangeAuto,      // Follow frame metadata, fallback to limited
 
-    kColorRangeDefault = kColorRangeLimited
+    kColorRangeDefault = kColorRangeAuto
   };
 
   /**
