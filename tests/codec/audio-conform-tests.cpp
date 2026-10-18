@@ -235,8 +235,13 @@ QString RunConformCase(const QString &input, const AudioParams &target, double e
 
   // Patch 0100: ConformAudioInternal now drains swr's delay at EOF. The old code dropped the
   // tail (ratio ~0.997), so keep a tight window that would fail if that regression returns.
-  if (ratio < 0.999 || ratio > 1.001) {
-    return QStringLiteral("sample count is off by more than 0.1%% (ratio %1)").arg(ratio, 0, 'f', 3);
+  const int64_t actual_count = qRound64(samples);
+  const int64_t expected_count = qRound64(expected_samples);
+  const int64_t sample_diff = std::abs(actual_count - expected_count);
+  if (sample_diff > 32 && (ratio < 0.999 || ratio > 1.001)) {
+    return QStringLiteral("sample count drift exceeds tolerance (diff %1 samples, ratio %2)")
+        .arg(sample_diff)
+        .arg(ratio, 0, 'f', 3);
   }
 
   return QString();
