@@ -52,10 +52,10 @@ inline constexpr int kBorderWidth = 1;   ///< 1px hairline border.
  * NOTE: QColor is not a literal type (none of its constructors are constexpr), so unlike the
  * integer tokens above these are C++17 `inline const` variables rather than `constexpr`.
  */
-inline const QColor kAccentColor{0x00, 0x78, 0xD4};  ///< Microsoft accent blue.
-inline const QColor kTileBg{0x25, 0x25, 0x26};       ///< Tile / card fill.
-inline const QColor kBorderColor{0x3F, 0x3F, 0x46};  ///< Divider / hairline grey.
-inline const QColor kCanvasBg{0x1E, 0x1E, 0x1E};     ///< Main canvas background.
+inline const QColor kAccentColor{0x00, 0x78, 0xD4};  ///< Microsoft Fluent accent blue.
+inline const QColor kTileBg{0x1C, 0x1C, 0x22};       ///< Tile / card fill (high contrast against canvas).
+inline const QColor kBorderColor{0x32, 0x32, 0x38};  ///< Divider / hairline border grey.
+inline const QColor kCanvasBg{0x12, 0x12, 0x14};     ///< Deep obsidian canvas background.
 inline const QColor kTrackVideo{0x10, 0x7C, 0x41};   ///< Video clip block.
 inline const QColor kTrackAudio{0x00, 0x82, 0x72};   ///< Audio clip block.
 
