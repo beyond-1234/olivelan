@@ -6,7 +6,19 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-# Patch 0108: Metro theme now uses its own dedicated Microsoft Fluent 1.5px flat icons.
+# Build-time automatic hook: generate Fluent icons if missing or needing sync
+set(METRO_ICON_GEN "${CMAKE_CURRENT_SOURCE_DIR}/../../../../scripts/generate_metro_icons.py")
+set(DARK_PNG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../olive-dark/png")
+set(METRO_PNG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/png")
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+  execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${METRO_ICON_GEN}" "${DARK_PNG_DIR}" "${METRO_PNG_DIR}"
+    RESULT_VARIABLE ICON_GEN_RES
+  )
+endif()
+
 file(GLOB STYLE_RESOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/png
      ${CMAKE_CURRENT_SOURCE_DIR}/png/*.png)
 
