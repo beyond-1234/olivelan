@@ -1131,10 +1131,17 @@ void MainWindow::TryStartAutoplayBenchmark()
     const int wall_expected_frames =
         frame_time.isNull() ? 0 : qRound(wall_elapsed / frame_time.toDouble());
     const int accounted_frames = presented_frames + skipped_frames;
+    // Patch 0119: a playhead-based denominator shrinks whenever playback itself falls behind,
+    // which hides the very drops this benchmark exists to measure. The wall clock is what the
+    // run actually asked for, so the headline ratios use it (the playhead ratio is kept for
+    // comparison). Fall back to the playhead count only if the frame rate is unknown.
+    const int ratio_denominator = wall_expected_frames > 0 ? wall_expected_frames : expected_frames;
     const double presentation_ratio =
-        expected_frames > 0 ? double(presented_frames) / double(expected_frames) : 0.0;
+        ratio_denominator > 0 ? double(presented_frames) / double(ratio_denominator) : 0.0;
     const double accounted_ratio =
-        expected_frames > 0 ? double(accounted_frames) / double(expected_frames) : 0.0;
+        ratio_denominator > 0 ? double(accounted_frames) / double(ratio_denominator) : 0.0;
+    const double playhead_presentation_ratio =
+        expected_frames > 0 ? double(presented_frames) / double(expected_frames) : 0.0;
     qInfo() << "[Autoplay] finished continuous playback for" << seconds << "seconds;"
             << "playhead advanced" << advanced << "seconds"
             << "wall elapsed" << wall_elapsed << "seconds";
@@ -1144,10 +1151,11 @@ void MainWindow::TryStartAutoplayBenchmark()
             << "skipped frames" << skipped_frames
             << "accounted frames" << accounted_frames
             << "presented/expected" << presentation_ratio
+            << "playhead presented/expected" << playhead_presentation_ratio
             << "accounted/expected" << accounted_ratio;
-    if (expected_frames > 0 && presented_frames < expected_frames) {
-      qWarning() << "[Autoplay] presentation shortfall:"
-                 << (expected_frames - presented_frames) << "frame(s) expected but not presented";
+    if (ratio_denominator > 0 && presented_frames < ratio_denominator) {
+      qWarning() << "[Autoplay] presentation shortfall vs wall clock:"
+                 << (ratio_denominator - presented_frames) << "frame(s) expected but not presented";
     }
     if (advanced < seconds * 0.95) {
       qWarning() << "[Autoplay] playback fell behind wall clock by"
