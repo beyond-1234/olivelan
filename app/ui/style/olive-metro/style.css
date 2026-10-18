@@ -251,10 +251,10 @@ QTabBar::close-button:hover {
 /* ---------- KDDockWidgets TitleBar & Dock Areas ---------- */
 KDDockWidgets--QtWidgets--TitleBar {
   background: #252526;
-  min-height: 22px;
-  max-height: 22px;
+  min-height: 20px;
   border: none;
   border-bottom: 1px solid #3F3F46;
+  padding: 1px 0px;
 }
 
 KDDockWidgets--QtWidgets--TitleBar QLabel {
