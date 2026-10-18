@@ -12,6 +12,8 @@ extern "C" {
 #include "render/opengl/openglrenderer.h"
 
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <libavutil/hwcontext_vaapi.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
@@ -272,32 +274,35 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   #define EGL_HEIGHT 0x3056
   #endif
 
-  typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
-  typedef void* (*PFNEGLGETCURRENTDISPLAY)(void);
-  typedef void* (*PFNEGLCREATEIMAGEKHR)(void*, void*, unsigned int, void*, const int32_t*);
-  typedef void* EGLImageKHRHandle;
-  typedef void (*PFNEGLDESTROYIMAGEKHR)(void*, EGLImageKHRHandle);
-  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, void*);
+  typedef PFNEGLGETPROCADDRESSPROC PFNEGLGETPROCADDRESS;
+  typedef PFNEGLGETCURRENTDISPLAYPROC PFNEGLGETCURRENTDISPLAY;
+  // Patch 0101: EGL entry points now use the official typedefs/EGLint ABI. The old hand-written
+  // signatures were exactly how patch 0087's int32/intptr mismatch escaped compiler checking.
+  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(unsigned int, EGLImageKHR);
 
   // Patch 0092 (P2-7): images/fds are owned by guards so every early return destroys them in the
   // order Mesa requires (images before fds). Declaration order matters: `images` is constructed
   // after `fd_guard` and therefore destroyed first.
   struct EglImageGuard {
-    void* display = nullptr;
-    void* y = nullptr;
-    void* uv = nullptr;
-    PFNEGLDESTROYIMAGEKHR destroy = nullptr;
+    EGLDisplay display = EGL_NO_DISPLAY;
+    EGLImageKHR y = EGL_NO_IMAGE_KHR;
+    EGLImageKHR uv = EGL_NO_IMAGE_KHR;
+    PFNEGLDESTROYIMAGEKHRPROC destroy = nullptr;
 
     ~EglImageGuard() { Reset(); }
 
     void Reset()
     {
       if (destroy) {
-        if (y) destroy(display, y);
-        if (uv) destroy(display, uv);
+        if (y != EGL_NO_IMAGE_KHR) {
+          destroy(display, y);
+        }
+        if (uv != EGL_NO_IMAGE_KHR) {
+          destroy(display, uv);
+        }
       }
-      y = nullptr;
-      uv = nullptr;
+      y = EGL_NO_IMAGE_KHR;
+      uv = EGL_NO_IMAGE_KHR;
     }
   };
 
@@ -314,7 +319,7 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     qWarning() << "[VAAPI-HAL] eglGetProcAddress unavailable; cannot import DMA-BUF surface";
     return false;
   }
-  auto pfn_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHR>(pfn_eglGetProcAddress("eglCreateImageKHR"));
+  auto pfn_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(pfn_eglGetProcAddress("eglCreateImageKHR"));
   auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(pfn_eglGetProcAddress("glEGLImageTargetTexture2DOES"));
 
   if (!pfn_eglCreateImageKHR || !pfn_glEGLImageTargetTexture2DOES) {
@@ -331,7 +336,7 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     qWarning() << "[VAAPI-HAL] eglGetCurrentDisplay unavailable; cannot import DMA-BUF surface";
     return false;
   }
-  void* egl_display = pfn_eglGetCurrentDisplay();
+  EGLDisplay egl_display = pfn_eglGetCurrentDisplay();
   if (!egl_display) {
     qWarning() << "[VAAPI-HAL] No current EGL display; cannot import DMA-BUF surface";
     return false;
@@ -351,9 +356,8 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
   // which silently demoted this path to a GPU->CPU readback (av_hwframe_transfer_data) every frame.
   bool modifiers_supported = false;
   {
-    typedef const char* (*PFNEGLQUERYSTRING)(void*, int);
     auto pfn_eglQueryString =
-        reinterpret_cast<PFNEGLQUERYSTRING>(pfn_eglGetProcAddress("eglQueryString"));
+        reinterpret_cast<PFNEGLQUERYSTRINGPROC>(pfn_eglGetProcAddress("eglQueryString"));
     const char* extensions =
         pfn_eglQueryString ? pfn_eglQueryString(egl_display, 0x3055 /* EGL_EXTENSIONS */) : nullptr;
     modifiers_supported =
@@ -362,35 +366,35 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
 
   auto make_plane_attribs = [&](int plane_width, int plane_height, uint32_t fourcc, int fd,
                                 int offset, int pitch, uint64_t modifier) {
-    std::vector<int32_t> attribs = {
-      static_cast<int32_t>(EGL_WIDTH), static_cast<int32_t>(plane_width),
-      static_cast<int32_t>(EGL_HEIGHT), static_cast<int32_t>(plane_height),
-      static_cast<int32_t>(EGL_LINUX_DRM_FOURCC_EXT), static_cast<int32_t>(fourcc),
-      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_FD_EXT), static_cast<int32_t>(fd),
-      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_OFFSET_EXT), static_cast<int32_t>(offset),
-      static_cast<int32_t>(EGL_DMA_BUF_PLANE0_PITCH_EXT), static_cast<int32_t>(pitch),
+    std::vector<EGLint> attribs = {
+      EGL_WIDTH, static_cast<EGLint>(plane_width),
+      EGL_HEIGHT, static_cast<EGLint>(plane_height),
+      EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(fourcc),
+      EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(fd),
+      EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(offset),
+      EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(pitch),
     };
     if (modifiers_supported) {
-      attribs.push_back(static_cast<int32_t>(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT));
-      attribs.push_back(static_cast<int32_t>(modifier & 0xffffffffull));
-      attribs.push_back(static_cast<int32_t>(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT));
-      attribs.push_back(static_cast<int32_t>(modifier >> 32));
+      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT);
+      attribs.push_back(static_cast<EGLint>(modifier & 0xffffffffull));
+      attribs.push_back(EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT);
+      attribs.push_back(static_cast<EGLint>(modifier >> 32));
     }
-    attribs.push_back(0x3038); // EGL_NONE
+    attribs.push_back(EGL_NONE);
     return attribs;
   };
 
-  const std::vector<int32_t> attribs_y =
+  const std::vector<EGLint> attribs_y =
       make_plane_attribs(prime_desc.width, prime_desc.height, prime_desc.layers[0].drm_format,
                          prime_desc.objects[y_obj].fd, prime_desc.layers[0].offset[0],
                          prime_desc.layers[0].pitch[0], prime_desc.objects[y_obj].drm_format_modifier);
-  const std::vector<int32_t> attribs_uv =
+  const std::vector<EGLint> attribs_uv =
       make_plane_attribs(prime_desc.width / 2, prime_desc.height / 2, prime_desc.layers[1].drm_format,
                          prime_desc.objects[uv_obj].fd, prime_desc.layers[1].offset[0],
                          prime_desc.layers[1].pitch[0], prime_desc.objects[uv_obj].drm_format_modifier);
 
   auto pfn_eglDestroyImageKHR =
-      reinterpret_cast<PFNEGLDESTROYIMAGEKHR>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
+      reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(pfn_eglGetProcAddress("eglDestroyImageKHR"));
   if (!pfn_eglDestroyImageKHR) {
     qWarning() << "[VAAPI-HAL] eglDestroyImageKHR unavailable; refusing to create images that"
                << "cannot be released";
