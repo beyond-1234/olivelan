@@ -24,6 +24,16 @@ else:
 
 os.makedirs(PNG_DIR, exist_ok=True)
 
+# Names with a purpose-drawn Fluent glyph below. Everything else falls back to the
+# olive-dark artwork: an honest reuse beats 54 identical placeholder rectangles.
+DEDICATED_ICONS = {
+    "play", "pause", "prev", "next", "ff", "rew", "razor", "hand", "magnet",
+    "new", "save", "undo", "redo", "eye-opened", "eye-closed", "lock-closed",
+    "lock-opened", "zoomin", "zoomout", "folder", "open", "plus", "add-button",
+    "minus", "clock", "diamond",
+}
+
+
 def draw_metro_icon(name, size):
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -116,7 +126,9 @@ def draw_metro_icon(name, size):
     elif name == "diamond":
         draw.polygon([pt(32, 14), pt(50, 32), pt(32, 50), pt(14, 32)], outline=color, fill=None, width=stroke)
     else:
-        draw.rectangle([pt(16, 16), pt(48, 48)], outline=color, width=stroke)
+        # Caller only reaches this branch for DEDICATED_ICONS; keep a visible
+        # failure mode instead of silently emitting a placeholder.
+        raise ValueError(f"no Fluent drawing for dedicated icon {name!r}")
 
     disabled_img = img.copy()
     alpha = disabled_img.split()[3]
@@ -124,6 +136,23 @@ def draw_metro_icon(name, size):
     disabled_img.putalpha(alpha)
 
     return img, disabled_img
+
+def copy_if_changed(src, dst):
+    try:
+        with open(src, "rb") as f:
+            data = f.read()
+    except OSError:
+        return False
+    try:
+        with open(dst, "rb") as f:
+            if f.read() == data:
+                return False
+    except OSError:
+        pass
+    with open(dst, "wb") as f:
+        f.write(data)
+    return True
+
 
 if __name__ == "__main__":
     sizes = [16, 32, 64, 128]
@@ -134,13 +163,34 @@ if __name__ == "__main__":
         if len(parts) >= 3 and parts[-1] == "png":
             icon_names.add(parts[0])
 
-    for name in icon_names:
+    missing_dark = sorted(DEDICATED_ICONS.difference(icon_names))
+    if missing_dark:
+        raise SystemExit(f"dedicated icons missing from {DARK_PNG_DIR}: {missing_dark}")
+
+    generated = 0
+    reused = 0
+    for name in sorted(icon_names):
         for s in sizes:
             out_norm = os.path.join(PNG_DIR, f"{name}.{s}.png")
             out_dis = os.path.join(PNG_DIR, f"{name}.{s}.disabled.png")
-            if not os.path.exists(out_norm) or not os.path.exists(out_dis):
-                normal, disabled = draw_metro_icon(name, s)
-                normal.save(out_norm)
-                disabled.save(out_dis)
 
-    print(f"[CMake Build Hook] Verified/Generated Fluent icons in {PNG_DIR}")
+            if name in DEDICATED_ICONS:
+                if not os.path.exists(out_norm) or not os.path.exists(out_dis):
+                    normal, disabled = draw_metro_icon(name, s)
+                    normal.save(out_norm)
+                    disabled.save(out_dis)
+                    generated += 1
+            else:
+                # No dedicated drawing yet: inherit the dark theme artwork instead
+                # of emitting a blank rectangle. Only write when the bytes differ,
+                # so repeated configure runs do not churn the source tree.
+                src_norm = os.path.join(DARK_PNG_DIR, f"{name}.{s}.png")
+                src_dis = os.path.join(DARK_PNG_DIR, f"{name}.{s}.disabled.png")
+                changed_norm = copy_if_changed(src_norm, out_norm)
+                changed_dis = copy_if_changed(src_dis, out_dis)
+                if changed_norm or changed_dis:
+                    reused += 1
+
+    print(f"[CMake Build Hook] Verified/Generated Fluent icons in {PNG_DIR} "
+          f"(drawn: {generated}, dark-theme fallback: {reused}, "
+          f"total names: {len(icon_names)})")
