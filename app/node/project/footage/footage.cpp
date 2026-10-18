@@ -563,7 +563,11 @@ VideoParams Footage::MergeVideoStream(const VideoParams &base, const VideoParams
   merged.set_colorspace(over.colorspace());
   merged.set_premultiplied_alpha(over.premultiplied_alpha());
   merged.set_video_type(over.video_type());
-  merged.set_color_range(over.color_range());
+  // Patch 0120: only an explicit user choice may replace the freshly probed range. The cached
+  // value of a stream that was never overridden is at best a fallback, and the probe is newer.
+  if (over.color_range_overridden()) {
+    merged.set_color_range(over.color_range());
+  }
   merged.set_color_range_overridden(over.color_range_overridden());
 
   // Patch 0042: propagate the container colour metadata, but keep the base's

@@ -154,11 +154,17 @@ void VideoStreamProperties::Accept(MultiUndoCommand *parent)
       static_cast<VideoParams::ColorRange>(color_range_combo_->currentData().toInt());
   const bool selected_range_override = (selected_range != VideoParams::kColorRangeAuto);
 
+  // Selecting Auto clears the override but keeps the cached range as the fallback for frames
+  // without their own metadata. Writing the kColorRangeAuto sentinel here would silently turn
+  // a full-range source into the limited fallback just because the user cleared an override.
+  const VideoParams::ColorRange new_range =
+      selected_range_override ? selected_range : vp.color_range();
+
   if ((video_premultiply_alpha_ && video_premultiply_alpha_->isChecked() != vp.premultiplied_alpha())
       || set_colorspace != vp.colorspace()
       || static_cast<VideoParams::Interlacing>(video_interlace_combo_->currentIndex()) != vp.interlacing()
       || pixel_aspect_combo_->GetPixelAspectRatio() != vp.pixel_aspect_ratio()
-      || selected_range != vp.color_range()
+      || new_range != vp.color_range()
       || selected_range_override != vp.color_range_overridden()) {
 
     parent->add_child(new VideoStreamChangeCommand(footage_,
@@ -167,7 +173,7 @@ void VideoStreamProperties::Accept(MultiUndoCommand *parent)
                                                    set_colorspace,
                                                    static_cast<VideoParams::Interlacing>(video_interlace_combo_->currentIndex()),
                                                    pixel_aspect_combo_->GetPixelAspectRatio(),
-                                                   selected_range,
+                                                   new_range,
                                                    selected_range_override));
   }
 
