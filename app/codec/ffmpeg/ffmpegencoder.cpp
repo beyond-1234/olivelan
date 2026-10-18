@@ -859,7 +859,11 @@ void FFmpegEncoder::FlushEncoders()
   }
 
   if (audio_codec_ctx_) {
-    WriteAudio(SampleBuffer());
+    // Patch 0100: WriteAudio() returns early for an unallocated SampleBuffer, so the old
+    // WriteAudio(SampleBuffer()) call never reached WriteAudioData()'s null-input flush path and
+    // the encoder dropped the same ~0.3% tail that ConformAudioInternal did. Call the drain path
+    // directly; the resample context is already initialized by the preceding WriteAudio() calls.
+    WriteAudioData(params().audio_params(), nullptr, 0);
 
     FlushCodecCtx(audio_codec_ctx_, audio_stream_);
   }

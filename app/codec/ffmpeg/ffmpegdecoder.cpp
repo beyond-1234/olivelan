@@ -825,6 +825,50 @@ bool FFmpegDecoder::ConformAudioInternal(const QVector<QString> &filenames, cons
       SignalProcessingProgress(frame->best_effort_timestamp, duration);
     }
 
+    // Patch 0100: swr_convert only emits samples when it has enough input. At EOF its internal
+    // delay still holds the tail (measured as ~0.3% of a 1 s conform), which the old loop
+    // discarded. Passing a null input frame and in_count=0 drains that delay into the same
+    // interleaved file before it is closed.
+    if (success) {
+      while (true) {
+        int nb_samples = swr_get_out_samples(resampler, 0);
+        if (nb_samples <= 0) {
+          break;
+        }
+
+        int nb_bytes_per_channel = params.samples_to_bytes(nb_samples) / nb_channels;
+        data.set_sample_count(nb_bytes_per_channel);
+        data.allocate();
+
+        nb_samples = swr_convert(resampler,
+                                 reinterpret_cast<uint8_t**>(data.to_raw_ptrs().data()),
+                                 nb_samples,
+                                 nullptr,
+                                 0);
+
+        if (nb_samples > 0) {
+          nb_bytes_per_channel = params.samples_to_bytes(nb_samples) / nb_channels;
+          wave_out.write(
+              const_cast<const char**>(reinterpret_cast<char**>(data.to_raw_ptrs().data())),
+              nb_bytes_per_channel);
+        }
+
+        data.destroy();
+
+        if (nb_samples < 0) {
+          char err_str[512];
+          av_strerror(nb_samples, err_str, 512);
+          qWarning() << "libswresample failed while flushing at EOF:" << nb_samples << err_str;
+          success = false;
+          break;
+        }
+
+        if (nb_samples == 0) {
+          break;
+        }
+      }
+    }
+
     wave_out.close();
   } else {
     qWarning() << "Failed to open WAVE output for indexing";
