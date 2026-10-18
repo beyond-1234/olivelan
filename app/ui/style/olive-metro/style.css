@@ -52,24 +52,162 @@ QToolButton:disabled {
   border-color: #333333;
 }
 
-/* ---------- Inputs ---------- */
+/* ---------- Inputs (Metro flat fields) ---------- */
 QLineEdit,
 QPlainTextEdit,
 QTextEdit,
 QSpinBox,
 QDoubleSpinBox,
 QComboBox {
+  background: #2D2D30;
+  color: #FFFFFF;
   border: 1px solid #3F3F46;
   border-radius: 0px;
-  padding: 2px 4px;
+  padding: 3px 6px;
+  selection-background-color: #0078D4;
+  selection-color: #FFFFFF;
+}
+
+QLineEdit:hover,
+QPlainTextEdit:hover,
+QTextEdit:hover,
+QSpinBox:hover,
+QDoubleSpinBox:hover,
+QComboBox:hover {
+  border-color: #55555C;
 }
 
 QLineEdit:focus,
 QPlainTextEdit:focus,
 QTextEdit:focus,
 QSpinBox:focus,
+QDoubleSpinBox:focus,
 QComboBox:focus {
+  border: 1px solid #0078D4;
+  background: #1E1E1E;
+}
+
+QComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 18px;
+  border-left: 1px solid #3F3F46;
+}
+
+QComboBox QAbstractItemView {
+  background: #252526;
+  border: 1px solid #3F3F46;
+  selection-background-color: #0078D4;
+  selection-color: #FFFFFF;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+  background: #2D2D30;
+  border: none;
+  width: 14px;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+  background: #3F3F46;
+}
+
+/* ---------- CheckBox & RadioButton (Metro square check) ---------- */
+QCheckBox,
+QRadioButton {
+  spacing: 6px;
+  color: #CCCCCC;
+}
+
+QCheckBox:hover,
+QRadioButton:hover {
+  color: #FFFFFF;
+}
+
+QCheckBox::indicator,
+QRadioButton::indicator {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #3F3F46;
+  background: #2D2D30;
+  border-radius: 0px;
+}
+
+QCheckBox::indicator:hover,
+QRadioButton::indicator:hover {
   border-color: #0078D4;
+}
+
+QCheckBox::indicator:checked,
+QRadioButton::indicator:checked {
+  background: #0078D4;
+  border-color: #0078D4;
+}
+
+/* ---------- Slider (Fluent thin track & rectangular thumb) ---------- */
+QSlider::groove:horizontal {
+  border: none;
+  height: 2px;
+  background: #3F3F46;
+  margin: 6px 0;
+}
+
+QSlider::sub-page:horizontal {
+  background: #0078D4;
+}
+
+QSlider::handle:horizontal {
+  background: #CCCCCC;
+  border: none;
+  width: 8px;
+  margin: -5px 0;
+  border-radius: 0px;
+}
+
+QSlider::handle:horizontal:hover {
+  background: #0078D4;
+}
+
+QSlider::groove:vertical {
+  border: none;
+  width: 2px;
+  background: #3F3F46;
+  margin: 0 6px;
+}
+
+QSlider::add-page:vertical {
+  background: #0078D4;
+}
+
+QSlider::handle:vertical {
+  background: #CCCCCC;
+  border: none;
+  height: 8px;
+  margin: 0 -5px;
+  border-radius: 0px;
+}
+
+QSlider::handle:vertical:hover {
+  background: #0078D4;
+}
+
+/* ---------- Olive Native SliderBase (Numerical draggable value labels) ---------- */
+olive--SliderLabel {
+  color: #0078D4;
+  font-weight: 500;
+  padding: 2px 4px;
+  border-bottom: 1px solid transparent;
+}
+
+olive--SliderLabel:hover {
+  color: #26A0DA;
+  border-bottom: 1px solid #0078D4;
+  background: #2D2D30;
+}
+
+olive--SliderLabel:focus {
+  border: 1px solid #0078D4;
 }
 
 /* ---------- Tabs: Metro Flat design with top accent line ---------- */
