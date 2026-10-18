@@ -242,9 +242,17 @@ void GpuSessionAdvisor::ApplySessionPreference()
   }
 
   if (ConfiguredMode() != Mode::XwaylandPrime) {
-    // Native session: deliberately export NOTHING. Setting __NV_PRIME_RENDER_OFFLOAD on its own
-    // pulls the GL context onto the dGPU while the compositor stays on the iGPU, and the window
-    // then fails to present at all (measured as a blank white client area, patch 0076).
+    // Native session: deliberately export NOTHING.
+    // Critical defect note (Patch 0099): Setting __NV_PRIME_RENDER_OFFLOAD on its own under native
+    // Wayland pulls the Qt GL context onto the dGPU while KWin/Mutter compositor stays on the iGPU.
+    // This fails presentation completely:
+    //   - On single internal display: window fails to present at all (solid blank white client area, patch 0076).
+    //   - On external display connected to dGPU (e.g. HDMI on card0): window exhibits corrupted presentation,
+    //     becoming a transparent/ghost buffer that continuously redraws any underlying screen contents
+    //     (measured & confirmed on RTX 4060 + 780M / KDE Plasma Wayland).
+    // Therefore, under native Wayland, PRIME offload MUST NEVER be automatically enabled regardless
+    // of whether an external monitor is plugged into the discrete GPU. To use Tier 1 on hybrid
+    // hardware, the session must be cleanly switched to X11/Xwayland.
     qInfo() << "[GPU Session]" << DescribeEnvironment();
     return;
   }
