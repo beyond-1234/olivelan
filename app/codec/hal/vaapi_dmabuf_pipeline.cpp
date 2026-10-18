@@ -473,7 +473,9 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
     if (s_zero_copy_announced.compare_exchange_strong(expected, true)) {
       qInfo() << "[VAAPI-HAL] DMA-BUF zero-copy pipeline successfully established on"
               << prime_desc.width << "x" << prime_desc.height << "surface;"
-              << "bits:" << bits << "- direct GPU texture compositing active (zero CPU readbacks);"
+              << "bits:" << bits
+              << "- direct GPU texture compositing active (no CPU readback on this full-resolution "
+                 "path; scaled previews bypass this path);"
               << "colour matrix" << effective.color_space()
               << "range" << (full_range ? "full" : "limited")
               << "transfer" << effective.color_trc()
