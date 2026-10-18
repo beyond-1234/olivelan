@@ -162,6 +162,9 @@ public:
     PixelFormat maximum_format = PixelFormat::INVALID;
     CancelAtom *cancelled = nullptr;
     VideoParams::ColorRange force_range = VideoParams::kColorRangeDefault;
+    // Patch 0113: force_range is only authoritative when the user explicitly chose it.
+    // An imported range is merely the fallback for frames without their own metadata.
+    bool force_range_is_user_override = false;
     VideoParams::Interlacing src_interlacing = VideoParams::kInterlaceNone;
     bool is_primary = true;
   };

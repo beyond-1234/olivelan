@@ -38,12 +38,19 @@ public:
 
   VideoParams::ColorRange yuv_range() const
   {
-    return static_cast<VideoParams::ColorRange>(yuv_color_range_combobox_->currentIndex());
+    // Auto is the export default; the encoder converts to limited range regardless,
+    // so present/round-trip it as the explicit limited choice.
+    return (yuv_color_range_combobox_->currentData().toInt() == VideoParams::kColorRangeFull)
+               ? VideoParams::kColorRangeFull
+               : VideoParams::kColorRangeLimited;
   }
 
   void set_yuv_range(VideoParams::ColorRange i)
   {
-    yuv_color_range_combobox_->setCurrentIndex(i);
+    const int index = yuv_color_range_combobox_->findData(
+        i == VideoParams::kColorRangeFull ? VideoParams::kColorRangeFull
+                                          : VideoParams::kColorRangeLimited);
+    yuv_color_range_combobox_->setCurrentIndex(index >= 0 ? index : 0);
   }
 
 private:

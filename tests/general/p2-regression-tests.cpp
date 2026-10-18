@@ -46,6 +46,8 @@
 #include <QImage>
 #include <QString>
 #include <QStringList>
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
 
 #if __has_include(<EGL/egl.h>)
 #include <EGL/egl.h>
@@ -642,6 +644,64 @@ OLIVE_ADD_TEST(FrameColorRangePriority)
   if (FFmpegUtils::ResolveColorRange(AVCOL_RANGE_JPEG, VideoParams::kColorRangeLimited, true)
       != AVCOL_RANGE_MPEG) {
     std::cout << " - user override to limited range did not override full decoded frame";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(ColorRangeOverridePersistence)
+{
+  // Patch 0113: the user's explicit range choice must survive save/load, and an
+  // imported range must not masquerade as an override (otherwise 0104 regresses).
+  VideoParams saved;
+  saved.set_color_range(VideoParams::kColorRangeFull);
+  saved.set_color_range_overridden(true);
+
+  QString xml;
+  {
+    QXmlStreamWriter w(&xml);
+    w.writeStartElement(QStringLiteral("video"));
+    saved.Save(&w);
+    w.writeEndElement();
+  }
+
+  VideoParams loaded;
+  {
+    QXmlStreamReader r(xml);
+    while (!r.atEnd() && !(r.isStartElement() && r.name() == QStringLiteral("video"))) {
+      r.readNext();
+    }
+    loaded.Load(&r);
+  }
+
+  if (loaded.color_range() != VideoParams::kColorRangeFull || !loaded.color_range_overridden()) {
+    std::cout << " - explicit range override was not round-tripped";
+    return __LINE__;
+  }
+
+  // A file written before this flag existed has no <colorrangeoverride>; it must be
+  // treated as "no override" so the decoded frame wins (the 0104 semantics).
+  const QString legacy = QStringLiteral("<video><colorrange>1</colorrange></video>");
+  VideoParams legacy_loaded;
+  {
+    QXmlStreamReader r(legacy);
+    while (!r.atEnd() && !(r.isStartElement() && r.name() == QStringLiteral("video"))) {
+      r.readNext();
+    }
+    legacy_loaded.Load(&r);
+  }
+
+  if (legacy_loaded.color_range() != VideoParams::kColorRangeFull
+      || legacy_loaded.color_range_overridden()) {
+    std::cout << " - legacy stream range was misread as a user override";
+    return __LINE__;
+  }
+
+  const VideoParams defaults;
+  if (defaults.color_range() != VideoParams::kColorRangeAuto
+      || defaults.color_range_overridden()) {
+    std::cout << " - default VideoParams should be auto range without an override";
     return __LINE__;
   }
 

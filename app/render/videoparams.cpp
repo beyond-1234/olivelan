@@ -272,6 +272,7 @@ void VideoParams::set_defaults_for_footage()
   x_ = 0;
   y_ = 0;
   color_range_ = kColorRangeDefault;
+  color_range_overridden_ = false;
   color_primaries_ = kColorPrimariesDefault;
   color_trc_ = kTransferDefault;
   color_space_ = kColorSpaceDefault;
@@ -417,6 +418,8 @@ void VideoParams::Load(QXmlStreamReader *reader)
       set_colorspace(reader->readElementText());
     } else if (reader->name() == QStringLiteral("colorrange")) {
       set_color_range(static_cast<ColorRange>(reader->readElementText().toInt()));
+    } else if (reader->name() == QStringLiteral("colorrangeoverride")) {
+      set_color_range_overridden(reader->readElementText().toInt());
     } else if (reader->name() == QStringLiteral("colorprimaries")) {
       set_color_primaries(reader->readElementText().toInt());
     } else if (reader->name() == QStringLiteral("colortransfer")) {
@@ -453,6 +456,7 @@ void VideoParams::Save(QXmlStreamWriter *writer) const
   writer->writeTextElement(QStringLiteral("premultipliedalpha"), QString::number(premultiplied_alpha_));
   writer->writeTextElement(QStringLiteral("colorspace"), colorspace_);
   writer->writeTextElement(QStringLiteral("colorrange"), QString::number(color_range_));
+  writer->writeTextElement(QStringLiteral("colorrangeoverride"), QString::number(color_range_overridden_));
   writer->writeTextElement(QStringLiteral("colorprimaries"), QString::number(color_primaries_));
   writer->writeTextElement(QStringLiteral("colortransfer"), QString::number(color_trc_));
   writer->writeTextElement(QStringLiteral("colormatrix"), QString::number(color_space_));

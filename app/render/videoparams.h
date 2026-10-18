@@ -408,6 +408,17 @@ public:
   const ColorRange &color_range() const { return color_range_; }
   void set_color_range(const ColorRange &color_range) { color_range_ = color_range; }
 
+  /**
+   * @brief Whether color_range() is an explicit user override.
+   *
+   * Imported streams always carry a range (the container's, or the range FFmpeg
+   * derived while probing), so color_range() alone cannot distinguish "the user
+   * picked this" from "this is what the file says". Only an explicit override may
+   * beat the range on the decoded frame; otherwise the frame wins (patch 0104).
+   */
+  bool color_range_overridden() const { return color_range_overridden_; }
+  void set_color_range_overridden(bool overridden) { color_range_overridden_ = overridden; }
+
   int color_primaries() const { return color_primaries_; }
   void set_color_primaries(int primaries) { color_primaries_ = primaries; }
 
@@ -503,6 +514,7 @@ private:
   float x_;
   float y_;
   ColorRange color_range_;
+  bool color_range_overridden_;
   int color_primaries_;
   int color_trc_;
   int color_space_;

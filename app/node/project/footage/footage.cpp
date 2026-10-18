@@ -564,6 +564,7 @@ VideoParams Footage::MergeVideoStream(const VideoParams &base, const VideoParams
   merged.set_premultiplied_alpha(over.premultiplied_alpha());
   merged.set_video_type(over.video_type());
   merged.set_color_range(over.color_range());
+  merged.set_color_range_overridden(over.color_range_overridden());
 
   // Patch 0042: propagate the container colour metadata, but keep the base's
   // value when the stream being merged in has nothing to say about it (an

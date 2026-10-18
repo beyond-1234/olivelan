@@ -330,11 +330,13 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 
   AVFramePtr original = f;
 
-  // Patch 0104: an explicit range on the decoded frame wins over the project's cached params.
-  // The old unconditional assignment turned limited-range HDR into full-range whenever the saved
-  // VideoParams predated the HDR import.
-  const bool is_user_override = (p.force_range == VideoParams::kColorRangeLimited ||
-                                 p.force_range == VideoParams::kColorRangeFull);
+  // Patch 0104/0113: an explicit range on the decoded frame wins over the project's cached
+  // params; only a range the user actually chose in Footage Properties may override the frame.
+  // Imported VideoParams always have a range, so deriving the override from the value alone
+  // (patch 0105) made every cached stream look user-overridden and undid the 0104 fix.
+  const bool is_user_override = p.force_range_is_user_override
+      && (p.force_range == VideoParams::kColorRangeLimited ||
+          p.force_range == VideoParams::kColorRangeFull);
   f->color_range = FFmpegUtils::ResolveColorRange(f->color_range, p.force_range, is_user_override);
 
   // Any hardware-resident frame (CUDA / VideoToolbox / VA-API) is routed through the active
