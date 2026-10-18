@@ -192,6 +192,8 @@ private:
 
   bool first_show_;
 
+  bool constructor_finished_{false};
+
   bool initial_layout_applied_;
 
   int autoplay_seconds_;

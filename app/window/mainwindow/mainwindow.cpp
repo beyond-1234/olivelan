@@ -144,6 +144,10 @@ MainWindow::MainWindow(QWidget *parent) :
   // size yet at this point (and even the first showEvent/resize can still be 0x0), which would make
   // KDDockWidgets lay every panel out at zero size and leave an empty window. ApplyInitialLayoutIfNeeded()
   // builds it as soon as the window reports a real size - see showEvent()/resizeEvent().
+
+  // Construction has safely finished. Mark ready and schedule layout on next event loop tick.
+  constructor_finished_ = true;
+  QTimer::singleShot(0, this, &MainWindow::ApplyInitialLayoutIfNeeded);
 }
 
 MainWindow::~MainWindow()
@@ -980,6 +984,10 @@ void MainWindow::SetDefaultLayout()
 
 void MainWindow::ApplyInitialLayoutIfNeeded()
 {
+  if (!constructor_finished_) {
+    return;
+  }
+
   if (initial_layout_applied_) {
     return;
   }

@@ -55,6 +55,21 @@ QStringList FFmpegEncoder::GetPixelFormatsForCodec(ExportCodec::Codec c) const
   const AVCodec* codec_info = GetEncoder(c, SampleFormat::INVALID);
 
   if (codec_info) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 19, 100)
+    const enum AVPixelFormat *p_fmts = nullptr;
+    int num_fmts = 0;
+    if (avcodec_get_supported_config(nullptr, codec_info, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void**)&p_fmts, &num_fmts) >= 0 && p_fmts) {
+      for (int i = 0; p_fmts[i] != AV_PIX_FMT_NONE; i++) {
+        if (FFmpegUtils::ConvertJPEGSpaceToRegularSpace(p_fmts[i]) != p_fmts[i]) {
+          continue;
+        }
+        const char* pix_fmt_name = av_get_pix_fmt_name(p_fmts[i]);
+        if (pix_fmt_name) {
+          pix_fmts.append(pix_fmt_name);
+        }
+      }
+    }
+#else
     for (int i=0; codec_info->pix_fmts[i]!=-1; i++) {
       if (FFmpegUtils::ConvertJPEGSpaceToRegularSpace(codec_info->pix_fmts[i]) != codec_info->pix_fmts[i]) {
         // This is a deprecated "JPEG" space, skip it
@@ -64,6 +79,7 @@ QStringList FFmpegEncoder::GetPixelFormatsForCodec(ExportCodec::Codec c) const
       const char* pix_fmt_name = av_get_pix_fmt_name(codec_info->pix_fmts[i]);
       pix_fmts.append(pix_fmt_name);
     }
+#endif
   }
 
   return pix_fmts;
@@ -88,13 +104,28 @@ std::vector<SampleFormat> FFmpegEncoder::GetSampleFormatsForCodec(ExportCodec::C
   } else {
     const AVCodec* codec_info = GetEncoder(c, SampleFormat::INVALID);
 
-    if (codec_info && codec_info->sample_fmts) {
-      for (int i=0; codec_info->sample_fmts[i]!=-1; i++) {
-        SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(static_cast<AVSampleFormat>(codec_info->sample_fmts[i]));
-        if (this_format != SampleFormat::INVALID) {
-          f.push_back(this_format);
+    if (codec_info) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 19, 100)
+      const enum AVSampleFormat *s_fmts = nullptr;
+      int num_fmts = 0;
+      if (avcodec_get_supported_config(nullptr, codec_info, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void**)&s_fmts, &num_fmts) >= 0 && s_fmts) {
+        for (int i = 0; s_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
+          SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(s_fmts[i]);
+          if (this_format != SampleFormat::INVALID) {
+            f.push_back(this_format);
+          }
         }
       }
+#else
+      if (codec_info->sample_fmts) {
+        for (int i=0; codec_info->sample_fmts[i]!=-1; i++) {
+          SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(static_cast<AVSampleFormat>(codec_info->sample_fmts[i]));
+          if (this_format != SampleFormat::INVALID) {
+            f.push_back(this_format);
+          }
+        }
+      }
+#endif
     }
   }
 
