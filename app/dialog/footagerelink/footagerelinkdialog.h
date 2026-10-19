@@ -23,9 +23,12 @@
 
 #include <QDialog>
 #include <QStringList>
-#include <QTreeWidget>
+#include <QVector>
 
 #include "node/project/footage/footage.h"
+
+class QLabel;
+class QListWidget;
 
 namespace olive {
 
@@ -36,7 +39,7 @@ class FootageRelinkDialog : public QDialog
   Q_OBJECT
 public:
   /**
-   * @brief Relink missing footage.
+   * @brief Prompt for missing footage and let the user choose a media folder.
    *
    * When `undo_stack` is provided (the project is already open), accepted
    * changes are pushed as one undo command. During project load it is null and
@@ -49,15 +52,13 @@ protected:
   virtual void accept() override;
 
 private:
-  void UpdateFootageItem(int index);
-  void BrowseForFootage(int index);
-  void SearchFolder();
-  void RelinkFromFile(int index, const QString &path);
-  void RelinkSiblingsFromFile(int index, const QString &path);
+  void SelectFolder();
+  void RefreshMissingList();
   bool IsFound(int index) const;
-  int FirstUnresolved() const;
+  int MissingCount() const;
 
-  QTreeWidget* table_;
+  QListWidget* missing_list_;
+  QLabel* status_label_;
 
   QVector<Footage*> footage_;
   QStringList original_paths_;

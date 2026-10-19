@@ -39,7 +39,6 @@
 #include "cli/clitask/clitaskdialog.h"
 #include "codec/conformmanager.h"
 #include "common/filefunctions.h"
-#include "common/footagerelink.h"
 #include "common/xmlutils.h"
 #include "config/config.h"
 #include "dialog/about/about.h"
@@ -1618,41 +1617,6 @@ bool Core::ValidateFootageInLoadedProject(Project* project, const QString& proje
       } else {
         footage_we_couldnt_validate.append(footage);
       }
-    }
-  }
-
-  // The project may have moved between machines with different roots (for
-  // example /home/user vs /var/home/user), in which case the relative-path
-  // attempt above cannot reconstruct the new path. Search the project's own
-  // directory once and relink unique filename/suffix matches automatically.
-  if (!footage_we_couldnt_validate.isEmpty()) {
-    const QDir project_dir = QFileInfo(project->filename()).dir();
-
-    if (project_dir.exists() && !project_dir.isRoot()) {
-      const FootageRelinkSearch search(project_dir.absolutePath());
-      QVector<Footage*> still_missing;
-      int resolved_count = 0;
-
-      for (Footage *footage : footage_we_couldnt_validate) {
-        const QString replacement = search.Find(footage->filename());
-
-        if (!replacement.isEmpty() && QFileInfo(replacement).isFile()) {
-          qInfo() << "Relinked" << footage->filename() << "to" << replacement
-                  << "from the project directory";
-          footage->set_filename(replacement);
-          footage->SetValid();
-          ++resolved_count;
-        } else {
-          still_missing.append(footage);
-        }
-      }
-
-      if (resolved_count > 0) {
-        qInfo() << "Automatically relinked" << resolved_count
-                << "missing footage file(s) from" << project_dir.absolutePath();
-      }
-
-      footage_we_couldnt_validate = still_missing;
     }
   }
 

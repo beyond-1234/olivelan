@@ -20,15 +20,14 @@
 
 #include "footagerelinkdialog.h"
 
+#include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -41,80 +40,58 @@ namespace olive {
 FootageRelinkDialog::FootageRelinkDialog(const QVector<Footage *> &footage, QWidget* parent,
                                          UndoStack* undo_stack) :
   QDialog(parent),
-  table_(nullptr),
+  missing_list_(nullptr),
+  status_label_(nullptr),
   footage_(footage),
   undo_stack_(undo_stack)
 {
+  setWindowTitle(tr("Missing Media"));
+
   QVBoxLayout* layout = new QVBoxLayout(this);
 
   QLabel* description = new QLabel(
-      tr("The following files could not be found. Use Browse for a single file, or "
-         "Search Folder to match all missing files under a new media directory. "
-         "Clips whose files stay missing will remain offline."));
+      tr("The following media files could not be found. Select the folder that now contains "
+         "them. Olive will scan that folder and all of its subfolders, matching files by "
+         "filename and relative folder path."));
   description->setWordWrap(true);
   layout->addWidget(description);
 
-  table_ = new QTreeWidget();
-  table_->setColumnCount(4);
-  table_->setHeaderLabels({tr("Footage"), tr("Path"), tr("Status"), tr("Actions")});
-  table_->setRootIsDecorated(false);
-  table_->setSelectionBehavior(QAbstractItemView::SelectRows);
-  table_->setWordWrap(false);
-  table_->header()->setSectionsMovable(false);
-  table_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-  table_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-  table_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-  table_->header()->setStretchLastSection(false);
-  table_->setColumnWidth(0, 220);
+  layout->addWidget(new QLabel(tr("Missing files:")));
 
-  for (int i = 0; i < footage.size(); i++) {
-    Footage* f = footage.at(i);
-    const QString original = f->filename();
-    const QString absolute = QFileInfo(original).isFile() ? QFileInfo(original).absoluteFilePath() : QString();
+  missing_list_ = new QListWidget();
+  missing_list_->setSelectionMode(QAbstractItemView::NoSelection);
+  layout->addWidget(missing_list_, 1);
 
-    original_paths_.append(original);
-    new_paths_.append(absolute);
+  status_label_ = new QLabel();
+  status_label_->setWordWrap(true);
+  layout->addWidget(status_label_);
 
-    QTreeWidgetItem* item = new QTreeWidgetItem();
-    item->setIcon(0, f->data(Node::ICON).value<QIcon>());
-    item->setText(0, f->GetLabel());
+  QDialogButtonBox* buttons = new QDialogButtonBox(this);
+  QPushButton* select_folder_button = buttons->addButton(
+      tr("Select Folder..."), QDialogButtonBox::ActionRole);
+  select_folder_button->setDefault(true);
+  QPushButton* apply_button = buttons->addButton(
+      tr("Apply"), QDialogButtonBox::AcceptRole);
+  buttons->addButton(QDialogButtonBox::Cancel);
 
-    QWidget* item_actions = new QWidget();
-    QHBoxLayout* item_actions_layout = new QHBoxLayout(item_actions);
-    item_actions_layout->setContentsMargins(0, 0, 0, 0);
-    QPushButton* item_browse_btn = new QPushButton(tr("Browse..."));
-    connect(item_browse_btn, &QPushButton::clicked, this, [this, i]() {
-      BrowseForFootage(i);
-    });
-    item_actions_layout->addWidget(item_browse_btn);
-
-    table_->addTopLevelItem(item);
-    table_->setItemWidget(item, 3, item_actions);
-
-    UpdateFootageItem(i);
-  }
-
-  connect(table_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item, int) {
-    const int index = table_->indexOfTopLevelItem(item);
-    if (index >= 0) {
-      BrowseForFootage(index);
-    }
-  });
-
-  layout->addWidget(table_);
-
-  QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
-                                                   this);
-  buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
-  QPushButton* search_button = buttons->addButton(tr("Search Folder..."),
-                                                  QDialogButtonBox::ActionRole);
-  connect(search_button, &QPushButton::clicked, this, &FootageRelinkDialog::SearchFolder);
-  connect(buttons, &QDialogButtonBox::accepted, this, &FootageRelinkDialog::accept);
+  connect(select_folder_button, &QPushButton::clicked,
+          this, &FootageRelinkDialog::SelectFolder);
+  connect(apply_button, &QPushButton::clicked,
+          this, &FootageRelinkDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, this, &FootageRelinkDialog::reject);
   layout->addWidget(buttons);
 
-  resize(980, 480);
-  setWindowTitle(tr("Relink Footage"));
+  for (Footage* f : footage_) {
+    const QString original = f->filename();
+    original_paths_.append(original);
+    new_paths_.append(QFileInfo(original).isFile()
+                          ? QFileInfo(original).absoluteFilePath()
+                          : QString());
+  }
+
+  RefreshMissingList();
+
+  resize(760, 460);
 }
 
 bool FootageRelinkDialog::IsFound(int index) const
@@ -127,138 +104,65 @@ bool FootageRelinkDialog::IsFound(int index) const
   return !path.isEmpty() && QFileInfo(path).isFile();
 }
 
-int FootageRelinkDialog::FirstUnresolved() const
+int FootageRelinkDialog::MissingCount() const
 {
+  int missing = 0;
+
   for (int i = 0; i < footage_.size(); i++) {
     if (!IsFound(i)) {
-      return i;
+      ++missing;
     }
   }
 
-  return -1;
+  return missing;
 }
 
-void FootageRelinkDialog::UpdateFootageItem(int index)
+void FootageRelinkDialog::RefreshMissingList()
 {
-  Footage* f = footage_.at(index);
-  QTreeWidgetItem* item = table_->topLevelItem(index);
-  if (!item) {
-    return;
-  }
+  missing_list_->clear();
 
-  const QString &original = original_paths_.at(index);
-  const QString &replacement = new_paths_.at(index);
-  const bool found = IsFound(index);
-
-  QString path_text = original;
-  if (found && replacement != original) {
-    path_text.append(QStringLiteral(" -> "));
-    path_text.append(replacement);
-  }
-
-  item->setIcon(0, f->data(Node::ICON).value<QIcon>());
-  item->setText(0, f->GetLabel());
-  item->setText(1, path_text);
-  item->setToolTip(1, path_text);
-  item->setText(2, found ? tr("Found") : tr("Missing"));
-
-  const QPalette palette = table_->palette();
-  item->setForeground(2, found ? palette.color(QPalette::Text)
-                              : palette.color(QPalette::Disabled, QPalette::Text));
-  item->setToolTip(2, replacement);
-}
-
-void FootageRelinkDialog::BrowseForFootage(int index)
-{
-  if (index < 0 || index >= footage_.size()) {
-    return;
-  }
-
-  QString normalized_original = original_paths_.at(index);
-  normalized_original.replace(QLatin1Char('\\'), QLatin1Char('/'));
-
-  QString start_dir = QFileInfo(normalized_original).absolutePath();
-  if (!QFileInfo(start_dir).isDir()) {
-    start_dir = last_search_dir_;
-  }
-  if (start_dir.isEmpty()) {
-    start_dir = QDir::homePath();
-  }
-
-  const QString new_fn = QFileDialog::getOpenFileName(
-      this, tr("Relink \"%1\"").arg(footage_.at(index)->GetLabel()), start_dir,
-      tr("All Files (*.*)"));
-
-  if (!new_fn.isEmpty()) {
-    RelinkFromFile(index, new_fn);
-  }
-}
-
-void FootageRelinkDialog::RelinkFromFile(int index, const QString &path)
-{
-  if (index < 0 || index >= footage_.size() || !QFileInfo(path).isFile()) {
-    return;
-  }
-
-  new_paths_[index] = QFileInfo(path).absoluteFilePath();
-  RelinkSiblingsFromFile(index, path);
+  const int missing = MissingCount();
 
   for (int i = 0; i < footage_.size(); i++) {
-    UpdateFootageItem(i);
+    if (!IsFound(i)) {
+      const QString path = original_paths_.at(i).isEmpty()
+          ? tr("(unknown path)") : original_paths_.at(i);
+      QListWidgetItem* item = new QListWidgetItem(path);
+      item->setToolTip(path);
+      missing_list_->addItem(item);
+    }
   }
 
-  if (FirstUnresolved() == -1) {
+  if (missing == 0) {
+    status_label_->setText(tr("All %1 file(s) are online.").arg(footage_.size()));
+  } else {
+    status_label_->setText(
+        tr("%1 of %2 file(s) are still missing. Select the folder that contains them, "
+           "or apply with the remaining files offline.").arg(missing).arg(footage_.size()));
+  }
+}
+
+void FootageRelinkDialog::SelectFolder()
+{
+  if (MissingCount() == 0) {
     accept();
+    return;
   }
-}
 
-void FootageRelinkDialog::RelinkSiblingsFromFile(int index, const QString &path)
-{
-  QString normalized_original = original_paths_.at(index);
-  normalized_original.replace(QLatin1Char('\\'), QLatin1Char('/'));
-
-  const QFileInfo original_info(normalized_original);
-  const QDir original_dir = original_info.dir();
-  const QDir new_dir = QFileInfo(path).dir();
-
-  for (int i = 0; i < footage_.size(); i++) {
-    if (i == index || IsFound(i)) {
-      continue;
-    }
-
-    QString normalized_other = original_paths_.at(i);
-    normalized_other.replace(QLatin1Char('\\'), QLatin1Char('/'));
-
-    const QString relative_to_original = original_dir.relativeFilePath(normalized_other);
-    QString candidate = QDir::isAbsolutePath(relative_to_original)
-        ? relative_to_original
-        : new_dir.filePath(relative_to_original);
-    candidate = QDir::cleanPath(candidate);
-
-    if (!QFileInfo(candidate).isFile()) {
-      candidate = new_dir.filePath(QFileInfo(normalized_other).fileName());
-    }
-
-    if (QFileInfo(candidate).isFile()) {
-      new_paths_[i] = QFileInfo(candidate).absoluteFilePath();
-    }
-  }
-}
-
-void FootageRelinkDialog::SearchFolder()
-{
   QString start_dir = last_search_dir_;
+
   if (start_dir.isEmpty() && !original_paths_.isEmpty()) {
     QString normalized_original = original_paths_.first();
     normalized_original.replace(QLatin1Char('\\'), QLatin1Char('/'));
     start_dir = QFileInfo(normalized_original).absolutePath();
   }
+
   if (!QFileInfo(start_dir).isDir()) {
     start_dir = QDir::homePath();
   }
 
   const QString search_dir = QFileDialog::getExistingDirectory(
-      this, tr("Search For Missing Footage"), start_dir);
+      this, tr("Select Media Folder"), start_dir);
   if (search_dir.isEmpty()) {
     return;
   }
@@ -267,44 +171,36 @@ void FootageRelinkDialog::SearchFolder()
 
   const FootageRelinkSearch search(search_dir);
   if (!search.IsValid()) {
-    QMessageBox::warning(this, tr("Relink Footage"),
-                         tr("The selected search folder cannot be read."));
+    QMessageBox::warning(this, tr("Missing Media"),
+                         tr("The selected folder cannot be read."));
     return;
   }
 
-  int unresolved_before = 0;
+  const int missing_before = MissingCount();
+
   for (int i = 0; i < footage_.size(); i++) {
-    if (!IsFound(i)) {
-      ++unresolved_before;
-      const QString match = search.Find(original_paths_.at(i));
-      if (!match.isEmpty()) {
-        new_paths_[i] = match;
-      }
+    if (IsFound(i)) {
+      continue;
     }
-    UpdateFootageItem(i);
+
+    const QString match = search.Find(original_paths_.at(i));
+    if (!match.isEmpty()) {
+      new_paths_[i] = match;
+    }
   }
 
-  const int unresolved_after = [this]() {
-    int count = 0;
-    for (int i = 0; i < footage_.size(); i++) {
-      if (!IsFound(i)) {
-        ++count;
-      }
-    }
-    return count;
-  }();
+  RefreshMissingList();
 
-  if (unresolved_after == 0) {
+  if (MissingCount() == 0) {
     accept();
     return;
   }
 
-  QMessageBox::information(
-      this, tr("Relink Footage"),
-      tr("Found %1 of %2 missing file(s) in \"%3\". Use Browse for the remaining ones.")
-          .arg(unresolved_before - unresolved_after)
-          .arg(unresolved_before)
-          .arg(search_dir));
+  if (MissingCount() == missing_before) {
+    QMessageBox::information(
+        this, tr("Missing Media"),
+        tr("No matching media files were found in \"%1\" or its subfolders.").arg(search_dir));
+  }
 }
 
 void FootageRelinkDialog::accept()
