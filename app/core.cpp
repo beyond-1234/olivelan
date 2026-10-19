@@ -71,6 +71,7 @@
 #include "task/project/save/save.h"
 #include "task/taskmanager.h"
 #include "ui/style/style.h"
+#include "ui/style/thememanager.h"
 #include "undo/undostack.h"
 #include "widget/menu/menushared.h"
 #include "widget/taskview/taskviewitem.h"
@@ -741,8 +742,9 @@ void Core::AddRecoveryProjectFromTask(Task *task)
 
 void Core::StartGUI(bool full_screen)
 {
-  // Set UI style
+  // Set UI style & dynamic theme engine
   StyleManager::Init();
+  ThemeManager::instance()->Initialize();
 
   // Set up shared menus
   MenuShared::CreateInstance();

@@ -34,6 +34,7 @@
 #include "panel/timeline/timeline.h"
 #include "ui/colorcoding.h"
 #include "ui/style/metrostyleconfig.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/timelinewidget/timelinewidget.h"
 
 namespace olive {
@@ -53,6 +54,8 @@ TimelineView::TimelineView(Qt::Alignment vertical_alignment, QWidget *parent) :
   setAlignment(Qt::AlignLeft | vertical_alignment);
 
   setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+
+  connect(DesignTokenRegistry::instance(), &DesignTokenRegistry::TokensChanged, viewport(), qOverload<>(&QWidget::update));
   setBackgroundRole(QPalette::Window);
   setContextMenuPolicy(Qt::CustomContextMenu);
   viewport()->setMouseTracking(true);
@@ -245,7 +248,9 @@ void TimelineView::drawForeground(QPainter *painter, const QRectF &rect)
           painter->drawRect(selection_rect);
 
           painter->setBrush(Qt::NoBrush);
-          painter->setPen(QPen(metro::kAccentColor, metro::kBorderWidth * 2));
+          QColor accent = DesignTokenRegistry::instance()->GetColor(QStringLiteral("color.accent.primary"), metro::kAccentColor);
+          int stroke = DesignTokenRegistry::instance()->GetInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth) * 2;
+          painter->setPen(QPen(accent, stroke));
           painter->drawRect(selection_rect.adjusted(1, 1, -1, -1));
         }
       }
@@ -477,7 +482,9 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
         // Metro/Fluent: a flat 1px hairline outline in place of the old bevel (white top/left +
         // shadowed bottom/right pseudo-3D).
         painter->setBrush(Qt::NoBrush);
-        painter->setPen(QPen(metro::kBorderColor, metro::kBorderWidth));
+        QColor border = DesignTokenRegistry::instance()->GetColor(QStringLiteral("color.border.hairline"), metro::kBorderColor);
+        int stroke = DesignTokenRegistry::instance()->GetInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
+        painter->setPen(QPen(border, stroke));
 
         painter->drawRect(r.adjusted(0, 0, -1, -1));
       } else {

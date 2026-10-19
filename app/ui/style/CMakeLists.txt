@@ -27,5 +27,11 @@ set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
   ui/style/style.h
   ui/style/style.cpp
+  ui/style/designtokenregistry.h
+  ui/style/designtokenregistry.cpp
+  ui/style/qssmacropreprocessor.h
+  ui/style/qssmacropreprocessor.cpp
+  ui/style/thememanager.h
+  ui/style/thememanager.cpp
   PARENT_SCOPE
 )

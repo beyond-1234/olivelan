@@ -30,6 +30,7 @@
 #include "widget/colorbutton/colorbutton.h"
 #include "widget/menu/menushared.h"
 #include "ui/colorcoding.h"
+#include "ui/style/thememanager.h"
 
 namespace olive {
 
@@ -48,18 +49,52 @@ PreferencesAppearanceTab::PreferencesAppearanceTab()
   style_combobox_ = new QComboBox();
 
   {
-    const QMap<QString, QString>& themes = StyleManager::available_themes();
-    QMap<QString, QString>::const_iterator i;
-    for (i=themes.cbegin(); i!=themes.cend(); i++) {
-      style_combobox_->addItem(i.value(), i.key());
+    // Populate built-in styles and any external/community discovered themes
+    QStringList all_theme_ids = ThemeManager::instance()->GetAvailableThemeIds();
+    for (const QString &tid : all_theme_ids) {
+      ThemeInfo tinfo = ThemeManager::instance()->GetThemeInfo(tid);
+      QString display_text = tinfo.name;
+      if (tinfo.is_pure_qss) {
+        display_text += tr(" (Community QSS)");
+      } else if (!tinfo.is_builtin) {
+        display_text += tr(" (Custom Theme)");
+      }
+      style_combobox_->addItem(display_text, tid);
 
-      if (StyleManager::GetStyle() == i.key()) {
-        style_combobox_->setCurrentIndex(style_combobox_->count()-1);
+      if (ThemeManager::instance()->CurrentThemeId() == tid || StyleManager::GetStyle() == tid) {
+        style_combobox_->setCurrentIndex(style_combobox_->count() - 1);
       }
     }
   }
 
   appearance_layout->addWidget(style_combobox_, row, 1);
+
+  // Add "Import Theme / QSS..." button directly on appearance tab
+  QPushButton* import_theme_btn = new QPushButton(tr("Import Theme / QSS..."));
+  connect(import_theme_btn, &QPushButton::clicked, this, [this]() {
+    QString file = QFileDialog::getOpenFileName(this,
+                                                tr("Import Theme File"),
+                                                QString(),
+                                                tr("Olive Themes & QSS (*.qss *.olivetheme);;All Files (*.*)"));
+    if (!file.isEmpty()) {
+      if (ThemeManager::instance()->ImportThemePackage(file)) {
+        // Refresh combobox
+        style_combobox_->clear();
+        QStringList all_theme_ids = ThemeManager::instance()->GetAvailableThemeIds();
+        for (const QString &tid : all_theme_ids) {
+          ThemeInfo tinfo = ThemeManager::instance()->GetThemeInfo(tid);
+          QString display_text = tinfo.name;
+          if (tinfo.is_pure_qss) display_text += tr(" (Community QSS)");
+          else if (!tinfo.is_builtin) display_text += tr(" (Custom Theme)");
+          style_combobox_->addItem(display_text, tid);
+          if (ThemeManager::instance()->CurrentThemeId() == tid) {
+            style_combobox_->setCurrentIndex(style_combobox_->count() - 1);
+          }
+        }
+      }
+    }
+  });
+  appearance_layout->addWidget(import_theme_btn, row, 2);
 
   row++;
 
@@ -107,8 +142,8 @@ void PreferencesAppearanceTab::Accept(MultiUndoCommand *command)
 
   QString style_path = style_combobox_->currentData().toString();
 
-  if (style_path != StyleManager::GetStyle()) {
-    StyleManager::SetStyle(style_path);
+  if (style_path != ThemeManager::instance()->CurrentThemeId() && style_path != StyleManager::GetStyle()) {
+    ThemeManager::instance()->ApplyTheme(style_path);
     OLIVE_CONFIG("Style") = style_path;
   }
 

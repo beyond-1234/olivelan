@@ -43,8 +43,9 @@ public:
     return available_themes_;
   }
 
-private:
   static QPalette ParsePalette(const QString& ini_path);
+
+private:
 
   static void ParsePaletteGroup(QSettings* ini, QPalette* palette, QPalette::ColorGroup group);
 
