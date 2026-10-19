@@ -28,7 +28,8 @@
 #include "node/project/footage/footage.h"
 
 class QLabel;
-class QListWidget;
+class QPushButton;
+class QTreeWidget;
 
 namespace olive {
 
@@ -39,7 +40,7 @@ class FootageRelinkDialog : public QDialog
   Q_OBJECT
 public:
   /**
-   * @brief Prompt for missing footage and let the user choose a media folder.
+   * @brief Prompt for missing footage and let the user choose media locations.
    *
    * When `undo_stack` is provided (the project is already open), accepted
    * changes are pushed as one undo command. During project load it is null and
@@ -53,12 +54,16 @@ protected:
 
 private:
   void SelectFolder();
-  void RefreshMissingList();
+  void BrowseFile();
+  void RefreshList();
+  void UpdateButtons();
+  int SelectedIndex() const;
   bool IsFound(int index) const;
   int MissingCount() const;
 
-  QListWidget* missing_list_;
+  QTreeWidget* file_list_;
   QLabel* status_label_;
+  QPushButton* browse_button_;
 
   QVector<Footage*> footage_;
   QStringList original_paths_;
