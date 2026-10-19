@@ -86,6 +86,42 @@ bool RemovePath(const QString &path)
   return QFile::remove(path);
 }
 
+void ReadManifest(const QString &theme_directory, ThemeInfo *info)
+{
+  const QString manifest_path = theme_directory + QStringLiteral("/manifest.json");
+  if (!QFileInfo::exists(manifest_path)) {
+    return;
+  }
+
+  QFile manifest(manifest_path);
+  if (!manifest.open(QIODevice::ReadOnly)) {
+    qWarning() << "[ThemeManager] Cannot read manifest:" << manifest_path;
+    return;
+  }
+
+  QJsonParseError parse_error;
+  const QJsonDocument doc = QJsonDocument::fromJson(manifest.readAll(), &parse_error);
+  if (parse_error.error != QJsonParseError::NoError || !doc.isObject()) {
+    qWarning() << "[ThemeManager] Invalid manifest for" << info->id << ":"
+               << parse_error.errorString();
+    return;
+  }
+
+  const QJsonObject obj = doc.object();
+  const QString name = obj.value(QStringLiteral("name")).toString();
+  const QString author = obj.value(QStringLiteral("author")).toString();
+  const QString version = obj.value(QStringLiteral("version")).toString();
+  if (!name.isEmpty()) {
+    info->name = name;
+  }
+  if (!author.isEmpty()) {
+    info->author = author;
+  }
+  if (!version.isEmpty()) {
+    info->version = version;
+  }
+}
+
 bool CopyDirectoryRecursively(const QString &source, const QString &destination)
 {
   QDir source_dir(source);
@@ -293,32 +329,7 @@ void ThemeManager::ScanThemeDirectories()
       info.name = id;
       info.is_builtin = false;
 
-      const QString manifest_path = entry.filePath() + QStringLiteral("/manifest.json");
-      if (QFileInfo::exists(manifest_path)) {
-        QFile manifest(manifest_path);
-        if (manifest.open(QIODevice::ReadOnly)) {
-          QJsonParseError parse_error;
-          const QJsonDocument doc = QJsonDocument::fromJson(manifest.readAll(), &parse_error);
-          if (parse_error.error != QJsonParseError::NoError || !doc.isObject()) {
-            qWarning() << "[ThemeManager] Invalid manifest for" << id << ":"
-                       << parse_error.errorString();
-          } else {
-            const QJsonObject obj = doc.object();
-            const QString name = obj.value(QStringLiteral("name")).toString();
-            const QString author = obj.value(QStringLiteral("author")).toString();
-            const QString version = obj.value(QStringLiteral("version")).toString();
-            if (!name.isEmpty()) {
-              info.name = name;
-            }
-            if (!author.isEmpty()) {
-              info.author = author;
-            }
-            if (!version.isEmpty()) {
-              info.version = version;
-            }
-          }
-        }
-      }
+      ReadManifest(entry.filePath(), &info);
 
       themes_.append(info);
     } else if (entry.isFile()
@@ -374,14 +385,15 @@ const ThemeInfo *ThemeManager::FindTheme(const QString &theme_id) const
 
 bool ThemeManager::ApplyTheme(const QString &theme_id)
 {
+  last_error_.clear();
+
   if (themes_.isEmpty()) {
     ScanThemeDirectories();
   }
 
   const ThemeInfo *info = FindTheme(theme_id);
   if (!info) {
-    qWarning() << "[ThemeManager] Requested theme not found:" << theme_id;
-    return false;
+    return Fail(QStringLiteral("theme '%1' was not found").arg(theme_id));
   }
 
   if (!file_watcher_.files().isEmpty()) {
@@ -407,7 +419,9 @@ bool ThemeManager::ApplyTheme(const QString &theme_id)
   QString error;
   if (!LoadExternalTheme(*info, &error)) {
     qWarning() << "[ThemeManager] Failed to apply theme" << info->id << ":" << error;
+    last_error_ = error;
     FallbackToDefault();
+    last_error_ = error;
     return false;
   }
 
@@ -525,6 +539,13 @@ bool ThemeManager::FallbackToDefault()
   return ApplyTheme(default_id);
 }
 
+bool ThemeManager::Fail(const QString &message)
+{
+  last_error_ = message;
+  qWarning().noquote() << "[ThemeManager]" << message;
+  return false;
+}
+
 void ThemeManager::OnFileChanged(const QString &path)
 {
   qInfo() << "[ThemeManager] Hot-reload triggered by file change:" << path;
@@ -547,9 +568,11 @@ void ThemeManager::SetHotReloadEnabled(bool enabled)
 
 bool ThemeManager::ImportThemePackage(const QString &source_file_or_dir, bool overwrite)
 {
+  last_error_.clear();
+
   const QFileInfo source(source_file_or_dir);
   if (!source.exists()) {
-    return false;
+    return Fail(QStringLiteral("source does not exist: '%1'").arg(source_file_or_dir));
   }
 
   if (source.isDir()) {
@@ -557,13 +580,17 @@ bool ThemeManager::ImportThemePackage(const QString &source_file_or_dir, bool ov
   }
 
   if (!source.isFile()) {
-    return false;
+    return Fail(QStringLiteral("source is not a file or directory: '%1'").arg(source_file_or_dir));
   }
 
   const QString suffix = source.suffix().toLower();
 
   if (suffix == QStringLiteral("qss")) {
     const QString id = source.completeBaseName();
+    if (id.isEmpty()) {
+      return Fail(QStringLiteral("stylesheet has no usable file name: '%1'").arg(source.filePath()));
+    }
+
     const QString destination = GetThemesDirectory() + QLatin1Char('/') + source.fileName();
 
     if (source.canonicalFilePath() == QFileInfo(destination).canonicalFilePath()) {
@@ -571,23 +598,21 @@ bool ThemeManager::ImportThemePackage(const QString &source_file_or_dir, bool ov
       return true;
     }
     if (QFileInfo::exists(destination) && !overwrite) {
-      qWarning() << "[ThemeManager] Theme already exists:" << destination;
-      return false;
+      return Fail(QStringLiteral("theme '%1' already exists; enable overwrite to replace it").arg(id));
     }
 
     QFile input(source.filePath());
     if (!input.open(QIODevice::ReadOnly | QIODevice::Text)) {
-      return false;
+      return Fail(QStringLiteral("cannot read '%1'").arg(source.filePath()));
     }
 
     QSaveFile output(destination);
     if (!output.open(QIODevice::WriteOnly | QIODevice::Text)) {
-      return false;
+      return Fail(QStringLiteral("cannot write '%1'").arg(destination));
     }
-    output.write(input.readAll());
-    if (!output.commit()) {
-      qWarning() << "[ThemeManager] Failed to write theme:" << destination;
-      return false;
+    const QByteArray data = input.readAll();
+    if (output.write(data) != data.size() || !output.commit()) {
+      return Fail(QStringLiteral("failed to save '%1'").arg(destination));
     }
 
     RefreshThemes();
@@ -598,15 +623,20 @@ bool ThemeManager::ImportThemePackage(const QString &source_file_or_dir, bool ov
     return ImportZipPackage(source.filePath(), source.completeBaseName(), overwrite);
   }
 
-  return false;
+  return Fail(QStringLiteral("unsupported theme package type: '.%1'").arg(suffix));
 }
 
 bool ThemeManager::ImportThemeDirectory(const QString &source_dir,
                                         const QString &id,
                                         bool overwrite)
 {
-  if (id.isEmpty() || !HasThemeStyleFile(source_dir)) {
-    return false;
+  last_error_.clear();
+
+  if (id.isEmpty()) {
+    return Fail(QStringLiteral("theme directory has no usable name: '%1'").arg(source_dir));
+  }
+  if (!HasThemeStyleFile(source_dir)) {
+    return Fail(QStringLiteral("theme directory must contain style.qss or style.css: '%1'").arg(source_dir));
   }
 
   const QString target_dir = GetThemesDirectory();
@@ -618,9 +648,8 @@ bool ThemeManager::ImportThemeDirectory(const QString &source_dir,
   // the staging directory into itself. Reject that shape outright.
   if (source_canonical == target_canonical
       || (!source_canonical.isEmpty() && target_canonical.startsWith(source_canonical + QLatin1Char('/')))) {
-    qWarning() << "[ThemeManager] Refusing to import a directory that contains the themes directory:"
-               << source_dir;
-    return false;
+    return Fail(QStringLiteral("refusing to import a directory that contains the themes directory: '%1'")
+                    .arg(source_dir));
   }
 
   if (QFileInfo(source_dir).canonicalFilePath() == QFileInfo(destination).canonicalFilePath()) {
@@ -629,8 +658,7 @@ bool ThemeManager::ImportThemeDirectory(const QString &source_dir,
   }
 
   if (QFileInfo::exists(destination) && !overwrite) {
-    qWarning() << "[ThemeManager] Theme already exists:" << destination;
-    return false;
+    return Fail(QStringLiteral("theme '%1' already exists; enable overwrite to replace it").arg(id));
   }
 
   const QString staging = target_dir + QStringLiteral("/.") + id + QStringLiteral(".import");
@@ -638,7 +666,7 @@ bool ThemeManager::ImportThemeDirectory(const QString &source_dir,
 
   if (!CopyDirectoryRecursively(source_dir, staging)) {
     RemovePath(staging);
-    return false;
+    return Fail(QStringLiteral("failed to copy theme files from '%1'").arg(source_dir));
   }
 
   if (QFileInfo::exists(destination)) {
@@ -646,9 +674,8 @@ bool ThemeManager::ImportThemeDirectory(const QString &source_dir,
   }
 
   if (!QDir().rename(staging, destination)) {
-    qWarning() << "[ThemeManager] Failed to move imported theme into place:" << destination;
     RemovePath(staging);
-    return false;
+    return Fail(QStringLiteral("failed to move theme into place: '%1'").arg(destination));
   }
 
   RefreshThemes();
@@ -659,16 +686,22 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
                                     const QString &id,
                                     bool overwrite)
 {
+  last_error_.clear();
+
 #ifdef OLIVE_HAVE_QZIPREADER
   QZipReader zip(source_file);
   if (!zip.isReadable()) {
-    qWarning() << "[ThemeManager] Unreadable theme package:" << source_file;
-    return false;
+    return Fail(QStringLiteral("cannot read theme package: '%1'").arg(source_file));
   }
 
   const QList<QZipReader::FileInfo> entries = zip.fileInfoList();
-  if (entries.isEmpty() || entries.size() > kMaximumImportedPackageEntries) {
-    return false;
+  if (entries.isEmpty()) {
+    return Fail(QStringLiteral("theme package is empty: '%1'").arg(source_file));
+  }
+  if (entries.size() > kMaximumImportedPackageEntries) {
+    return Fail(QStringLiteral("theme package contains too many entries (%1 > %2)")
+                    .arg(entries.size())
+                    .arg(kMaximumImportedPackageEntries));
   }
 
   qint64 total_bytes = 0;
@@ -677,20 +710,18 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
       continue;
     }
     if (entry.isSymLink || !IsSafeArchivePath(entry.filePath)) {
-      qWarning() << "[ThemeManager] Rejecting unsafe archive entry:" << entry.filePath;
-      return false;
+      return Fail(QStringLiteral("rejecting unsafe archive entry: '%1'").arg(entry.filePath));
     }
     total_bytes += entry.size;
   }
 
   if (total_bytes > kMaximumImportedPackageBytes) {
-    qWarning() << "[ThemeManager] Theme package is too large:" << total_bytes;
-    return false;
+    return Fail(QStringLiteral("theme package is too large (%1 bytes)").arg(total_bytes));
   }
 
   QTemporaryDir temporary(GetThemesDirectory() + QStringLiteral("/.olivetheme-XXXXXX"));
   if (!temporary.isValid()) {
-    return false;
+    return Fail(QStringLiteral("cannot create a temporary directory for theme extraction"));
   }
 
   qint64 extracted_bytes = 0;
@@ -699,27 +730,26 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
 
     if (entry.isDir) {
       if (!QDir().mkpath(destination)) {
-        return false;
+        return Fail(QStringLiteral("cannot create archive directory: '%1'").arg(entry.filePath));
       }
       continue;
     }
 
     if (!QDir().mkpath(QFileInfo(destination).path())) {
-      return false;
+      return Fail(QStringLiteral("cannot create archive path: '%1'").arg(entry.filePath));
     }
 
     const QByteArray data = zip.fileData(entry.filePath);
     extracted_bytes += data.size();
     if (extracted_bytes > kMaximumImportedPackageBytes) {
-      qWarning() << "[ThemeManager] Theme package expands beyond the size limit";
-      return false;
+      return Fail(QStringLiteral("theme package expands beyond the size limit"));
     }
 
     QSaveFile output(destination);
     if (!output.open(QIODevice::WriteOnly)
         || output.write(data) != data.size()
         || !output.commit()) {
-      return false;
+      return Fail(QStringLiteral("cannot extract archive entry: '%1'").arg(entry.filePath));
     }
   }
 
@@ -734,8 +764,7 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
     for (const QFileInfo &entry : root_entries) {
       if (HasThemeStyleFile(entry.filePath())) {
         if (!root.isEmpty()) {
-          qWarning() << "[ThemeManager] Theme package has more than one root theme";
-          return false;
+          return Fail(QStringLiteral("theme package has more than one root theme"));
         }
         root = entry.filePath();
       }
@@ -743,8 +772,7 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
   }
 
   if (root.isEmpty()) {
-    qWarning() << "[ThemeManager] Theme package has no style.qss/style.css";
-    return false;
+    return Fail(QStringLiteral("theme package has no style.qss/style.css"));
   }
 
   return ImportThemeDirectory(root, id, overwrite);
@@ -752,8 +780,7 @@ bool ThemeManager::ImportZipPackage(const QString &source_file,
   Q_UNUSED(source_file)
   Q_UNUSED(id)
   Q_UNUSED(overwrite)
-  qWarning() << "[ThemeManager] This build has no Qt ZipReader support; extract the package manually";
-  return false;
+  return Fail(QStringLiteral("this build has no Qt ZipReader support; extract the package manually"));
 #endif
 }
 

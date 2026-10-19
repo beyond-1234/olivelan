@@ -54,6 +54,14 @@ QString Preprocess(const QString &source, QList<QssMacroPreprocessor::Diagnostic
   return QssMacroPreprocessor::Process(source, TestTokens(), diagnostics);
 }
 
+bool WriteTextFile(const QString &path, const QByteArray &contents)
+{
+  QDir().mkpath(QFileInfo(path).path());
+  QFile file(path);
+  return file.open(QIODevice::WriteOnly | QIODevice::Text)
+      && file.write(contents) == contents.size();
+}
+
 }
 
 OLIVE_ADD_TEST(ThemeQssTokenSubstitution)
@@ -133,6 +141,40 @@ OLIVE_ADD_TEST(ThemeQssDiagnostics)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(ThemeQssEdgeCases)
+{
+  QList<QssMacroPreprocessor::Diagnostic> diagnostics;
+
+  QString out = Preprocess(
+      QStringLiteral("#ifndef __OLIVE_TEST_NEVER_DEFINED__\n"
+                     "A { color: red; }\n"
+                     "#else\n"
+                     "B { color: blue; }\n"
+                     "#endif\n"),
+      &diagnostics);
+  OLIVE_ASSERT(diagnostics.isEmpty());
+  OLIVE_ASSERT(out.contains(QStringLiteral("A { color: red; }")));
+  OLIVE_ASSERT(!out.contains(QStringLiteral("B { color: blue; }")));
+
+  diagnostics.clear();
+  Preprocess(QStringLiteral("QWidget { /* unterminated"), &diagnostics);
+  OLIVE_ASSERT(!diagnostics.isEmpty());
+
+  diagnostics.clear();
+  Preprocess(QStringLiteral("QWidget { font-family: \"unterminated; }"), &diagnostics);
+  OLIVE_ASSERT(!diagnostics.isEmpty());
+
+  diagnostics.clear();
+  Preprocess(QStringLiteral("QWidget { color: @color.accent.primary.blur(20%); }"), &diagnostics);
+  OLIVE_ASSERT(!diagnostics.isEmpty());
+
+  diagnostics.clear();
+  Preprocess(QStringLiteral("QWidget { color: var(--missing); }"), &diagnostics);
+  OLIVE_ASSERT(!diagnostics.isEmpty());
+
+  OLIVE_TEST_END;
+}
+
 OLIVE_ADD_TEST(ThemeTokenRegistry)
 {
   DesignTokenRegistry *registry = DesignTokenRegistry::instance();
@@ -157,6 +199,29 @@ OLIVE_ADD_TEST(ThemeTokenRegistry)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(ThemeTokenRegistryErrors)
+{
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  registry->ResetToDefaults();
+  const QColor default_accent = registry->GetColor(QStringLiteral("color.accent.primary"));
+
+  OLIVE_ASSERT(!registry->LoadFromJsonString(
+      QStringLiteral("{\"color.accent.primary\":\"#not-a-color\"}")));
+  OLIVE_ASSERT(registry->GetColor(QStringLiteral("color.accent.primary")) == default_accent);
+
+  OLIVE_ASSERT(!registry->LoadFromJsonString(QStringLiteral("{\"enabled\":true}")));
+  OLIVE_ASSERT(!registry->LoadFromJsonString(
+      QStringLiteral("{\"color.accent.primary\":\"#112233\",\"bad\":[]}")));
+  OLIVE_ASSERT(registry->GetColor(QStringLiteral("color.accent.primary")) == default_accent);
+
+  OLIVE_ASSERT(registry->LoadFromJsonString(
+      QStringLiteral("{\"stroke.hairline.width\":3.5}")));
+  OLIVE_ASSERT(registry->GetDouble(QStringLiteral("stroke.hairline.width")) == 3.5);
+
+  registry->ResetToDefaults();
+  OLIVE_TEST_END;
+}
+
 OLIVE_ADD_TEST(ThemeImportPackages)
 {
   int argc = 1;
@@ -175,23 +240,30 @@ OLIVE_ADD_TEST(ThemeImportPackages)
   QDir(source_root).removeRecursively();
 
   const QString source_theme = source_root + QStringLiteral("/folder-theme");
-  OLIVE_ASSERT(QDir().mkpath(source_theme));
-  {
-    QFile style(source_theme + QStringLiteral("/style.qss"));
-    OLIVE_ASSERT(style.open(QIODevice::WriteOnly | QIODevice::Text));
-    style.write("QWidget { color: #ffffff; }");
-  }
+  OLIVE_ASSERT(WriteTextFile(source_theme + QStringLiteral("/style.qss"),
+                             QByteArray("QWidget { color: #ffffff; }")));
   OLIVE_ASSERT(manager->ImportThemePackage(source_theme));
   OLIVE_ASSERT(QFileInfo::exists(themes_dir + QStringLiteral("/folder-theme/style.qss")));
 
   const QString source_qss = source_root + QStringLiteral("/single.qss");
-  {
-    QFile style(source_qss);
-    OLIVE_ASSERT(style.open(QIODevice::WriteOnly | QIODevice::Text));
-    style.write("QWidget { color: #ffffff; }");
-  }
+  OLIVE_ASSERT(WriteTextFile(source_qss, QByteArray("QWidget { color: #ffffff; }")));
   OLIVE_ASSERT(manager->ImportThemePackage(source_qss));
   OLIVE_ASSERT(QFileInfo::exists(themes_dir + QStringLiteral("/single.qss")));
+
+  // Importing the same folder again must fail and report the reason without
+  // touching the existing theme.
+  OLIVE_ASSERT(!manager->ImportThemePackage(source_theme));
+  OLIVE_ASSERT(manager->LastError().contains(QStringLiteral("already exists")));
+
+  const QString no_style = source_root + QStringLiteral("/no-style");
+  OLIVE_ASSERT(QDir().mkpath(no_style));
+  OLIVE_ASSERT(!manager->ImportThemePackage(no_style));
+  OLIVE_ASSERT(manager->LastError().contains(QStringLiteral("style.qss")));
+
+  const QString unsupported = source_root + QStringLiteral("/note.txt");
+  OLIVE_ASSERT(WriteTextFile(unsupported, QByteArray("not a theme")));
+  OLIVE_ASSERT(!manager->ImportThemePackage(unsupported));
+  OLIVE_ASSERT(manager->LastError().contains(QStringLiteral("unsupported")));
 
 #ifdef OLIVE_HAVE_QZIPREADER
   const QString zip_path = source_root + QStringLiteral("/packaged.olivetheme");
@@ -216,6 +288,22 @@ OLIVE_ADD_TEST(ThemeImportPackages)
   OLIVE_ASSERT(!manager->ImportThemePackage(unsafe_zip));
   OLIVE_ASSERT(!QFileInfo::exists(source_root + QStringLiteral("/escape.qss")));
 #endif
+
+  // Scan should expose both imported and manually placed themes, and use the
+  // display name from manifest.json.
+  const QString named_theme = themes_dir + QStringLiteral("/named-theme");
+  OLIVE_ASSERT(WriteTextFile(named_theme + QStringLiteral("/style.qss"),
+                             QByteArray("QWidget { color: #ffffff; }")));
+  OLIVE_ASSERT(WriteTextFile(named_theme + QStringLiteral("/manifest.json"),
+                             QByteArray("{\"name\":\"Named Theme\",\"author\":\"Test\"}")));
+  manager->RefreshThemes();
+
+  const QStringList ids = manager->GetAvailableThemeIds();
+  OLIVE_ASSERT(ids.contains(QStringLiteral("folder-theme")));
+  OLIVE_ASSERT(ids.contains(QStringLiteral("single")));
+  OLIVE_ASSERT(ids.contains(QStringLiteral("named-theme")));
+  OLIVE_ASSERT(manager->GetThemeInfo(QStringLiteral("named-theme")).name
+               == QStringLiteral("Named Theme"));
 
   QDir(themes_dir).removeRecursively();
   QDir(source_root).removeRecursively();

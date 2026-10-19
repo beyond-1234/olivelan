@@ -26,6 +26,9 @@
 #include <QJsonObject>
 #include <QDebug>
 
+#include <cmath>
+#include <limits>
+
 namespace olive {
 
 DesignTokenRegistry* DesignTokenRegistry::instance()
@@ -156,45 +159,74 @@ QVariantMap DesignTokenRegistry::AllTokens() const
 bool DesignTokenRegistry::LoadFromJsonString(const QString &json_str)
 {
   QJsonParseError parse_err;
-  QJsonDocument doc = QJsonDocument::fromJson(json_str.toUtf8(), &parse_err);
+  const QJsonDocument doc = QJsonDocument::fromJson(json_str.toUtf8(), &parse_err);
   if (parse_err.error != QJsonParseError::NoError || !doc.isObject()) {
     qWarning() << "[DesignTokenRegistry] Failed to parse token JSON:" << parse_err.errorString();
     return false;
   }
 
-  QJsonObject obj = doc.object();
-  bool modified = false;
+  // Apply into copies first so one bad value cannot leave a half-updated
+  // registry behind (the caller may have already changed the palette).
+  QHash<QString, QColor> colors = colors_;
+  QHash<QString, int> ints = ints_;
+  QHash<QString, double> doubles = doubles_;
+  QHash<QString, QString> strings = strings_;
 
+  const QJsonObject obj = doc.object();
   for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
     const QString &key = it.key();
     const QJsonValue &val = it.value();
 
+    // A key must have exactly one type. Drop any previous value of another
+    // type so switching a token from color to string does not leave stale data.
+    colors.remove(key);
+    ints.remove(key);
+    doubles.remove(key);
+    strings.remove(key);
+
     if (val.isString()) {
-      QString str_val = val.toString();
-      if (str_val.startsWith('#') || str_val.startsWith("rgb", Qt::CaseInsensitive)) {
-        QColor col(str_val);
-        if (col.isValid()) {
-          colors_.insert(key, col);
-          modified = true;
-          continue;
+      const QString str_val = val.toString();
+      const bool looks_like_color = str_val.startsWith(QLatin1Char('#'))
+          || str_val.startsWith(QStringLiteral("rgb"), Qt::CaseInsensitive)
+          || str_val.startsWith(QStringLiteral("hsl"), Qt::CaseInsensitive);
+
+      if (looks_like_color) {
+        const QColor col(str_val);
+        if (!col.isValid()) {
+          qWarning() << "[DesignTokenRegistry] Invalid color token" << key << ":" << str_val;
+          return false;
         }
-      }
-      strings_.insert(key, str_val);
-      modified = true;
-    } else if (val.isDouble()) {
-      double d = val.toDouble();
-      if (static_cast<double>(static_cast<int>(d)) == d) {
-        ints_.insert(key, static_cast<int>(d));
+        colors.insert(key, col);
       } else {
-        doubles_.insert(key, d);
+        strings.insert(key, str_val);
       }
-      modified = true;
+    } else if (val.isDouble()) {
+      const double d = val.toDouble();
+      if (!std::isfinite(d)) {
+        qWarning() << "[DesignTokenRegistry] Non-finite number token" << key;
+        return false;
+      }
+      if (d >= std::numeric_limits<int>::min() && d <= std::numeric_limits<int>::max()
+          && std::floor(d) == d) {
+        ints.insert(key, static_cast<int>(d));
+      } else {
+        doubles.insert(key, d);
+      }
+    } else {
+      qWarning() << "[DesignTokenRegistry] Unsupported token value for" << key
+                 << "(expected color/number/string)";
+      return false;
     }
   }
 
-  if (modified) {
+  if (colors != colors_ || ints != ints_ || doubles != doubles_ || strings != strings_) {
+    colors_ = colors;
+    ints_ = ints;
+    doubles_ = doubles;
+    strings_ = strings;
     emit TokensChanged();
   }
+
   return true;
 }
 
@@ -202,6 +234,7 @@ bool DesignTokenRegistry::LoadFromJsonFile(const QString &file_path)
 {
   QFile file(file_path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning() << "[DesignTokenRegistry] Cannot read token file:" << file_path;
     return false;
   }
 

@@ -41,6 +41,7 @@ public:
 
 private:
   void RefreshThemeCombo();
+  void ImportTheme(const QString &path);
 
   /**
    * @brief UI widget for selecting the current UI style

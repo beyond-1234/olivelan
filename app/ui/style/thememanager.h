@@ -72,6 +72,14 @@ public:
   bool ApplyTheme(const QString &theme_id);
   const QString &CurrentThemeId() const { return current_theme_id_; }
 
+  /**
+   * @brief Human-readable reason for the last failed apply/import operation.
+   *
+   * The UI uses this instead of a generic "import failed" message. It is
+   * cleared at the start of each public apply/import call.
+   */
+  QString LastError() const { return last_error_; }
+
   QString GetThemesDirectory() const;
 
   /**
@@ -101,8 +109,10 @@ private:
   bool ImportThemeDirectory(const QString &source_dir, const QString &id, bool overwrite);
   bool ImportZipPackage(const QString &source_file, const QString &id, bool overwrite);
   bool FallbackToDefault();
+  bool Fail(const QString &message);
 
   QString current_theme_id_;
+  QString last_error_;
   QList<ThemeInfo> themes_;
   QFileSystemWatcher file_watcher_;
   QTimer reload_timer_;
