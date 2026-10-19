@@ -23,12 +23,16 @@
 #include <QApplication>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QMessageBox>
 #include <QScreen>
 #include <QStatusBar>
 #include <QTimer>
 
 #include <kddockwidgets/LayoutSaver.h>
+#include <kddockwidgets/core/DropArea.h>
+#include <kddockwidgets/core/MainWindow.h>
+#include "../../../ext/KDDockWidgets/src/core/layouting/LayoutingSeparator_p.h"
 
 #ifdef Q_OS_LINUX
 #include <QOffscreenSurface>
@@ -42,6 +46,8 @@
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/thememanager.h"
 
 namespace olive {
 
@@ -50,6 +56,7 @@ namespace olive {
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
   initial_layout_applied_(false),
+  capcut_dock_sizes_applied_(false),
   project_(nullptr)
 {
   // Resizes main window to desktop geometry on startup. Fixes the following issues:
@@ -205,6 +212,77 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
     }
   }
 }
+
+namespace {
+
+bool ApplyCapcutDockSizes(KDDockWidgets::Core::MainWindow *main_window)
+{
+  if (!main_window) {
+    return false;
+  }
+
+  KDDockWidgets::Core::DropArea *drop_area = main_window->dropArea();
+  if (!drop_area) {
+    return false;
+  }
+
+  const int total_width = drop_area->layoutWidth();
+  const int total_height = drop_area->layoutHeight();
+
+  if (total_width <= 0 || total_height <= 0) {
+    return false;
+  }
+
+  const int spacing = 5;
+  const int timeline_height = qRound(total_height * 0.38);
+  const int top_height = total_height - timeline_height - spacing;
+  const int project_target = 363;
+  const int param_target = total_width - 346;
+  const int tool_target = 60;
+
+  // KDDockWidgets does not expose a public "set dock size" API for this layout.
+  // Moving the separators directly is the least invasive way to give the
+  // CapCut preset its fixed side widths and 38% timeline height while keeping
+  // the panels dockable.
+  const auto separators = drop_area->separators();
+
+  // Move the horizontal separators first. Moving the root separator recreates
+  // the child separators, so it has to be the very last operation.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (KDDockWidgets::Core::LayoutingSeparator *separator : separators) {
+      if (!separator) {
+        continue;
+      }
+
+      const bool is_root = separator->orientation() == Qt::Vertical;
+      if ((pass == 0 && is_root) || (pass == 1 && !is_root)) {
+        continue;
+      }
+
+      int target = -1;
+
+      if (is_root) {
+        target = top_height;
+      } else if (separator->geometry().y() > 0) {
+        target = tool_target;
+      } else {
+        target = separator->position() < total_width / 2 ? project_target : param_target;
+      }
+
+      if (target < 0) {
+        continue;
+      }
+
+      separator->onMousePress();
+      separator->onMouseMove(KDDockWidgets::Point(target, target), true);
+      separator->onMouseRelease();
+    }
+  }
+
+  return true;
+}
+
+} // namespace
 
 QString TransformNameForSerialization(const QString &unique, int i)
 {
@@ -880,9 +958,11 @@ void MainWindow::UpdateNodePanelContextFromTimelinePanel(TimelinePanel *panel)
     context[i] = blocks.at(i);
   }
 
-  // If no selected blocks, set the context to the sequence
+  // If no selected blocks, set the context to the sequence. The CapCut preset
+  // keeps the inspector genuinely empty until a clip/effect is selected.
   ViewerOutput *viewer = panel->GetConnectedViewer();
-  if (viewer && context.isEmpty()) {
+  if (viewer && context.isEmpty()
+      && ThemeManager::instance()->CurrentThemeId() != QString::fromLatin1(capcut::kThemeName)) {
     context.append(viewer);
   }
 
@@ -931,33 +1011,87 @@ void MainWindow::FocusedPanelChanged(PanelWidget *panel)
 
 void MainWindow::SetDefaultLayout()
 {
-  KDDockWidgets::InitialOption o;
-  o.preferredSize = QSize(0, centralAreaGeometry().height());
+  const bool capcut_layout = ThemeManager::instance()->CurrentThemeId()
+      == QString::fromLatin1(capcut::kThemeName);
 
-  // Top left - Tabify footage viewer, param panel, and node panel
-  addDockWidget(footage_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, o);
-  footage_viewer_panel_->addDockWidgetAsTab(param_panel_);
-  footage_viewer_panel_->addDockWidgetAsTab(node_panel_);
-  param_panel_->raise();
+  capcut_dock_sizes_applied_ = false;
 
-  // Top right - sequence viewer
-  addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnRight, footage_viewer_panel_, o);
+  if (capcut_layout) {
+    if (auto *drop_area = mainWindow()->dropArea()) {
+      const QSize area = size();
+      drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
+    }
 
-  // Bottom center - timelines
-  addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom);
+    const int total_height = qMax(600, height());
+    const int timeline_height = qMax(260, qRound(total_height * 0.38));
 
-  // Left of timeline - tool panel
-  o.preferredSize = QSize(1, 0);
-  addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), o);
+    // Build the top row first so KDDock's splitter gives the preview the
+    // remaining width instead of stretching the inspector.
+    KDDockWidgets::InitialOption top;
+    top.preferredSize = QSize(0, total_height - timeline_height);
+    addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, top);
 
-  // Right of timeline - audio monitor
-  o.preferredSize = QSize(320, 0);
-  addDockWidget(audio_monitor_panel_, KDDockWidgets::Location_OnRight, timeline_panels_.first(), o);
+    // Left: media library and project history.
+    KDDockWidgets::InitialOption left;
+    left.preferredSize = QSize(360, 0);
+    addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, sequence_viewer_panel_, left);
+    project_panel_->addDockWidgetAsTab(history_panel_);
+    project_panel_->raise();
 
-  // Bottom left - project panel
-  addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, tool_panel_);
-  project_panel_->addDockWidgetAsTab(history_panel_);
-  project_panel_->raise();
+    // Right: contextual properties. It starts empty when nothing is selected.
+    KDDockWidgets::InitialOption right;
+    right.preferredSize = QSize(340, 0);
+    addDockWidget(param_panel_, KDDockWidgets::Location_OnRight, sequence_viewer_panel_, right);
+    param_panel_->addDockWidgetAsTab(audio_monitor_panel_);
+    param_panel_->raise();
+
+    // Bottom: timeline spanning the editing area, with a narrow tool rail.
+    KDDockWidgets::InitialOption bottom;
+    bottom.preferredSize = QSize(0, timeline_height);
+    addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom, nullptr, bottom);
+
+    // The CapCut workspace gives the timeline the full width beneath the
+    // media library and preview. The legacy tool panel remains available from
+    // the Window menu but is not part of the preset.
+    tool_panel_->close();
+
+    // The CapCut workspace does not use a second footage viewer or a floating
+    // node graph by default; both remain available from the Window menu.
+    footage_viewer_panel_->close();
+    node_panel_->close();
+
+    if (width() > 800 && height() > 600) {
+      QTimer::singleShot(0, this, [this]() { ApplyCapcutDockSizesWhenReady(5); });
+    }
+  } else {
+    KDDockWidgets::InitialOption o;
+    o.preferredSize = QSize(0, centralAreaGeometry().height());
+
+    // Top left - Tabify footage viewer, param panel, and node panel
+    addDockWidget(footage_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, o);
+    footage_viewer_panel_->addDockWidgetAsTab(param_panel_);
+    footage_viewer_panel_->addDockWidgetAsTab(node_panel_);
+    param_panel_->raise();
+
+    // Top right - sequence viewer
+    addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnRight, footage_viewer_panel_, o);
+
+    // Bottom center - timelines
+    addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom);
+
+    // Left of timeline - tool panel
+    o.preferredSize = QSize(1, 0);
+    addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), o);
+
+    // Right of timeline - audio monitor
+    o.preferredSize = QSize(320, 0);
+    addDockWidget(audio_monitor_panel_, KDDockWidgets::Location_OnRight, timeline_panels_.first(), o);
+
+    // Bottom left - project panel
+    addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, tool_panel_);
+    project_panel_->addDockWidgetAsTab(history_panel_);
+    project_panel_->raise();
+  }
 
   // Hidden panels
   pixel_sampler_panel_->close();
@@ -980,6 +1114,29 @@ void MainWindow::SetDefaultLayout()
 
   // Set to unmaximized panels
   premaximized_state_.clear();
+}
+
+void MainWindow::ApplyCapcutDockSizesWhenReady(int attempts)
+{
+  if (capcut_dock_sizes_applied_) {
+    return;
+  }
+
+  if (auto *drop_area = mainWindow() ? mainWindow()->dropArea() : nullptr) {
+    const QSize area = size();
+    drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
+  }
+
+  if (ApplyCapcutDockSizes(mainWindow())) {
+    capcut_dock_sizes_applied_ = true;
+    return;
+  }
+
+  if (attempts > 0) {
+    QTimer::singleShot(50, this, [this, attempts]() {
+      ApplyCapcutDockSizesWhenReady(attempts - 1);
+    });
+  }
 }
 
 void MainWindow::ApplyInitialLayoutIfNeeded()
@@ -1015,6 +1172,12 @@ void MainWindow::resizeEvent(QResizeEvent *e)
   QMainWindow::resizeEvent(e);
 
   ApplyInitialLayoutIfNeeded();
+
+  if (initial_layout_applied_ && !capcut_dock_sizes_applied_
+      && ThemeManager::instance()->CurrentThemeId() == QString::fromLatin1(capcut::kThemeName)
+      && width() > 800 && height() > 600) {
+    QTimer::singleShot(0, this, [this]() { ApplyCapcutDockSizesWhenReady(5); });
+  }
 }
 
 void MainWindow::showEvent(QShowEvent *e)

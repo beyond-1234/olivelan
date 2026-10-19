@@ -33,6 +33,7 @@
 #include "panel/panelmanager.h"
 #include "panel/timeline/timeline.h"
 #include "ui/colorcoding.h"
+#include "ui/style/capcutstyleconfig.h"
 #include "ui/style/metrostyleconfig.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/timelinewidget/timelinewidget.h"
@@ -40,6 +41,33 @@
 namespace olive {
 
 #define super TimeBasedView
+
+namespace {
+
+QColor GetTrackTypeColor(Track::Type type, const QColor &fallback)
+{
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+
+  switch (type) {
+  case Track::kVideo:
+    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackVideo), fallback);
+  case Track::kAudio:
+    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackAudio), fallback);
+  case Track::kSubtitle:
+    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackSubtitle), fallback);
+  default:
+    break;
+  }
+
+  return fallback;
+}
+
+QColor GetReadableTextColor(const QColor &background)
+{
+  return background.lightness() > 145 ? QColor(QStringLiteral("#101216")) : QColor(Qt::white);
+}
+
+} // namespace
 
 TimelineView::TimelineView(Qt::Alignment vertical_alignment, QWidget *parent) :
   super(parent),
@@ -198,12 +226,17 @@ void TimelineView::drawBackground(QPainter *painter, const QRectF &rect)
     return;
   }
 
-  painter->setPen(palette().base().color());
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  const int lane_tint = registry->GetInt(QStringLiteral("timeline.track.lane-tint"), 0);
+  const int type_colors = registry->GetInt(QStringLiteral("timeline.track.type-colors"), 0);
+  const QColor border = registry->GetColor(QStringLiteral("color.border.hairline"),
+                                           palette().base().color());
 
   int line_y = 0;
 
   foreach (Track* track, connected_track_list_->GetTracks()) {
-    line_y += track->GetTrackHeightInPixels();
+    const int track_height = track->GetTrackHeightInPixels();
+    line_y += track_height;
 
     // One px gap between tracks
     line_y++;
@@ -216,6 +249,15 @@ void TimelineView::drawBackground(QPainter *painter, const QRectF &rect)
       this_line_y = -line_y;
     }
 
+    if (lane_tint > 0 && type_colors) {
+      QColor tint = GetTrackTypeColor(track->type(), border);
+      tint.setAlpha(qBound(0, lane_tint, 255));
+
+      const int track_top = this_line_y - track_height - 1;
+      painter->fillRect(QRectF(rect.left(), track_top, rect.width(), track_height), tint);
+    }
+
+    painter->setPen(border);
     painter->drawLine(qRound(rect.left()), this_line_y, qRound(rect.right()), this_line_y);
   }
 }
@@ -440,7 +482,22 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
              block_right - block_left,
              block_height);
 
-    QColor shadow_color = block->is_enabled() ? QtUtils::toQColor(block->color()).darker() : QColor(Qt::darkGray).darker();
+    DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+    const bool use_track_colors = registry->GetInt(QStringLiteral("timeline.track.type-colors"), 0);
+    const int clip_radius = registry->GetInt(QStringLiteral("timeline.clip.radius"), 0);
+
+    QColor block_base = block->is_enabled() ? QtUtils::toQColor(block->color()) : QColor(Qt::gray);
+    if (use_track_colors && block->track()) {
+      block_base = GetTrackTypeColor(block->track()->type(), block_base);
+    }
+
+    // Transitions are visual effects even though Olive stores them on a video
+    // track, so give them the effect colour when type colours are active.
+    if (use_track_colors && dynamic_cast<TransitionBlock*>(block)) {
+      block_base = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackEffect), block_base);
+    }
+
+    QColor shadow_color = block_base.darker(use_track_colors ? 155 : 200);
 
     const qreal MINIMUM_RECT_WIDTH = 2;
     const qreal MINIMUM_DETAIL_WIDTH = 8;
@@ -466,7 +523,11 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
           QString using_label = block->GetLabelOrName();
 
           QRectF text_rect = r.adjusted(text_padding, text_padding, -text_padding, -text_padding);
-          painter->setPen(block->is_enabled() ? ColorCoding::GetUISelectorColor(block->color()) : Qt::lightGray);
+          if (use_track_colors) {
+            painter->setPen(block->is_enabled() ? GetReadableTextColor(block_base) : Qt::lightGray);
+          } else {
+            painter->setPen(block->is_enabled() ? ColorCoding::GetUISelectorColor(block->color()) : Qt::lightGray);
+          }
           painter->drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, using_label);
 
           if (block->HasLinks()) {
@@ -482,15 +543,28 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
         // Metro/Fluent: a flat 1px hairline outline in place of the old bevel (white top/left +
         // shadowed bottom/right pseudo-3D).
         painter->setBrush(Qt::NoBrush);
-        QColor border = DesignTokenRegistry::instance()->GetColor(QStringLiteral("color.border.hairline"), metro::kBorderColor);
-        int stroke = DesignTokenRegistry::instance()->GetInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
+        QColor border = registry->GetColor(QStringLiteral("color.border.hairline"), metro::kBorderColor);
+        if (use_track_colors) {
+          border = block_base.darker(135);
+        }
+        int stroke = registry->GetInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
         painter->setPen(QPen(border, stroke));
 
-        painter->drawRect(r.adjusted(0, 0, -1, -1));
+        if (clip_radius > 0) {
+          painter->drawRoundedRect(r.adjusted(0, 0, -1, -1), clip_radius, clip_radius);
+        } else {
+          painter->drawRect(r.adjusted(0, 0, -1, -1));
+        }
       } else {
         painter->setPen(Qt::NoPen);
-        painter->setBrush(block->is_enabled() ? block->brush(block_top, block_top + block_height) : Qt::gray);
-        painter->drawRect(r);
+        painter->setBrush(block->is_enabled() ? (use_track_colors ? QBrush(block_base)
+                                                                  : block->brush(block_top, block_top + block_height))
+                                              : QBrush(Qt::gray));
+        if (clip_radius > 0) {
+          painter->drawRoundedRect(r, clip_radius, clip_radius);
+        } else {
+          painter->drawRect(r);
+        }
 
         if (r.width() > MINIMUM_DETAIL_WIDTH) {
           if (ClipBlock *clip = dynamic_cast<ClipBlock*>(block)) {

@@ -24,12 +24,17 @@
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QPainter>
+#include <QStyle>
+#include <QStyleOption>
 #include <QtMath>
 
 #include "core.h"
 #include "timeline/timelineundogeneral.h"
 #include "ui/icons/icons.h"
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/menu/menu.h"
 
 namespace olive {
@@ -38,6 +43,8 @@ TrackViewItem::TrackViewItem(Track* track, QWidget *parent) :
   QWidget(parent),
   track_(track)
 {
+  setAttribute(Qt::WA_StyledBackground, true);
+
   QHBoxLayout* layout = new QHBoxLayout(this);
   layout->setSpacing(0);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -79,6 +86,39 @@ TrackViewItem::TrackViewItem(Track* track, QWidget *parent) :
 
   connect(track, &Track::MutedChanged, mute_button_, &QPushButton::setChecked);
   connect(this, &QWidget::customContextMenuRequested, this, &TrackViewItem::ShowContextMenu);
+}
+
+void TrackViewItem::paintEvent(QPaintEvent *event)
+{
+  QStyleOption option;
+  option.initFrom(this);
+
+  QPainter painter(this);
+  style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, this);
+
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  if (registry->GetInt(QStringLiteral("timeline.track.type-colors"), 0)) {
+    QColor color;
+    switch (track_->type()) {
+    case Track::kVideo:
+      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackVideo), Qt::transparent);
+      break;
+    case Track::kAudio:
+      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackAudio), Qt::transparent);
+      break;
+    case Track::kSubtitle:
+      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackSubtitle), Qt::transparent);
+      break;
+    default:
+      break;
+    }
+
+    if (color.alpha() > 0) {
+      painter.fillRect(QRect(0, 0, 3, height()), color);
+    }
+  }
+
+  QWidget::paintEvent(event);
 }
 
 QPushButton *TrackViewItem::CreateMSLButton(const QColor& checked_color) const

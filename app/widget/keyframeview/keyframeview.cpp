@@ -31,6 +31,8 @@
 #include "node/node.h"
 #include "node/nodeundo.h"
 #include "node/project/serializer/serializer.h"
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/menu/menu.h"
 #include "widget/menu/menushared.h"
 
@@ -426,12 +428,22 @@ void KeyframeView::drawForeground(QPainter *painter, const QRectF &rect)
 
 void KeyframeView::DrawKeyframe(QPainter *painter, NodeKeyframe *key, KeyframeViewInputConnection *track, const QRectF &key_rect)
 {
-  painter->setPen(Qt::black);
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  const bool use_white_keyframes = registry->GetInt(QStringLiteral("timeline.keyframe.white"), 0);
 
-  if (IsKeyframeSelected(key)) {
-    painter->setBrush(palette().highlight());
+  if (use_white_keyframes) {
+    painter->setPen(QPen(registry->GetColor(QStringLiteral("color.keyframe.ring"), Qt::black), 1));
+    painter->setBrush(IsKeyframeSelected(key)
+                          ? registry->GetColor(QStringLiteral("color.accent.primary"), palette().highlight().color())
+                          : registry->GetColor(QString::fromLatin1(capcut::kTokenKeyframe), Qt::white));
   } else {
-    painter->setBrush(track->GetBrush());
+    painter->setPen(Qt::black);
+
+    if (IsKeyframeSelected(key)) {
+      painter->setBrush(palette().highlight());
+    } else {
+      painter->setBrush(track->GetBrush());
+    }
   }
 
   selection_manager_.DeclareDrawnObject(key, key_rect);

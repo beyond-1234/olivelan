@@ -21,6 +21,7 @@
 #include "projectexplorericonviewitemdelegate.h"
 
 #include <QPainter>
+#include <QPainterPath>
 
 #include "common/qtutils.h"
 #include "projectthumbnailcache.h"
@@ -92,8 +93,23 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   const QRect thumb_rect(tile.x(), tile.y(), tile.width(), thumb_height);
   const QRect bar_rect(tile.x(), tile.y() + thumb_height, tile.width(), bar_height);
 
+  const int radius = TokenInt(QStringLiteral("corner.radius.card"), 0);
+  const QColor accent = TokenColor(QStringLiteral("color.accent.primary"), metro::kAccentColor);
+  const QColor card_fill = TokenColor(QStringLiteral("color.card.fill"), metro::kTileBg);
+
+  QPainterPath tile_path;
+  if (radius > 0) {
+    tile_path.addRoundedRect(tile, radius, radius);
+  } else {
+    tile_path.addRect(tile);
+  }
+
+  painter->save();
+  painter->setRenderHint(QPainter::Antialiasing, radius > 0);
+  painter->setClipPath(tile_path);
+
   // Tile background (doubles as the placeholder colour while a thumbnail is being decoded).
-  painter->fillRect(tile, TokenColor(QStringLiteral("color.card.fill"), metro::kTileBg));
+  painter->fillRect(tile, card_fill);
 
   // ---- Thumbnail, or placeholder + async request ----
   const QString key = index.data(ProjectViewModel::kThumbnailKeyRole).toString();
@@ -132,20 +148,29 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
 
     const QFontMetrics badge_fm(badge_font);
 
-    int x = thumb_rect.x() + 4;
-    const int y = thumb_rect.y() + 4;
+    int x = thumb_rect.x() + 6;
+    const int y = thumb_rect.y() + 6;
 
     painter->setFont(badge_font);
 
     for (const QString &badge : badges) {
-      const int w = badge_fm.horizontalAdvance(badge) + 8;
-      const QRect badge_rect(x, y, w, badge_fm.height());
+      const int w = badge_fm.horizontalAdvance(badge) + 10;
+      const QRect badge_rect(x, y, w, badge_fm.height() + 2);
 
-      if (badge_rect.right() > thumb_rect.right() - 2) {
+      if (badge_rect.right() > thumb_rect.right() - 4) {
         break;
       }
 
-      painter->fillRect(badge_rect, BadgeColor(badge));
+      QColor badge_color = BadgeColor(badge);
+      if (radius > 0) {
+        badge_color.setAlpha(230);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(badge_color);
+        painter->drawRoundedRect(badge_rect, 4, 4);
+      } else {
+        painter->fillRect(badge_rect, badge_color);
+      }
+
       painter->setPen(TokenColor(QStringLiteral("color.text.on-accent"), Qt::white));
       painter->drawText(badge_rect, Qt::AlignCenter, badge);
 
@@ -156,41 +181,64 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   }
 
   // ---- Metadata bar: name (left) + duration (right) ----
-  painter->fillRect(bar_rect, TokenColor(QStringLiteral("color.canvas.base"), metro::kCanvasBg));
+  painter->fillRect(bar_rect, TokenColor(QStringLiteral("color.panel.elevated"),
+                                         TokenColor(QStringLiteral("color.canvas.base"), metro::kCanvasBg)));
 
   {
     const QString duration = index.data(ProjectViewModel::kDurationRole).toString();
-    const QRect text_rect = bar_rect.adjusted(4, 0, -4, 0);
+    const QRect text_rect = bar_rect.adjusted(7, 0, -7, 0);
     const int duration_width = QtUtils::QFontMetricsWidth(fm, duration);
 
     int name_width = text_rect.width();
-
-    painter->setPen(TokenColor(QStringLiteral("color.text.primary"), option.palette.text().color()));
+    const QColor secondary = TokenColor(QStringLiteral("color.text.muted"),
+                                        TokenColor(QStringLiteral("color.text.primary"),
+                                                   option.palette.text().color()));
 
     if (duration_width > 0 && duration_width < text_rect.width() / 2) {
+      painter->setPen(secondary);
       painter->drawText(text_rect, static_cast<int>(Qt::AlignRight | Qt::AlignVCenter), duration);
-      name_width -= duration_width + 4;
+      name_width -= duration_width + 6;
     }
 
+    painter->setPen(TokenColor(QStringLiteral("color.text.primary"), option.palette.text().color()));
     painter->drawText(text_rect,
                       static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter),
                       fm.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, name_width));
   }
 
-  // ---- Border / selection frame (Metro) ----
+  if (selected) {
+    QColor selection_fill = accent;
+    selection_fill.setAlpha(22);
+    painter->fillRect(tile, selection_fill);
+  }
+
+  painter->restore();
+
+  // ---- Border / selection frame ----
+  painter->setRenderHint(QPainter::Antialiasing, radius > 0);
   painter->setBrush(Qt::NoBrush);
 
   const int border_width = TokenInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
 
   if (selected) {
-    painter->setPen(QPen(TokenColor(QStringLiteral("color.accent.primary"), metro::kAccentColor),
-                         border_width * 2));
+    painter->setPen(QPen(accent,
+                         TokenInt(QStringLiteral("stroke.selection.width"), border_width * 2)));
+  } else if (option.state & QStyle::State_MouseOver) {
+    painter->setPen(QPen(TokenColor(QStringLiteral("color.border.strong"), metro::kBorderColor),
+                         border_width));
   } else {
     painter->setPen(QPen(TokenColor(QStringLiteral("color.border.hairline"), metro::kBorderColor),
                          border_width));
   }
 
-  painter->drawRect(tile.adjusted(0, 0, -1, -1));
+  const QRectF border_rect = tile.adjusted(0, 0, -1, -1);
+  if (radius > 0) {
+    painter->drawRoundedRect(border_rect, radius, radius);
+  } else {
+    painter->drawRect(border_rect);
+  }
+
+  painter->setRenderHint(QPainter::Antialiasing, false);
 }
 
 }

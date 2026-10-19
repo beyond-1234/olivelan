@@ -22,6 +22,7 @@
 #include "designtokenregistry.h"
 #include "qssmacropreprocessor.h"
 #include "style.h"
+#include "capcutstyleconfig.h"
 #include "metrostyleconfig.h"
 
 #include <QApplication>
@@ -174,6 +175,24 @@ QHash<QString, QColor> PaletteTokens(const QPalette &palette)
   return tokens;
 }
 
+void ApplyBuiltInTokens(const QString &theme_id)
+{
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  registry->ResetToDefaults();
+
+  if (theme_id != QString::fromLatin1(metro::kThemeName)) {
+    registry->SetColors(PaletteTokens(qApp->palette()));
+  }
+
+  // The CapCut preset needs a richer token set than the palette can express
+  // (track colours, playhead/keyframe paint, radii and widget flags).
+  if (theme_id == QString::fromLatin1(capcut::kThemeName)) {
+    if (!registry->LoadFromJsonFile(QStringLiteral(":/style/olive-capcut/tokens.json"))) {
+      qWarning() << "[ThemeManager] Cannot read CapCut design tokens";
+    }
+  }
+}
+
 bool ParsePaletteFile(const QString &path, QPalette *palette)
 {
   if (!QFileInfo::exists(path)) {
@@ -225,7 +244,7 @@ ThemeManager* ThemeManager::instance()
 
 ThemeManager::ThemeManager(QObject *parent)
   : QObject(parent),
-    current_theme_id_(QString::fromLatin1(metro::kThemeName))
+    current_theme_id_(QString::fromLatin1(StyleManager::kDefaultStyle))
 {
   connect(&file_watcher_, &QFileSystemWatcher::fileChanged, this, &ThemeManager::OnFileChanged);
 
@@ -277,6 +296,15 @@ void ThemeManager::ScanThemeDirectories()
   themes_.clear();
 
   // Built-in themes are always first and always use a stable order.
+  {
+    ThemeInfo capcut_theme;
+    capcut_theme.id = QString::fromLatin1(capcut::kThemeName);
+    capcut_theme.name = QString::fromLatin1(capcut::kThemeDisplayName);
+    capcut_theme.author = QStringLiteral("Olive Team");
+    capcut_theme.version = QStringLiteral("1.0");
+    capcut_theme.is_builtin = true;
+    themes_.append(capcut_theme);
+  }
   {
     ThemeInfo metro_theme;
     metro_theme.id = QString::fromLatin1(metro::kThemeName);
@@ -403,10 +431,7 @@ bool ThemeManager::ApplyTheme(const QString &theme_id)
 
   if (info->is_builtin) {
     StyleManager::SetStyle(info->id);
-    DesignTokenRegistry::instance()->ResetToDefaults();
-    if (info->id != QString::fromLatin1(metro::kThemeName)) {
-      DesignTokenRegistry::instance()->SetColors(PaletteTokens(qApp->palette()));
-    }
+    ApplyBuiltInTokens(info->id);
 
     current_theme_id_ = info->id;
     StyleManager::SetCurrentStyleId(info->id);
@@ -530,7 +555,7 @@ bool ThemeManager::FallbackToDefault()
   if (current_theme_id_ == default_id && FindTheme(default_id)) {
     // The default theme is already active; make sure its palette/tokens are sane.
     StyleManager::SetStyle(default_id);
-    DesignTokenRegistry::instance()->ResetToDefaults();
+    ApplyBuiltInTokens(default_id);
     StyleManager::SetCurrentStyleId(default_id);
     emit ThemeChanged(default_id);
     return true;

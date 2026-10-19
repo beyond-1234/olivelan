@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+add_subdirectory(olive-capcut)
 add_subdirectory(olive-dark)
 add_subdirectory(olive-light)
 add_subdirectory(olive-metro)
@@ -25,6 +26,7 @@ set(OLIVE_RESOURCES
 
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
+  ui/style/capcutstyleconfig.h
   ui/style/style.h
   ui/style/style.cpp
   ui/style/designtokenregistry.h

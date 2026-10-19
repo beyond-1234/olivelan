@@ -20,7 +20,31 @@
 
 #include "icons.h"
 
+#include <QFileInfo>
+
 namespace olive {
+
+namespace {
+
+QString ResolveIconFile(const QString &theme, const QString &name, int size, bool disabled)
+{
+  const QString file_name = disabled
+      ? QStringLiteral("%1.%2.disabled.png").arg(name, QString::number(size))
+      : QStringLiteral("%1.%2.png").arg(name, QString::number(size));
+
+  const QString primary = QStringLiteral("%1/png/%2").arg(theme, file_name);
+  if (QFileInfo::exists(primary) || theme == QStringLiteral(":/style/olive-metro")) {
+    return primary;
+  }
+
+  // Built-in themes are free to reuse Olive's existing glyph library when they
+  // only change palette/geometry. This keeps a theme like CapCut Studio from
+  // duplicating several megabytes of PNGs just to ship a different QSS.
+  const QString fallback = QStringLiteral(":/style/olive-metro/png/%1").arg(file_name);
+  return QFileInfo::exists(fallback) ? fallback : primary;
+}
+
+} // namespace
 
 /// Works in conjunction with `genicons.sh` to generate and utilize icons of specific sizes
 const int ICON_SIZE_COUNT = 4;
@@ -181,9 +205,9 @@ QIcon icon::Create(const QString& theme, const QString &name)
   QIcon icon;
 
   for (int i=0;i<ICON_SIZE_COUNT;i++) {
-    icon.addFile(QStringLiteral("%1/png/%2.%3.png").arg(theme, name, QString::number(ICON_SIZES[i])),
+    icon.addFile(ResolveIconFile(theme, name, ICON_SIZES[i], false),
                  QSize(ICON_SIZES[i], ICON_SIZES[i]), QIcon::Normal);
-    icon.addFile(QStringLiteral("%1/png/%2.%3.disabled.png").arg(theme, name, QString::number(ICON_SIZES[i])),
+    icon.addFile(ResolveIconFile(theme, name, ICON_SIZES[i], true),
                  QSize(ICON_SIZES[i], ICON_SIZES[i]), QIcon::Disabled);
   }
 

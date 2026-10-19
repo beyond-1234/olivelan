@@ -341,23 +341,33 @@ int main(int argc, char *argv[])
     // can be asserted from a log rather than guessed.
     qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
 
-    // Initialize Chinese font stack & embedded font for primary language support (Adobe Source Han Sans / 思源黑体)
-    int font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.otf"));
-    QFont app_font = QApplication::font();
-    if (font_id != -1) {
-      const QStringList font_families = QFontDatabase::applicationFontFamilies(font_id);
-      if (!font_families.isEmpty()) {
-        app_font.setFamilies(font_families);
-      }
+    // Initialize the UI font stack. Inter covers Latin/numbers for the CapCut
+    // Studio preset, while the embedded Source Han Sans font keeps CJK glyphs
+    // inside the same family list so Qt can fall back per character.
+    QStringList ui_families;
+    int inter_font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Inter.ttf"));
+    if (inter_font_id != -1) {
+      ui_families.append(QFontDatabase::applicationFontFamilies(inter_font_id));
+    }
+
+    int cjk_font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.otf"));
+    if (cjk_font_id != -1) {
+      ui_families.append(QFontDatabase::applicationFontFamilies(cjk_font_id));
     } else {
       // Fallback geometric sans Chinese font stack
 #if defined(Q_OS_WIN)
-      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("SimHei")});
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("Microsoft YaHei UI") << QStringLiteral("SimHei");
 #elif defined(Q_OS_MAC)
-      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("PingFang SC"), QStringLiteral("Heiti SC")});
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("PingFang SC") << QStringLiteral("Heiti SC");
 #else
-      app_font.setFamilies({QStringLiteral("Source Han Sans SC"), QStringLiteral("Noto Sans CJK SC"), QStringLiteral("WenQuanYi Micro Hei")});
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("Noto Sans CJK SC") << QStringLiteral("WenQuanYi Micro Hei");
 #endif
+    }
+
+    ui_families.removeDuplicates();
+    QFont app_font = QApplication::font();
+    if (!ui_families.isEmpty()) {
+      app_font.setFamilies(ui_families);
     }
     QApplication::setFont(app_font);
 

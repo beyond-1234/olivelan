@@ -21,11 +21,14 @@
 #include "viewer.h"
 
 #include <QDateTime>
+#include <QEasingCurve>
 #include <QFontDialog>
+#include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QtMath>
@@ -42,6 +45,7 @@
 #include "panel/multicam/multicampanel.h"
 #include "panel/panelmanager.h"
 #include "render/rendermanager.h"
+#include "ui/style/designtokenregistry.h"
 #include "viewerpreventsleep.h"
 #include "widget/audiomonitor/audiomonitor.h"
 #include "widget/menu/menu.h"
@@ -78,6 +82,10 @@ ViewerWidget::ViewerWidget(ViewerDisplayWidget *display, QWidget *parent) :
   ignore_scrub_(0),
   multicam_panel_(nullptr)
 {
+  floating_controls_ = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("viewer.controls.floating"), 0);
+  floating_controls_animated_ = false;
+
   // Set up main layout
   QVBoxLayout* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -112,25 +120,44 @@ ViewerWidget::ViewerWidget(ViewerDisplayWidget *display, QWidget *parent) :
   // Create waveform view when audio is connected and video isn't
   waveform_view_ = new AudioWaveformView();
   ConnectTimelineView(waveform_view_);
-  layout->addWidget(waveform_view_);
 
-  // Create time ruler
-  layout->addWidget(ruler());
-
-  // Create scrollbar
-  layout->addWidget(scrollbar());
-
-  // Create lower controls
-  controls_ = new PlaybackControls();
+  // Create lower controls. CapCut Studio floats a compact, semi-transparent
+  // transport over the preview; the classic presets keep a ruler below it.
+  QWidget *controls_parent = floating_controls_
+      ? static_cast<QWidget *>(sizer_)
+      : static_cast<QWidget *>(this);
+  controls_ = new PlaybackControls(controls_parent);
   controls_->SetTimecodeEnabled(true);
   controls_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+
+  if (floating_controls_) {
+    controls_->setObjectName(QStringLiteral("ViewerFloatingControls"));
+    controls_->setAttribute(Qt::WA_StyledBackground, true);
+    controls_->setFixedHeight(44);
+    if (controls_->layout()) {
+      controls_->layout()->setContentsMargins(6, 3, 6, 3);
+    }
+
+    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect(controls_);
+    shadow->setBlurRadius(22);
+    shadow->setOffset(0, 3);
+    shadow->setColor(QColor(0, 0, 0, 80));
+    controls_->setGraphicsEffect(shadow);
+    controls_->raise();
+  } else {
+    layout->addWidget(waveform_view_);
+    layout->addWidget(ruler());
+    layout->addWidget(scrollbar());
+  }
   connect(controls_, &PlaybackControls::PlayClicked, this, static_cast<void(ViewerWidget::*)()>(&ViewerWidget::Play));
   connect(controls_, &PlaybackControls::PauseClicked, this, &ViewerWidget::Pause);
   connect(controls_, &PlaybackControls::PrevFrameClicked, this, &ViewerWidget::PrevFrame);
   connect(controls_, &PlaybackControls::NextFrameClicked, this, &ViewerWidget::NextFrame);
   connect(controls_, &PlaybackControls::BeginClicked, this, &ViewerWidget::GoToStart);
   connect(controls_, &PlaybackControls::EndClicked, this, &ViewerWidget::GoToEnd);
-  layout->addWidget(controls_);
+  if (!floating_controls_) {
+    layout->addWidget(controls_);
+  }
 
   // FIXME: Magic number
   SetScale(48.0);
@@ -312,6 +339,49 @@ void ViewerWidget::resizeEvent(QResizeEvent *event)
   super::resizeEvent(event);
 
   UpdateMinimumScale();
+
+  if (floating_controls_) {
+    PositionFloatingControls();
+  }
+}
+
+void ViewerWidget::PositionFloatingControls()
+{
+  if (!floating_controls_ || !controls_ || !sizer_) {
+    return;
+  }
+
+  const int available_width = sizer_->width() - 32;
+  if (available_width <= 0 || sizer_->height() <= 0) {
+    return;
+  }
+
+  const int bar_width = qMin(620, available_width);
+  const int bar_height = controls_->height();
+  const int x = (sizer_->width() - bar_width) / 2;
+  const int y = qMax(8, sizer_->height() - bar_height - 16);
+
+  const QRect target(x, y, bar_width, bar_height);
+
+  if (!floating_controls_animated_) {
+    floating_controls_animated_ = true;
+
+    // A single restrained ease-out entrance; no hover bounce, no continuous
+    // motion in the editing surface.
+    controls_->setGeometry(target.translated(0, 8));
+
+    QPropertyAnimation *animation = new QPropertyAnimation(controls_, "geometry", controls_);
+    animation->setDuration(DesignTokenRegistry::instance()->GetInt(
+        QStringLiteral("motion.duration.ms"), 200));
+    animation->setEasingCurve(QEasingCurve::OutCubic);
+    animation->setStartValue(target.translated(0, 8));
+    animation->setEndValue(target);
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+  } else {
+    controls_->setGeometry(target);
+  }
+
+  controls_->raise();
 }
 
 RenderTicketPtr ViewerWidget::GetSingleFrame(const rational &t, bool dry)
@@ -724,6 +794,19 @@ bool ViewerWidget::IsVideoVisible() const
 
 void ViewerWidget::UpdateWaveformViewFromMode()
 {
+  if (floating_controls_) {
+    // The CapCut preset is a preview-first workspace. Audio waveforms remain
+    // available in the timeline, and keeping the OpenGL viewer visible also
+    // keeps the floating transport reachable for audio-only sequences.
+    sizer_->setVisible(true);
+    waveform_view_->setVisible(false);
+
+    if (GetConnectedNode()) {
+      GetConnectedNode()->SetWaveformEnabled(false);
+    }
+    return;
+  }
+
   bool prefer_waveform = ShouldForceWaveform();
 
   sizer_->setVisible(waveform_mode_ == kWFViewerAndWaveform || waveform_mode_ == kWFViewerOnly || (waveform_mode_ == kWFAutomatic && !prefer_waveform));

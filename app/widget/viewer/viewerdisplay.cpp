@@ -23,6 +23,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QFileInfo>
+#include <QImage>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QOpenGLContext>
@@ -43,6 +44,8 @@
 #include "node/gizmo/point.h"
 #include "node/gizmo/polygon.h"
 #include "node/gizmo/screen.h"
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokenregistry.h"
 #include "window/mainwindow/mainwindow.h"
 
 namespace olive {
@@ -386,9 +389,16 @@ bool ViewerDisplayWidget::eventFilter(QObject *o, QEvent *e)
 
 void ViewerDisplayWidget::OnPaint()
 {
+  const bool checkerboard = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("viewer.checkerboard"), 0);
+
   // Clear background to empty
   QColor bg_color = show_widget_background_ ? palette().window().color() : Qt::black;
   renderer()->ClearDestination(nullptr, bg_color.redF(), bg_color.greenF(), bg_color.blueF());
+
+  if (checkerboard) {
+    DrawCheckerboard();
+  }
 
   // We only draw if we have a pipeline
   if (push_mode_ != kPushNull) {
@@ -396,7 +406,9 @@ void ViewerDisplayWidget::OnPaint()
     VideoParams device_params = GetViewportParams();
 
     if (push_mode_ == kPushBlank) {
-      DrawBlank(device_params);
+      if (!checkerboard) {
+        DrawBlank(device_params);
+      }
     } else if (color_service()) {
       if (FramePtr frame = load_frame_.value<FramePtr>()) {
         // This is a CPU frame, upload it now
@@ -424,7 +436,9 @@ void ViewerDisplayWidget::OnPaint()
       TexturePtr texture_to_draw = texture_;
 
       if (!texture_to_draw || texture_to_draw->IsDummy()) {
-        DrawBlank(device_params);
+        if (!checkerboard) {
+          DrawBlank(device_params);
+        }
       } else {
         if (deinterlace_) {
           if (deinterlace_shader_.isNull()) {
@@ -1262,6 +1276,28 @@ void ViewerDisplayWidget::GenerateGizmoTransforms()
 
   gizmo_last_draw_transform_ = GenerateGizmoTransform(gt, gizmo_draw_time_);
   gizmo_last_draw_transform_inverted_ = gizmo_last_draw_transform_.inverted();
+}
+
+void ViewerDisplayWidget::DrawCheckerboard()
+{
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  const QColor dark = registry->GetColor(QStringLiteral("color.viewer.checker.dark"),
+                                         palette().window().color());
+  const QColor light = registry->GetColor(QStringLiteral("color.viewer.checker.light"),
+                                          palette().window().color().lighter(112));
+
+  // A tiny tiled brush keeps this cheap even while playing back 4K.
+  QImage tile(32, 32, QImage::Format_RGB32);
+  tile.fill(dark);
+
+  QPainter tile_painter(&tile);
+  tile_painter.fillRect(0, 0, 16, 16, light);
+  tile_painter.fillRect(16, 16, 16, 16, light);
+  tile_painter.end();
+
+  QPainter painter(paint_device());
+  painter.setRenderHint(QPainter::Antialiasing, false);
+  painter.fillRect(rect(), QBrush(tile));
 }
 
 void ViewerDisplayWidget::DrawBlank(const VideoParams &device_params)

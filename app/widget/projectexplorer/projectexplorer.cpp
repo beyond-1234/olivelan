@@ -20,6 +20,9 @@
 
 #include "projectexplorer.h"
 
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/thememanager.h"
+
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
@@ -87,11 +90,15 @@ ProjectExplorer::ProjectExplorer(QWidget *parent) :
   icon_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   AddView(icon_view_);
 
-  // Set default view to tree view
-  set_view_type(ProjectToolbar::TreeView);
-
-  // Set default icon size
-  SizeChangedSlot(kProjectIconSizeDefault);
+  // CapCut Studio opens on a media grid; the other presets keep the tree view.
+  if (ThemeManager::instance()->CurrentThemeId()
+      == QString::fromLatin1(capcut::kThemeName)) {
+    set_view_type(ProjectToolbar::IconView);
+    SizeChangedSlot(160);
+  } else {
+    set_view_type(ProjectToolbar::TreeView);
+    SizeChangedSlot(kProjectIconSizeDefault);
+  }
 
   connect(tree_view_, &ProjectExplorerTreeView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
   connect(list_view_, &ProjectExplorerListView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
@@ -278,7 +285,14 @@ void ProjectExplorer::ItemDoubleClickedSlot(const QModelIndex &index)
 
 void ProjectExplorer::SizeChangedSlot(int s)
 {
-  icon_view_->setGridSize(QSize(s, s));
+  if (ThemeManager::instance()->CurrentThemeId()
+      == QString::fromLatin1(capcut::kThemeName)) {
+    // The delegate lays out a 16:9 thumbnail plus one text row. A slightly
+    // shorter cell removes the empty band the square Metro grid leaves behind.
+    icon_view_->setGridSize(QSize(s, qRound(s * 0.82)));
+  } else {
+    icon_view_->setGridSize(QSize(s, s));
+  }
 
   list_view_->setIconSize(QSize(s, s));
 }

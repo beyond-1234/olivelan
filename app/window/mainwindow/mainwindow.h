@@ -138,6 +138,8 @@ private:
    */
   void ApplyInitialLayoutIfNeeded();
 
+  void ApplyCapcutDockSizesWhenReady(int attempts);
+
   void TryStartAutoplayBenchmark();
 
   TimelinePanel* AppendTimelinePanel();
@@ -195,6 +197,8 @@ private:
   bool constructor_finished_{false};
 
   bool initial_layout_applied_;
+
+  bool capcut_dock_sizes_applied_;
 
   int autoplay_seconds_;
   int autoplay_wait_attempts_;

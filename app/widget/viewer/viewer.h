@@ -214,7 +214,12 @@ protected:
 
   virtual void resizeEvent(QResizeEvent *event) override;
 
+  void PositionFloatingControls();
+
   PlaybackControls* controls_;
+
+  bool floating_controls_;
+  bool floating_controls_animated_;
 
   ViewerDisplayWidget* display_widget() const
   {

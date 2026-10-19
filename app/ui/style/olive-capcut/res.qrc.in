@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/style/olive-capcut">
+    @QRC_BODY@
+  </qresource>
+</RCC>

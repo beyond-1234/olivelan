@@ -134,6 +134,7 @@ elseif(UNIX)
   # licence to accompany the font. The qrc embeds it in the binary; this also installs a
   # filesystem copy for distributors and users.
   install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/OFL.txt
+                ${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/OFL-Inter.txt
           DESTINATION share/olive-editor/licenses)
 endif()
 

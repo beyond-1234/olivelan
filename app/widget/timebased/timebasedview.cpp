@@ -25,6 +25,8 @@
 #include <QScrollBar>
 #include <QTimer>
 
+#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/timebased/timebasedwidget.h"
 
 namespace olive {
@@ -179,15 +181,18 @@ void TimeBasedView::drawForeground(QPainter *painter, const QRectF &rect)
 
     QRectF playhead_rect(playhead_scene_left_, rect.top(), width, rect.height());
 
-    // Get playhead highlight color
-    QColor highlight = palette().text().color();
-    highlight.setAlpha(32);
+    // Get playhead highlight color. The CapCut preset keeps the wash extremely
+    // subtle and uses a crisp white line so the playhead reads against every
+    // track colour.
+    QColor playhead_color = DesignTokenRegistry::instance()->GetColor(
+        QString::fromLatin1(capcut::kTokenPlayhead), PLAYHEAD_COLOR);
+    QColor highlight = playhead_color;
+    highlight.setAlpha(24);
     painter->setPen(Qt::NoPen);
     painter->setBrush(highlight);
     painter->drawRect(playhead_rect);
 
-    // FIXME: Hardcoded...
-    painter->setPen(PLAYHEAD_COLOR);
+    painter->setPen(QPen(playhead_color, 1));
     painter->setBrush(Qt::NoBrush);
     painter->drawLine(QLineF(playhead_rect.topLeft(), playhead_rect.bottomLeft()));
   }
