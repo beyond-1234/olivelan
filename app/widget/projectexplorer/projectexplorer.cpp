@@ -31,6 +31,7 @@
 
 #include "common/define.h"
 #include "core.h"
+#include "dialog/footagerelink/footagerelinkdialog.h"
 #include "dialog/footageproperties/footageproperties.h"
 #include "dialog/sequence/sequence.h"
 #include "projectexplorerundo.h"
@@ -364,6 +365,7 @@ void ProjectExplorer::ShowContextMenu()
     bool all_items_are_footage = true;
     bool all_items_have_video_streams = true;
     bool all_items_are_footage_or_sequence = true;
+    QVector<Footage*> missing_footage;
 
     foreach (Node* i, context_menu_items_) {
       Footage* footage_cast_test = dynamic_cast<Footage*>(i);
@@ -373,6 +375,10 @@ void ProjectExplorer::ShowContextMenu()
         all_items_have_video_streams = false;
       }
 
+      if (footage_cast_test && !QFileInfo(footage_cast_test->filename()).isFile()) {
+        missing_footage.append(footage_cast_test);
+      }
+
       if (!footage_cast_test) {
         all_items_are_footage = false;
       }
@@ -380,6 +386,11 @@ void ProjectExplorer::ShowContextMenu()
       if (!footage_cast_test && !sequence_cast_test) {
         all_items_are_footage_or_sequence = false;
       }
+    }
+
+    if (!missing_footage.isEmpty()) {
+      QAction* relink_action = menu.addAction(tr("Relink Footage..."));
+      connect(relink_action, &QAction::triggered, this, &ProjectExplorer::RelinkSelectedFootage);
     }
 
     if (all_items_are_footage && all_items_have_video_streams) {
@@ -488,6 +499,32 @@ void ProjectExplorer::ReplaceSelectedFootage()
     }
 
     Core::instance()->undo_stack()->push(p, tr("Replaced Footage"));
+  }
+}
+
+void ProjectExplorer::RelinkSelectedFootage()
+{
+  QVector<Footage*> missing_footage;
+
+  for (Node* item : context_menu_items_) {
+    if (Footage* footage = dynamic_cast<Footage*>(item)) {
+      if (!QFileInfo(footage->filename()).isFile()) {
+        missing_footage.append(footage);
+      }
+    }
+  }
+
+  if (missing_footage.isEmpty()) {
+    QMessageBox::information(this, tr("Relink Footage"),
+                             tr("All selected footage files are online."));
+    return;
+  }
+
+  FootageRelinkDialog dialog(missing_footage, this, Core::instance()->undo_stack());
+  if (dialog.exec() == QDialog::Accepted) {
+    for (Footage* footage : missing_footage) {
+      model_.RefreshItem(footage);
+    }
   }
 }
 

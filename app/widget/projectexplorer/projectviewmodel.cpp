@@ -641,4 +641,18 @@ QModelIndex ProjectViewModel::CreateIndexFromItem(Node *item, int column)
   return createIndex(IndexOfChild(item), column, item);
 }
 
+void ProjectViewModel::RefreshItem(Node *item)
+{
+  if (!item) {
+    return;
+  }
+
+  const QModelIndex first = CreateIndexFromItem(item);
+  if (!first.isValid()) {
+    return;
+  }
+
+  emit dataChanged(first, CreateIndexFromItem(item, kColumnCount - 1));
+}
+
 }

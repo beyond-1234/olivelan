@@ -31,6 +31,8 @@ set(OLIVE_SOURCES
   common/ffmpegutils.h
   common/filefunctions.cpp
   common/filefunctions.h
+  common/footagerelink.cpp
+  common/footagerelink.h
   common/html.cpp
   common/html.h
   common/jobtime.cpp

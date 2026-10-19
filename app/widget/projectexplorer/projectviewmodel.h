@@ -129,6 +129,11 @@ public:
    */
   QModelIndex CreateIndexFromItem(Node *item, int column = 0);
 
+  /**
+   * @brief Re-read all columns/roles for an item after its underlying media changed.
+   */
+  void RefreshItem(Node *item);
+
 private:
   /**
    * @brief Retrieve the index of `item` in its parent
