@@ -744,7 +744,15 @@ void Core::StartGUI(bool full_screen)
 {
   // Set UI style & dynamic theme engine
   StyleManager::Init();
-  ThemeManager::instance()->Initialize();
+
+  const QString saved_theme_id = OLIVE_CONFIG("Style").toString();
+  ThemeManager::instance()->Initialize(saved_theme_id);
+
+  // If the saved theme was broken or removed, persist the fallback so the next
+  // launch does not fail the same way again.
+  if (ThemeManager::instance()->CurrentThemeId() != saved_theme_id) {
+    OLIVE_CONFIG("Style") = ThemeManager::instance()->CurrentThemeId();
+  }
 
   // Set up shared menus
   MenuShared::CreateInstance();

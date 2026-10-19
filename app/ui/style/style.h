@@ -36,6 +36,14 @@ public:
 
   static void SetStyle(const QString& style_path);
 
+  /**
+   * @brief Update the current style id without reloading a built-in style.
+   *
+   * ThemeManager uses this after applying an external theme so GetStyle() and
+   * ThemeManager::CurrentThemeId() cannot disagree.
+   */
+  static void SetCurrentStyleId(const QString& style_path);
+
   static const char* kDefaultStyle;
 
   static const QMap<QString, QString>& available_themes()

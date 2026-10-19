@@ -54,6 +54,9 @@ void DesignTokenRegistry::ResetToDefaults()
   colors_.insert(QStringLiteral("color.accent.primary"), metro::kAccentColor);
   colors_.insert(QStringLiteral("color.track.video"), metro::kTrackVideo);
   colors_.insert(QStringLiteral("color.track.audio"), metro::kTrackAudio);
+  colors_.insert(QStringLiteral("color.text.primary"), QColor(0xF0, 0xF0, 0xF2));
+  colors_.insert(QStringLiteral("color.text.on-accent"), QColor(Qt::white));
+  colors_.insert(QStringLiteral("color.badge.10bit"), QColor(0x87, 0x64, 0xB8));
 
   // Default strokes & geometries
   ints_.insert(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
@@ -73,6 +76,22 @@ void DesignTokenRegistry::SetColor(const QString &key, const QColor &color)
 QColor DesignTokenRegistry::GetColor(const QString &key, const QColor &fallback) const
 {
   return colors_.value(key, fallback);
+}
+
+void DesignTokenRegistry::SetColors(const QHash<QString, QColor> &colors)
+{
+  bool changed = false;
+
+  for (auto it = colors.constBegin(); it != colors.constEnd(); ++it) {
+    if (colors_.value(it.key()) != it.value()) {
+      colors_.insert(it.key(), it.value());
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    emit TokensChanged();
+  }
 }
 
 void DesignTokenRegistry::SetInt(const QString &key, int value)
@@ -112,6 +131,26 @@ void DesignTokenRegistry::SetString(const QString &key, const QString &value)
 QString DesignTokenRegistry::GetString(const QString &key, const QString &fallback) const
 {
   return strings_.value(key, fallback);
+}
+
+QVariantMap DesignTokenRegistry::AllTokens() const
+{
+  QVariantMap tokens;
+
+  for (auto it = colors_.constBegin(); it != colors_.constEnd(); ++it) {
+    tokens.insert(it.key(), it.value());
+  }
+  for (auto it = ints_.constBegin(); it != ints_.constEnd(); ++it) {
+    tokens.insert(it.key(), it.value());
+  }
+  for (auto it = doubles_.constBegin(); it != doubles_.constEnd(); ++it) {
+    tokens.insert(it.key(), it.value());
+  }
+  for (auto it = strings_.constBegin(); it != strings_.constEnd(); ++it) {
+    tokens.insert(it.key(), it.value());
+  }
+
+  return tokens;
 }
 
 bool DesignTokenRegistry::LoadFromJsonString(const QString &json_str)

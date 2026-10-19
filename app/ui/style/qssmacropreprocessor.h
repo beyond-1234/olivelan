@@ -22,22 +22,46 @@
 #define QSSMACROPREPROCESSOR_H
 
 #include <QColor>
-#include <QHash>
+#include <QList>
 #include <QString>
+#include <QVariantMap>
 
 namespace olive {
 
 /**
  * @brief Lightweight macro preprocessor for QSS stylesheets.
- *        Supports token replacement (@token), color operators (@color.alpha(0.3)),
- *        and OS conditional blocks (#ifdef MACOS ... #endif).
+ *
+ * Supports:
+ *  - @token / var(--token) interpolation for colors, numbers and strings
+ *  - local @name: value; / --name: value; declarations
+ *  - color operators (@color.alpha(0.3), .lighten(10%), .darken(10%))
+ *  - nested #ifdef / #ifndef / #else / #endif blocks
+ *
+ * All failures are reported as Diagnostics with a source line number so the theme
+ * manager can reject a broken theme and fall back to the default style instead of
+ * applying a partially valid stylesheet.
  */
 class QssMacroPreprocessor {
 public:
-  static QString Process(const QString &source_qss, const QHash<QString, QColor> &tokens);
+  struct Diagnostic {
+    int line = 0;
+    QString message;
+  };
+
+  static QString Process(const QString &source_qss,
+                         const QVariantMap &tokens,
+                         QList<Diagnostic> *diagnostics = nullptr);
 
 private:
-  static QString EvaluateColorFunction(const QColor &base_color, const QString &func_name, const QString &arg);
+  static bool EvaluateColorFunction(const QColor &base_color,
+                                    const QString &func_name,
+                                    const QString &arg,
+                                    QColor *out_color,
+                                    QString *error);
+
+  static QString ColorToCss(const QColor &color);
+
+  static int LineForIndex(const QString &text, int index);
 };
 
 } // namespace olive

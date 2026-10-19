@@ -21,6 +21,7 @@
 #include "projectexplorericonview.h"
 
 #include "projectviewmodel.h"
+#include "ui/style/designtokenregistry.h"
 
 namespace olive {
 
@@ -34,6 +35,8 @@ ProjectExplorerIconView::ProjectExplorerIconView(QWidget *parent) :
   setItemDelegate(&delegate_);
 
   connect(&thumbnail_cache_, &ProjectThumbnailCache::Ready, this, &ProjectExplorerIconView::ThumbnailReady);
+  connect(DesignTokenRegistry::instance(), &DesignTokenRegistry::TokensChanged, this,
+          [this]() { viewport()->update(); });
 }
 
 void ProjectExplorerIconView::ThumbnailReady(const QString &key)

@@ -22,10 +22,11 @@
 #define THEMEMANAGER_H
 
 #include <QFileSystemWatcher>
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QHash>
+#include <QTimer>
 
 namespace olive {
 
@@ -41,7 +42,10 @@ struct ThemeInfo {
 
 /**
  * @brief Dynamic Theme Lifecycle & Hot-Reload Manager.
- *        Scans custom directories, watches for changes, and dynamically compiles QSS.
+ *
+ * ThemeManager is the single source of truth for the active theme. Built-in
+ * styles are still rendered by StyleManager, while external themes are loaded
+ * and validated here before being committed to QApplication.
  */
 class ThemeManager : public QObject {
   Q_OBJECT
@@ -49,16 +53,32 @@ class ThemeManager : public QObject {
 public:
   static ThemeManager* instance();
 
-  void Initialize();
+  /**
+   * @brief Scan theme directories and restore the saved theme.
+   * @param saved_theme_id Theme id from the application config. If it is empty
+   *        or cannot be found, the current StyleManager theme is used.
+   */
+  void Initialize(const QString &saved_theme_id = QString());
+
+  /**
+   * @brief Rescan the user theme directory without changing the active theme.
+   */
+  void RefreshThemes();
 
   QStringList GetAvailableThemeIds() const;
+  const QList<ThemeInfo> &GetAvailableThemes() const { return themes_; }
   ThemeInfo GetThemeInfo(const QString &theme_id) const;
 
   bool ApplyTheme(const QString &theme_id);
-  const QString& CurrentThemeId() const { return current_theme_id_; }
+  const QString &CurrentThemeId() const { return current_theme_id_; }
 
   QString GetThemesDirectory() const;
-  bool ImportThemePackage(const QString &source_file_or_dir);
+
+  /**
+   * @brief Import a .qss file, a theme directory, or an .olivetheme/.zip package.
+   * @param overwrite Replace an existing theme with the same id.
+   */
+  bool ImportThemePackage(const QString &source_file_or_dir, bool overwrite = false);
 
   void SetHotReloadEnabled(bool enabled);
   bool IsHotReloadEnabled() const { return hot_reload_enabled_; }
@@ -75,11 +95,17 @@ private:
   ~ThemeManager() override = default;
 
   void ScanThemeDirectories();
-  bool LoadThemeFiles(const ThemeInfo &info, QString &out_qss, QString &out_palette_ini);
+  const ThemeInfo *FindTheme(const QString &theme_id) const;
+
+  bool LoadExternalTheme(const ThemeInfo &info, QString *error);
+  bool ImportThemeDirectory(const QString &source_dir, const QString &id, bool overwrite);
+  bool ImportZipPackage(const QString &source_file, const QString &id, bool overwrite);
+  bool FallbackToDefault();
 
   QString current_theme_id_;
-  QHash<QString, ThemeInfo> themes_;
+  QList<ThemeInfo> themes_;
   QFileSystemWatcher file_watcher_;
+  QTimer reload_timer_;
   bool hot_reload_enabled_{true};
 };
 

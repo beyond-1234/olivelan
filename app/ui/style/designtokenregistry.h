@@ -25,6 +25,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 namespace olive {
 
@@ -41,6 +42,7 @@ public:
   void ResetToDefaults();
 
   void SetColor(const QString &key, const QColor &color);
+  void SetColors(const QHash<QString, QColor> &colors);
   QColor GetColor(const QString &key, const QColor &fallback = QColor()) const;
 
   void SetInt(const QString &key, int value);
@@ -56,6 +58,11 @@ public:
   bool LoadFromJsonFile(const QString &file_path);
 
   const QHash<QString, QColor>& colors() const { return colors_; }
+
+  /**
+   * @brief Flattened color/integer/double/string tokens for the QSS preprocessor.
+   */
+  QVariantMap AllTokens() const;
 
 signals:
   void TokensChanged();

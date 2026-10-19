@@ -148,6 +148,11 @@ const QString &StyleManager::GetStyle()
   return current_style_;
 }
 
+void StyleManager::SetCurrentStyleId(const QString &style_path)
+{
+  current_style_ = style_path;
+}
+
 void StyleManager::SetStyle(const QString &style_path)
 {
   current_style_ = style_path;

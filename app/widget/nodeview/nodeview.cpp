@@ -36,6 +36,7 @@
 #include "node/project/serializer/serializer.h"
 #include "node/traverser.h"
 #include "ui/icons/icons.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/menu/menushared.h"
 #include "widget/timebased/timebasedview.h"
 
@@ -80,6 +81,9 @@ NodeView::NodeView(QWidget *parent) :
   connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &NodeView::UpdateViewportOnMiniMap);
 
   viewport()->installEventFilter(this);
+
+  connect(DesignTokenRegistry::instance(), &DesignTokenRegistry::TokensChanged, this,
+          [this]() { scene_.update(); });
 }
 
 NodeView::~NodeView()

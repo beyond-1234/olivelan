@@ -15,6 +15,7 @@
 #include "node/project/sequence/sequence.h"
 #include "nodeviewitem.h"
 #include "ui/colorcoding.h"
+#include "ui/style/designtokenregistry.h"
 #include "ui/style/metrostyleconfig.h"
 
 namespace olive {
@@ -254,10 +255,16 @@ void NodeViewContext::paint(QPainter *painter, const QStyleOptionGraphicsItem *o
   QColor c = QtUtils::toQColor(color);
 
   // Flat hairline border, or a hard 2px accent frame when selected.
+  const int border_width = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
   if (option->state & QStyle::State_Selected) {
-    painter->setPen(QPen(metro::kAccentColor, metro::kBorderWidth * 2));
+    painter->setPen(QPen(DesignTokenRegistry::instance()->GetColor(
+                             QStringLiteral("color.accent.primary"), metro::kAccentColor),
+                         border_width * 2));
   } else {
-    painter->setPen(QPen(metro::kBorderColor, metro::kBorderWidth));
+    painter->setPen(QPen(DesignTokenRegistry::instance()->GetColor(
+                             QStringLiteral("color.border.hairline"), metro::kBorderColor),
+                         border_width));
   }
 
   // Draw semi-transparent rect for whole item

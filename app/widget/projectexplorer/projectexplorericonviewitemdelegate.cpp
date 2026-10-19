@@ -25,25 +25,36 @@
 #include "common/qtutils.h"
 #include "projectthumbnailcache.h"
 #include "projectviewmodel.h"
+#include "ui/style/designtokenregistry.h"
 #include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
 namespace {
 
+QColor TokenColor(const QString &key, const QColor &fallback)
+{
+  return DesignTokenRegistry::instance()->GetColor(key, fallback);
+}
+
+int TokenInt(const QString &key, int fallback)
+{
+  return DesignTokenRegistry::instance()->GetInt(key, fallback);
+}
+
 QColor BadgeColor(const QString &badge)
 {
   if (badge == QStringLiteral("4K")) {
-    return metro::kAccentColor;
+    return TokenColor(QStringLiteral("color.accent.primary"), metro::kAccentColor);
   } else if (badge == QStringLiteral("10bit")) {
-    return QColor(0x87, 0x64, 0xB8);
+    return TokenColor(QStringLiteral("color.badge.10bit"), QColor(0x87, 0x64, 0xB8));
   } else if (badge == QStringLiteral("60FPS")) {
-    return metro::kTrackVideo;
+    return TokenColor(QStringLiteral("color.track.video"), metro::kTrackVideo);
   } else if (badge == QStringLiteral("AUDIO")) {
-    return metro::kTrackAudio;
+    return TokenColor(QStringLiteral("color.track.audio"), metro::kTrackAudio);
   }
 
-  return metro::kBorderColor;
+  return TokenColor(QStringLiteral("color.border.hairline"), metro::kBorderColor);
 }
 
 }
@@ -82,7 +93,7 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   const QRect bar_rect(tile.x(), tile.y() + thumb_height, tile.width(), bar_height);
 
   // Tile background (doubles as the placeholder colour while a thumbnail is being decoded).
-  painter->fillRect(tile, metro::kTileBg);
+  painter->fillRect(tile, TokenColor(QStringLiteral("color.card.fill"), metro::kTileBg));
 
   // ---- Thumbnail, or placeholder + async request ----
   const QString key = index.data(ProjectViewModel::kThumbnailKeyRole).toString();
@@ -135,7 +146,7 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
       }
 
       painter->fillRect(badge_rect, BadgeColor(badge));
-      painter->setPen(Qt::white);
+      painter->setPen(TokenColor(QStringLiteral("color.text.on-accent"), Qt::white));
       painter->drawText(badge_rect, Qt::AlignCenter, badge);
 
       x += w + 4;
@@ -145,7 +156,7 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   }
 
   // ---- Metadata bar: name (left) + duration (right) ----
-  painter->fillRect(bar_rect, metro::kCanvasBg);
+  painter->fillRect(bar_rect, TokenColor(QStringLiteral("color.canvas.base"), metro::kCanvasBg));
 
   {
     const QString duration = index.data(ProjectViewModel::kDurationRole).toString();
@@ -154,7 +165,7 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
 
     int name_width = text_rect.width();
 
-    painter->setPen(option.palette.text().color());
+    painter->setPen(TokenColor(QStringLiteral("color.text.primary"), option.palette.text().color()));
 
     if (duration_width > 0 && duration_width < text_rect.width() / 2) {
       painter->drawText(text_rect, static_cast<int>(Qt::AlignRight | Qt::AlignVCenter), duration);
@@ -169,10 +180,14 @@ void ProjectExplorerIconViewItemDelegate::paint(QPainter *painter, const QStyleO
   // ---- Border / selection frame (Metro) ----
   painter->setBrush(Qt::NoBrush);
 
+  const int border_width = TokenInt(QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
+
   if (selected) {
-    painter->setPen(QPen(metro::kAccentColor, metro::kBorderWidth * 2));
+    painter->setPen(QPen(TokenColor(QStringLiteral("color.accent.primary"), metro::kAccentColor),
+                         border_width * 2));
   } else {
-    painter->setPen(QPen(metro::kBorderColor, metro::kBorderWidth));
+    painter->setPen(QPen(TokenColor(QStringLiteral("color.border.hairline"), metro::kBorderColor),
+                         border_width));
   }
 
   painter->drawRect(tile.adjusted(0, 0, -1, -1));

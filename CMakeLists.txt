@@ -240,6 +240,17 @@ if (NOT Qt6Network_FOUND)
   message("   Qt6::Network module not found, crash reporting will be disabled.")
 endif()
 
+# Zip package import for .olivetheme is optional: it uses Qt's private
+# QZipReader, which is only available when the Qt private development headers
+# are installed. Directory and plain .qss imports work without it.
+if (TARGET Qt6::CorePrivate)
+  list(APPEND OLIVE_LIBRARIES Qt6::CorePrivate)
+  list(APPEND OLIVE_DEFINITIONS OLIVE_HAVE_QZIPREADER)
+  message(STATUS "Qt6 CorePrivate found - .olivetheme zip import enabled")
+else()
+  message(STATUS "Qt6 CorePrivate not found - .olivetheme zip import disabled")
+endif()
+
 list(APPEND OLIVE_LIBRARIES
   Qt6::Core
   Qt6::Gui
