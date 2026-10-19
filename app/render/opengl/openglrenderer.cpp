@@ -190,6 +190,8 @@ void OpenGLRenderer::DestroyInternal()
 
     DestroyNativeSurfacePool();
 
+    DestroyIOSurfaceScratchTextures();
+
     DestroyUploadPboRing();
 
     // Delete framebuffer
@@ -765,70 +767,278 @@ void OpenGLRenderer::DestroyNativeSurfacePool()
   native_in_use_count_ = 0;
 }
 
-TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height)
+extern const char* kVaapiYuvToRgbFrag;
+
+void OpenGLRenderer::EnsureIOSurfaceScratchTextures(int width, int height, int bits_per_pixel)
+{
+#if !defined(__APPLE__)
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+#else
+  if (!functions_ || width <= 0 || height <= 0) {
+    return;
+  }
+
+  if (bits_per_pixel != 8 && bits_per_pixel != 10) {
+    bits_per_pixel = 8;
+  }
+
+  if (iosurface_y_scratch_ && iosurface_uv_scratch_
+      && iosurface_scratch_width_ == width
+      && iosurface_scratch_height_ == height
+      && iosurface_scratch_bits_ == bits_per_pixel) {
+    return;
+  }
+
+  DestroyIOSurfaceScratchTextures();
+
+  const int chroma_width = (width + 1) / 2;
+  const int chroma_height = (height + 1) / 2;
+  const GLint y_internal = (bits_per_pixel > 8) ? GL_R16 : GL_R8;
+  const GLint uv_internal = (bits_per_pixel > 8) ? GL_RG16 : GL_RG8;
+  const GLenum upload_type = (bits_per_pixel > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+
+  GLint previous_texture = 0;
+  functions_->glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+
+  auto create_plane = [&](GLuint* texture, GLint internal_format, GLenum format,
+                          int plane_width, int plane_height) {
+    functions_->glGenTextures(1, texture);
+    functions_->glBindTexture(GL_TEXTURE_2D, *texture);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    functions_->glTexImage2D(GL_TEXTURE_2D, 0, internal_format, plane_width, plane_height,
+                             0, format, upload_type, nullptr);
+  };
+
+  create_plane(&iosurface_y_scratch_, y_internal, GL_RED, width, height);
+  create_plane(&iosurface_uv_scratch_, uv_internal, GL_RG, chroma_width, chroma_height);
+
+  functions_->glBindTexture(GL_TEXTURE_2D, previous_texture);
+
+  iosurface_scratch_width_ = width;
+  iosurface_scratch_height_ = height;
+  iosurface_scratch_bits_ = bits_per_pixel;
+#endif
+}
+
+void OpenGLRenderer::DestroyIOSurfaceScratchTextures()
+{
+  if (functions_) {
+    if (iosurface_y_scratch_) {
+      functions_->glDeleteTextures(1, &iosurface_y_scratch_);
+    }
+    if (iosurface_uv_scratch_) {
+      functions_->glDeleteTextures(1, &iosurface_uv_scratch_);
+    }
+  }
+  iosurface_y_scratch_ = 0;
+  iosurface_uv_scratch_ = 0;
+  iosurface_scratch_width_ = 0;
+  iosurface_scratch_height_ = 0;
+  iosurface_scratch_bits_ = 0;
+}
+
+TexturePtr OpenGLRenderer::CompositeTextureFromYuvTextures(const VideoParams &params,
+                                                           GLuint y_tex, GLuint uv_tex,
+                                                           int width, int height,
+                                                           int bits_per_pixel, bool full_range,
+                                                           float yuv_crv, float yuv_cbu,
+                                                           float yuv_cgu, float yuv_cgv)
+{
+  if (!y_tex || !uv_tex || width <= 0 || height <= 0) {
+    return nullptr;
+  }
+
+  // Compile once per renderer process. This is the same shader the VA-API path uses; both
+  // backends expose a normalized R8/R16 luma plane plus a packed RG8/RG16 chroma plane.
+  static QVariant yuv_shader;
+  if (yuv_shader.isNull()) {
+    yuv_shader = CreateNativeShader(ShaderCode(QString::fromUtf8(kVaapiYuvToRgbFrag)));
+    if (yuv_shader.isNull()) {
+      qCritical() << "[HAL] Failed to compile two-plane YUV->RGB shader";
+      return nullptr;
+    }
+  }
+
+  VideoParams dst_params = params;
+  dst_params.set_width(width);
+  dst_params.set_height(height);
+  if (bits_per_pixel > 8) {
+    dst_params.set_format(PixelFormat::F16);
+  }
+  dst_params.set_channel_count(VideoParams::kRGBAChannelCount);
+
+  TexturePtr dst = CreateTexture(dst_params);
+  if (!dst) {
+    qWarning() << "[HAL] Failed to allocate YUV composite destination texture";
+    return nullptr;
+  }
+
+  VideoParams y_params = dst_params;
+  y_params.set_format((bits_per_pixel > 8) ? PixelFormat::U16 : PixelFormat::U8);
+  y_params.set_channel_count(1);
+
+  VideoParams uv_params = y_params;
+  uv_params.set_width((width + 1) / 2);
+  uv_params.set_height((height + 1) / 2);
+  uv_params.set_channel_count(2);
+
+  // Non-owning views: the caller retains ownership of the plane textures so the VideoToolbox
+  // scratch planes can survive across frames and the VA-API EGLImage textures can be released
+  // on its existing cleanup path.
+  TexturePtr y_view = std::make_shared<Texture>(nullptr, QVariant::fromValue(y_tex), y_params);
+  TexturePtr uv_view = std::make_shared<Texture>(nullptr, QVariant::fromValue(uv_tex), uv_params);
+
+  ShaderJob job;
+  job.Insert(QStringLiteral("ove_y_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(y_view)));
+  job.Insert(QStringLiteral("ove_uv_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(uv_view)));
+  job.Insert(QStringLiteral("bits_per_pixel"), NodeValue(NodeValue::kInt, bits_per_pixel));
+  job.Insert(QStringLiteral("full_range"), NodeValue(NodeValue::kBoolean, full_range));
+  job.Insert(QStringLiteral("yuv_crv"), NodeValue(NodeValue::kFloat, yuv_crv));
+  job.Insert(QStringLiteral("yuv_cbu"), NodeValue(NodeValue::kFloat, yuv_cbu));
+  job.Insert(QStringLiteral("yuv_cgu"), NodeValue(NodeValue::kFloat, yuv_cgu));
+  job.Insert(QStringLiteral("yuv_cgv"), NodeValue(NodeValue::kFloat, yuv_cgv));
+
+  QMatrix4x4 identity;
+  job.Insert(QStringLiteral("ove_mvpmat"), NodeValue(NodeValue::kMatrix, identity));
+
+  BlitToTexture(yuv_shader, job, dst.get(), false);
+
+  return dst;
+}
+
+TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params, void* iosurface,
+                                                      int width, int height, int bits_per_pixel,
+                                                      bool full_range, float yuv_crv,
+                                                      float yuv_cbu, float yuv_cgu,
+                                                      float yuv_cgv)
 {
 #if !defined(__APPLE__)
   Q_UNUSED(params);
   Q_UNUSED(iosurface);
   Q_UNUSED(width);
   Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+  Q_UNUSED(full_range);
+  Q_UNUSED(yuv_crv);
+  Q_UNUSED(yuv_cbu);
+  Q_UNUSED(yuv_cgu);
+  Q_UNUSED(yuv_cgv);
   return nullptr;
 #else
-  if (!iosurface || width <= 0 || height <= 0) return nullptr;
+  if (!iosurface || width <= 0 || height <= 0 || !functions_) return nullptr;
+
+  if (bits_per_pixel != 8 && bits_per_pixel != 10) {
+    bits_per_pixel = 8;
+  }
 
   CGLContextObj cgl_ctx = CGLGetCurrentContext();
   if (!cgl_ctx) return nullptr;
 
-  // IOSurface can only be bound as GL_TEXTURE_RECTANGLE (CGLTexImageIOSurface2D has no 2D target).
-  // Bind it to a scratch RECTANGLE texture, then blit into a pool-resident GL_TEXTURE_2D so the
-  // result is compatible with Olive's normalized-UV samplers (fixes CR-10: delivering RECTANGLE
-  // straight to the node graph would sample the wrong region / black screen).
-  GLuint rect_tex = 0;
-  glGenTextures(1, &rect_tex);
-  glBindTexture(GL_TEXTURE_RECTANGLE, rect_tex);
-  CGLError cgl_err = CGLTexImageIOSurface2D(cgl_ctx,
-                                           GL_TEXTURE_RECTANGLE,
-                                           GL_RGBA,
-                                           width,
-                                           height,
-                                           GL_BGRA,
-                                           GL_UNSIGNED_INT_8_8_8_8_REV,
-                                           reinterpret_cast<IOSurfaceRef>(iosurface),
-                                           0);
-  glBindTexture(GL_TEXTURE_RECTANGLE, 0);
-  if (cgl_err != kCGLNoError) {
-    qWarning() << "[VideoToolbox-Pool] CGLTexImageIOSurface2D failed:" << cgl_err;
-    glDeleteTextures(1, &rect_tex);
+  EnsureIOSurfaceScratchTextures(width, height, bits_per_pixel);
+  if (!iosurface_y_scratch_ || !iosurface_uv_scratch_) {
     return nullptr;
   }
 
-  GLuint target_2d = 0;
-  const int slot_index = AcquireNativeSurfaceSlot(width, height, GL_TEXTURE_2D, params.format(), &target_2d);
-  if (slot_index < 0) {
-    glDeleteTextures(1, &rect_tex);
+  const int chroma_width = (width + 1) / 2;
+  const int chroma_height = (height + 1) / 2;
+  const GLint y_internal = (bits_per_pixel > 8) ? GL_R16 : GL_R8;
+  const GLint uv_internal = (bits_per_pixel > 8) ? GL_RG16 : GL_RG8;
+  const GLenum upload_type = (bits_per_pixel > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+
+  // VideoToolbox produces bi-planar NV12/P010 CVPixelBuffers. CGLTexImageIOSurface2D can
+  // import one plane at a time, so bind Y and interleaved CbCr as separate RECTANGLE textures.
+  // The previous single-pass GL_RGBA/BGRA import returned kCGLBadValue (10008) for these
+  // surfaces and forced every frame through swscale on the CPU.
+  GLuint y_rect = 0;
+  GLuint uv_rect = 0;
+  auto import_plane = [&](GLuint* texture, GLint internal_format, GLenum format,
+                          int plane_width, int plane_height, int plane_index) {
+    functions_->glGenTextures(1, texture);
+    functions_->glBindTexture(GL_TEXTURE_RECTANGLE, *texture);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    CGLError err = CGLTexImageIOSurface2D(cgl_ctx,
+                                         GL_TEXTURE_RECTANGLE,
+                                         internal_format,
+                                         plane_width,
+                                         plane_height,
+                                         format,
+                                         upload_type,
+                                         reinterpret_cast<IOSurfaceRef>(iosurface),
+                                         plane_index);
+    functions_->glBindTexture(GL_TEXTURE_RECTANGLE, 0);
+    return err;
+  };
+
+  CGLError y_error = import_plane(&y_rect, y_internal, GL_RED, width, height, 0);
+  CGLError uv_error = import_plane(&uv_rect, uv_internal, GL_RG, chroma_width, chroma_height, 1);
+  if (y_error != kCGLNoError || uv_error != kCGLNoError) {
+    qWarning() << "[VideoToolbox-Pool] CGLTexImageIOSurface2D plane import failed:"
+               << "Y" << y_error << "UV" << uv_error
+               << "size" << width << "x" << height
+               << "bits" << bits_per_pixel;
+    if (y_rect) functions_->glDeleteTextures(1, &y_rect);
+    if (uv_rect) functions_->glDeleteTextures(1, &uv_rect);
     return nullptr;
   }
 
-  auto* xf = context_->extraFunctions();
-  if (xf) {
+  auto blit_plane = [&](GLuint source, GLuint destination, int plane_width, int plane_height) {
+    auto* xf = context_->extraFunctions();
+    if (!xf) return false;
+
+    GLint previous_read = 0;
+    GLint previous_draw = 0;
+    functions_->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous_read);
+    functions_->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previous_draw);
+
     GLuint fbo[2] = {0, 0};
     xf->glGenFramebuffers(2, fbo);
     xf->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[0]);
-    xf->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, rect_tex, 0);
+    xf->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_RECTANGLE, source, 0);
     xf->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[1]);
-    xf->glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target_2d, 0);
-    xf->glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    xf->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    xf->glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, destination, 0);
+
+    const GLenum read_status = xf->glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+    const GLenum draw_status = xf->glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    const bool complete = (read_status == GL_FRAMEBUFFER_COMPLETE
+                           && draw_status == GL_FRAMEBUFFER_COMPLETE);
+    if (complete) {
+      xf->glBlitFramebuffer(0, 0, plane_width, plane_height,
+                            0, 0, plane_width, plane_height,
+                            GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    } else {
+      qWarning() << "[VideoToolbox-Pool] IOSurface plane FBO incomplete:"
+                 << Qt::hex << read_status << draw_status << Qt::dec;
+    }
+
+    xf->glBindFramebuffer(GL_READ_FRAMEBUFFER, previous_read);
+    xf->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previous_draw);
     xf->glDeleteFramebuffers(2, fbo);
-  } else {
-    qWarning() << "[VideoToolbox-Pool] extraFunctions() unavailable; cannot blit RECTANGLE to 2D";
-    ReleaseNativeSurfacePoolTexture(target_2d);
-    glDeleteTextures(1, &rect_tex);
+    return complete;
+  };
+
+  const bool y_copied = blit_plane(y_rect, iosurface_y_scratch_, width, height);
+  const bool uv_copied = blit_plane(uv_rect, iosurface_uv_scratch_, chroma_width, chroma_height);
+
+  functions_->glDeleteTextures(1, &y_rect);
+  functions_->glDeleteTextures(1, &uv_rect);
+
+  if (!y_copied || !uv_copied) {
     return nullptr;
   }
 
-  glDeleteTextures(1, &rect_tex);
-  return std::make_shared<Texture>(this, QVariant::fromValue(target_2d), params);
+  return CompositeTextureFromYuvTextures(params, iosurface_y_scratch_, iosurface_uv_scratch_,
+                                         width, height, bits_per_pixel, full_range,
+                                         yuv_crv, yuv_cbu, yuv_cgu, yuv_cgv);
 #endif
 }
 
@@ -845,7 +1055,7 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
 // ~1024x over-bright output (the review's F-1). Limited range is expanded per bit depth
 // so the 10-bit black level sits at 64/1023 and white at 940/1023, matching the CPU
 // YUV->RGB path and Tier 1 (CUDA).
-static const char* kVaapiYuvToRgbFrag = R"(
+const char* kVaapiYuvToRgbFrag = R"(
 
 uniform sampler2D ove_y_tex;
 uniform sampler2D ove_uv_tex;
@@ -972,64 +1182,20 @@ TexturePtr OpenGLRenderer::CompositeTextureFromVaapiPlanes(const VideoParams &pa
     return nullptr;
   }
 
-  // Compile the composite shader once per renderer process.
-  static QVariant vaapi_yuv_shader;
-  if (vaapi_yuv_shader.isNull()) {
-    vaapi_yuv_shader = CreateNativeShader(ShaderCode(QString::fromUtf8(kVaapiYuvToRgbFrag)));
-    if (vaapi_yuv_shader.isNull()) {
-      qCritical() << "[VAAPI-HAL] Failed to compile VA-API two-plane YUV->RGB shader";
-      functions_->glDeleteTextures(1, &y_tex);
-      functions_->glDeleteTextures(1, &uv_tex);
-      return nullptr;
-    }
-  }
-
-  // Destination: pooled slot, GL_RGBA16F for 10-bit sources (patch 0050/0027 symmetry),
-  // GL_RGBA8 for 8-bit. The slot outlives the DMA-BUF fds, which the pipeline may close
-  // as soon as this function returns.
-  VideoParams dst_params = params;
-  if (bits_per_pixel > 8) {
-    dst_params.set_format(PixelFormat::F16);
-  }
-  dst_params.set_channel_count(VideoParams::kRGBAChannelCount);
-
-  TexturePtr dst = CreateTexture(dst_params);
-  if (!dst) {
-    qWarning() << "[VAAPI-HAL] Failed to allocate composite destination texture";
-    functions_->glDeleteTextures(1, &y_tex);
-    functions_->glDeleteTextures(1, &uv_tex);
-    return nullptr;
-  }
-
-  // Half-size chroma texture params (420 subsampling, matching the GR*/P010 layout).
-  VideoParams uv_params = dst_params;
-  uv_params.set_width(width / 2);
-  uv_params.set_height(height / 2);
-  uv_params.set_channel_count(2);
-
-  VideoParams y_params = dst_params;
-  y_params.set_channel_count(1);
-  TexturePtr y_view = std::make_shared<Texture>(this, QVariant::fromValue(y_tex), y_params);
-  TexturePtr uv_view = std::make_shared<Texture>(this, QVariant::fromValue(uv_tex), uv_params);
-
-  ShaderJob job;
-  job.Insert(QStringLiteral("ove_y_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(y_view)));
-  job.Insert(QStringLiteral("ove_uv_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(uv_view)));
-  job.Insert(QStringLiteral("bits_per_pixel"), NodeValue(NodeValue::kInt, bits_per_pixel));
-  job.Insert(QStringLiteral("full_range"), NodeValue(NodeValue::kBoolean, full_range));
-  job.Insert(QStringLiteral("yuv_crv"), NodeValue(NodeValue::kFloat, yuv_crv));
-  job.Insert(QStringLiteral("yuv_cbu"), NodeValue(NodeValue::kFloat, yuv_cbu));
-  job.Insert(QStringLiteral("yuv_cgu"), NodeValue(NodeValue::kFloat, yuv_cgu));
-  job.Insert(QStringLiteral("yuv_cgv"), NodeValue(NodeValue::kFloat, yuv_cgv));
-
-  // Same default matrix the node pipeline passes to every other Blit call.
-  QMatrix4x4 identity;
-  job.Insert(QStringLiteral("ove_mvpmat"), NodeValue(NodeValue::kMatrix, identity));
-
-  BlitToTexture(vaapi_yuv_shader, job, dst.get(), false);
+  // Destination and YUV composite are shared with the VideoToolbox path; the helper creates
+  // the pooled RGBA8/RGBA16F target and runs the two-plane shader.
+  TexturePtr dst = CompositeTextureFromYuvTextures(params, y_tex, uv_tex,
+                                                   width, height, bits_per_pixel,
+                                                   full_range, yuv_crv, yuv_cbu,
+                                                   yuv_cgu, yuv_cgv);
 
   functions_->glDeleteTextures(1, &y_tex);
   functions_->glDeleteTextures(1, &uv_tex);
+
+  if (!dst) {
+    qWarning() << "[VAAPI-HAL] Failed to composite VA-API planes into pool texture";
+    return nullptr;
+  }
 
   return dst;
 #endif

@@ -213,6 +213,7 @@ protected:
   virtual void ScaleChangedEvent(const double& s) override;
 
   virtual void resizeEvent(QResizeEvent *event) override;
+  virtual void showEvent(QShowEvent *event) override;
 
   void PositionFloatingControls();
 

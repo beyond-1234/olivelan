@@ -72,6 +72,27 @@ PreferencesAudioTab::PreferencesAudioTab()
 
       row++;
 
+      audio_output_follow_system_ = new QCheckBox(tr("Follow system default output device"));
+      audio_output_follow_system_->setChecked(OLIVE_CONFIG("AudioOutputFollowSystem").toBool());
+      audio_output_follow_system_->setToolTip(
+          tr("Use whatever output is currently selected in the operating system. "
+             "This allows Bluetooth headphones to become the default automatically."));
+      output_layout->addWidget(audio_output_follow_system_, row, 0, 1, 2);
+      audio_output_devices_->setEnabled(!audio_output_follow_system_->isChecked());
+      connect(audio_output_follow_system_, &QCheckBox::toggled, audio_output_devices_,
+              [this](bool checked) {
+                audio_output_devices_->setEnabled(!checked);
+                if (checked) {
+                  const int default_index =
+                      audio_output_devices_->findData(Pa_GetDefaultOutputDevice());
+                  if (default_index >= 0) {
+                    audio_output_devices_->setCurrentIndex(default_index);
+                  }
+                }
+              });
+
+      row++;
+
       {
         int output_row = 0;
 
@@ -172,8 +193,17 @@ void PreferencesAudioTab::Accept(MultiUndoCommand *command)
   PaDeviceIndex output_device = audio_output_devices_->currentData().value<PaDeviceIndex>();
   PaDeviceIndex input_device = audio_input_devices_->currentData().value<PaDeviceIndex>();
 
+  const bool follow_system_output = audio_output_follow_system_->isChecked();
+  if (follow_system_output) {
+    output_device = Pa_GetDefaultOutputDevice();
+  }
+
   // Get device names, which seem to be the closest thing we have to a "unique identifier" for them
-  OLIVE_CONFIG("AudioOutput") = audio_output_devices_->currentText();
+  OLIVE_CONFIG("AudioOutputFollowSystem") = follow_system_output;
+  OLIVE_CONFIG("AudioOutput") =
+      (output_device != paNoDevice
+           ? QString::fromUtf8(Pa_GetDeviceInfo(output_device)->name)
+           : QString());
   OLIVE_CONFIG("AudioInput") = audio_input_devices_->currentText();
 
   // Set devices to be used from now on

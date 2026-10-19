@@ -340,17 +340,18 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
   f->color_range = FFmpegUtils::ResolveColorRange(f->color_range, p.force_range, is_user_override);
 
   // Any hardware-resident frame (CUDA / VideoToolbox / VA-API) is routed through the active
-  // pipeline's ProcessHardwareFrame. The direct GPU-resident path is only valid at full resolution
-  // and for progressive frames; anything that skips it (scaled preview, interlaced source, or a
-  // failed direct path) must be downloaded to host memory before PreProcessFrame(), otherwise
-  // swscale receives a device pointer and crashes. Previously this branch was gated behind
-  // OLIVE_ENABLE_CUDA_NVDEC, leaving the native Tier 2 backends (CR-09) permanently dead.
+  // pipeline's ProcessHardwareFrame. The direct GPU-resident path is valid for progressive frames
+  // at any preview divider: the backend's YUV composite shader renders directly to the divider's
+  // effective size, so scaled previews no longer need a per-frame av_hwframe_transfer_data() +
+  // swscale round-trip. Interlaced sources and failed imports still fall through to the host
+  // fallback, otherwise swscale would receive a device pointer and crash. Previously this branch
+  // was gated behind OLIVE_ENABLE_CUDA_NVDEC, leaving the native Tier 2 backends (CR-09) dead.
   const AVPixelFormat fmt = static_cast<AVPixelFormat>(f->format);
   const bool is_hw_frame = (fmt == AV_PIX_FMT_CUDA ||
                             fmt == AV_PIX_FMT_VIDEOTOOLBOX ||
                             fmt == AV_PIX_FMT_VAAPI);
   if (is_hw_frame) {
-    if (p.divider == 1 && p.src_interlacing == VideoParams::kInterlaceNone && instance_.hw_pipeline()) {
+    if (p.src_interlacing == VideoParams::kInterlaceNone && instance_.hw_pipeline()) {
       VideoParams hw_params(f->width,
                             f->height,
                             PixelFormat::U8,

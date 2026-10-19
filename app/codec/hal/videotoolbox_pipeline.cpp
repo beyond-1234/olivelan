@@ -3,9 +3,13 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/mastering_display_metadata.h>
 }
 
+#include <atomic>
+
 #include <QDebug>
+#include "common/ffmpegutils.h"
 #include "render/opengl/openglrenderer.h"
 
 #if defined(__APPLE__)
@@ -17,6 +21,60 @@ extern "C" {
 #endif
 
 namespace olive {
+
+#if defined(__APPLE__)
+// Mirror VaapiDmaBufPipeline::ResolveColorMetadata(): the decoded frame is the source of truth,
+// while VideoParams is only the cached/project fallback. The YUV->RGB shader needs the matrix
+// and range that VideoToolbox actually used for this frame.
+static VideoParams ResolveColorMetadata(const VideoParams& params, const AVFrame* frame)
+{
+  VideoParams effective = params;
+
+  if (!frame) {
+    return effective;
+  }
+
+  if (frame->colorspace != AVCOL_SPC_UNSPECIFIED) {
+    effective.set_color_space(frame->colorspace);
+  }
+
+  if (frame->color_primaries != AVCOL_PRI_UNSPECIFIED) {
+    effective.set_color_primaries(frame->color_primaries);
+  }
+
+  if (frame->color_trc != AVCOL_TRC_UNSPECIFIED) {
+    effective.set_color_trc(frame->color_trc);
+
+    const QString hdr_colorspace =
+        VideoParams::GetHdrColorSpaceForTransfer(frame->color_trc);
+    if (!hdr_colorspace.isEmpty()) {
+      effective.set_colorspace(hdr_colorspace);
+    }
+  }
+
+  if (frame->color_range == AVCOL_RANGE_JPEG) {
+    effective.set_color_range(VideoParams::kColorRangeFull);
+  } else if (frame->color_range == AVCOL_RANGE_MPEG) {
+    effective.set_color_range(VideoParams::kColorRangeLimited);
+  }
+
+  for (int i = 0; i < frame->nb_side_data; i++) {
+    const AVFrameSideData* side_data = frame->side_data[i];
+    if (side_data
+        && side_data->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA
+        && side_data->size >= int(sizeof(AVMasteringDisplayMetadata))) {
+      const auto* metadata =
+          reinterpret_cast<const AVMasteringDisplayMetadata*>(side_data->data);
+      if (metadata->has_luminance && metadata->max_luminance.den != 0) {
+        effective.set_mastering_peak_nits(VideoParams::MasteringDisplayMaxLuminanceToNits(
+            metadata->max_luminance.num, metadata->max_luminance.den));
+      }
+    }
+  }
+
+  return effective;
+}
+#endif
 
 VideoToolboxPipeline::VideoToolboxPipeline(OpenGLRenderer* renderer)
   : renderer_(renderer)
@@ -89,6 +147,12 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
     return false;
   }
 
+  if (!CVPixelBufferIsPlanar(pixel_buffer) || CVPixelBufferGetPlaneCount(pixel_buffer) < 2) {
+    qWarning() << "[VideoToolbox-HAL] Unsupported non-planar CVPixelBuffer"
+               << "format" << Qt::hex << CVPixelBufferGetPixelFormatType(pixel_buffer) << Qt::dec;
+    return false;
+  }
+
   CGLContextObj cgl_ctx = CGLGetCurrentContext();
   if (!cgl_ctx) {
     qWarning() << "[VideoToolbox-HAL] No current CGL OpenGL context on thread";
@@ -100,21 +164,66 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
     return false;
   }
 
-  TexturePtr tex = renderer_->CreateTextureFromIOSurface(params, iosurface, hw_frame->width, hw_frame->height);
-  if (!tex) {
-    qWarning() << "[VideoToolbox-HAL] Failed to create owning texture from IOSurface pool";
+  // VideoToolbox outputs NV12 for 8-bit and P010 for 10-bit. Read the pixel format rather than
+  // inferring depth from the luma stride: NV12 rows may be padded beyond 2*width, which would
+  // misclassify an 8-bit surface as P010 and feed the shader the wrong normalization domain.
+  const OSType pixel_format = CVPixelBufferGetPixelFormatType(pixel_buffer);
+  int bits_per_pixel = 0;
+  switch (pixel_format) {
+  case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+  case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+    bits_per_pixel = 8;
+    break;
+  case kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange:
+  case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
+    bits_per_pixel = 10;
+    break;
+  default:
+    qWarning() << "[VideoToolbox-HAL] Unsupported CVPixelBuffer format:"
+               << Qt::hex << pixel_format << Qt::dec;
     return false;
   }
 
-  // CR-14: CGLTexImageIOSurface2D is physically limited to 8-bit RGBA. If the source carries
-  // >8-bit / HDR (BT.2020) metadata, it is collapsed here. Log once so the capability-matrix
-  // admission (CR-05) does not falsely imply 10-bit delivery on macOS.
-  if (hw_frame->color_range == AVCOL_RANGE_UNSPECIFIED && hw_frame->colorspace == AVCOL_SPC_BT2020_NCL) {
-    static bool noted = false;
-    if (!noted) {
-      noted = true;
-      qInfo() << "[VideoToolbox-HAL] BT.2020/HDR source present; macOS IOSurface path delivers 8-bit RGBA (downsampled)";
-    }
+  const VideoParams effective = ResolveColorMetadata(params, hw_frame);
+  auto* sws_coeffs = sws_getCoefficients(FFmpegUtils::GetSwsColorspaceFromAVColorSpace(
+      static_cast<AVColorSpace>(effective.color_space())));
+  float crv = 0.0f, cbu = 0.0f, cgu = 0.0f, cgv = 0.0f;
+  if (sws_coeffs) {
+    crv = static_cast<float>(sws_coeffs[0]) / 65536.0f;
+    cbu = static_cast<float>(sws_coeffs[1]) / 65536.0f;
+    cgu = static_cast<float>(sws_coeffs[2]) / 65536.0f;
+    cgv = static_cast<float>(sws_coeffs[3]) / 65536.0f;
+  }
+  const bool full_range = (effective.color_range() == VideoParams::kColorRangeFull);
+
+  TexturePtr tex = renderer_->CreateTextureFromIOSurface(
+      effective, iosurface, hw_frame->width, hw_frame->height, bits_per_pixel,
+      full_range, crv, cbu, cgu, cgv);
+  if (!tex) {
+    qWarning() << "[VideoToolbox-HAL] Failed to import IOSurface planes";
+    return false;
+  }
+
+  static std::atomic<bool> direct_path_announced{false};
+  if (!direct_path_announced.exchange(true)) {
+    qInfo() << "[VideoToolbox-HAL] Two-plane IOSurface import active:"
+            << hw_frame->width << "x" << hw_frame->height
+            << "bits:" << bits_per_pixel
+            << "range:" << (full_range ? "full" : "limited")
+            << "colour matrix:" << effective.color_space()
+            << "- GPU-resident YUV->RGB compositing (no per-frame swscale)";
+  }
+
+  // The harness reads the last "hardware frames N" line as a VideoToolbox decode counter.
+  // Log once immediately (so short playback sessions still produce a sample) and then once
+  // per second at 24 fps. This is deliberately low-volume and does not affect frame pacing.
+  static std::atomic<quint64> hardware_frame_count{0};
+  const quint64 frame_number =
+      hardware_frame_count.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (frame_number == 1 || frame_number % 24 == 0) {
+    qInfo() << "[VideoToolbox-HAL] hardware frames" << frame_number
+            << "size" << hw_frame->width << "x" << hw_frame->height
+            << "bits" << bits_per_pixel;
   }
 
   out_frame.texture = tex;

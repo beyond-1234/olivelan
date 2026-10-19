@@ -24,6 +24,24 @@ namespace olive {
  * Supports runtime dynamic adjustment from GpuEnvironmentProbe.
  */
 struct HardwareQuotaConfig {
+#if defined(__APPLE__)
+  // VideoToolbox profile. The generic 4096x4096 bounding box is deliberate: this project's
+  // 5504x3072 H.264 clips are rejected by VideoToolbox (h264 hardware decode returns an
+  // initialization error), while 4K and 2160x3840 streams are supported. Keeping the limit
+  // here makes get_format fall back to software for the over-limit clips instead of selecting
+  // a hardware decoder that cannot open.
+  std::string gpu_name = "VideoToolbox Hardware Decoder";
+  size_t vram_total_mb = 4096;
+  int nvdec_engine_count = 1;
+
+  int max_physical_sessions = 8;
+  int primary_reserved_sessions = 2;
+
+  int frame_pool_capacity = 8;
+
+  int max_frame_width = 4096;
+  int max_frame_height = 4096;
+#else
   std::string gpu_name = "NVIDIA GeForce RTX 4060 Laptop GPU";
   size_t vram_total_mb = 8192;
   int nvdec_engine_count = 1;
@@ -38,6 +56,7 @@ struct HardwareQuotaConfig {
   // Bounding box dimensions for hardware resident pipeline.
   int max_frame_width = 4096;
   int max_frame_height = 4096;
+#endif
 };
 
 class HardwareQuotaManager {

@@ -140,6 +140,15 @@ void Config::SetDefaults()
 
   SetEntryInternal(QStringLiteral("AudioOutput"), NodeValue::kText, QString());
   SetEntryInternal(QStringLiteral("AudioInput"), NodeValue::kText, QString());
+  // Default to the OS output route on macOS instead of pinning the device that happened to be
+  // active on first run. This lets Bluetooth headphones remain the default until the user
+  // explicitly chooses a different device in Preferences. Keep the previous opt-in behavior on
+  // other platforms so an explicitly saved device is not silently ignored there.
+#if defined(__APPLE__)
+  SetEntryInternal(QStringLiteral("AudioOutputFollowSystem"), NodeValue::kBoolean, true);
+#else
+  SetEntryInternal(QStringLiteral("AudioOutputFollowSystem"), NodeValue::kBoolean, false);
+#endif
 
   SetEntryInternal(QStringLiteral("AudioOutputSampleRate"), NodeValue::kInt, 48000);
   SetEntryInternal(QStringLiteral("AudioOutputChannelLayout"), NodeValue::kInt, AV_CH_LAYOUT_STEREO);

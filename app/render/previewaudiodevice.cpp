@@ -23,9 +23,14 @@
 namespace olive {
 
 PreviewAudioDevice::PreviewAudioDevice(QObject *parent) :
+  QIODevice(parent),
+  bytes_per_frame_(0),
   notify_interval_(0),
   bytes_read_(0)
 {
+  // Keep the common 250-500 ms preview queue from reallocating while the real-time callback is
+  // waiting on the lock.
+  buffer_.reserve(1 << 20);
 }
 
 PreviewAudioDevice::~PreviewAudioDevice()
@@ -56,10 +61,55 @@ qint64 PreviewAudioDevice::readData(char *data, qint64 maxSize)
     bytes_read_ = new_bytes_read;
 
     memcpy(data, buffer_.constData(), copy_length);
-    buffer_ = buffer_.mid(copy_length);
+
+    if (bytes_per_frame_ > 0 && last_frame_.size() == bytes_per_frame_
+        && copy_length >= bytes_per_frame_) {
+      memcpy(last_frame_.data(), data + copy_length - bytes_per_frame_, bytes_per_frame_);
+    }
+
+    // Avoid allocating a new QByteArray in the real-time callback. remove() shifts the remaining
+    // bytes in place, while mid() would allocate and copy on every callback.
+    buffer_.remove(0, static_cast<int>(copy_length));
   }
 
   return copy_length;
+}
+
+QByteArray PreviewAudioDevice::last_frame() const
+{
+  QMutexLocker locker(&lock_);
+
+  return last_frame_;
+}
+
+qint64 PreviewAudioDevice::buffered_bytes() const
+{
+  QMutexLocker locker(&lock_);
+
+  return buffer_.size();
+}
+
+void PreviewAudioDevice::modify_buffer(const std::function<void(QByteArray&)> &fn)
+{
+  QMutexLocker locker(&lock_);
+
+  fn(buffer_);
+  bytes_read_ = 0;
+}
+
+void PreviewAudioDevice::replace_buffer(const QByteArray &data)
+{
+  QMutexLocker locker(&lock_);
+
+  buffer_ = data;
+  bytes_read_ = 0;
+}
+
+void PreviewAudioDevice::reset_last_frame()
+{
+  QMutexLocker locker(&lock_);
+
+  last_frame_.fill('\0');
 }
 
 qint64 PreviewAudioDevice::writeData(const char *data, qint64 length)

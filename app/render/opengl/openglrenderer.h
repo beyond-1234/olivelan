@@ -67,7 +67,14 @@ public:
   TexturePtr CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame);
 #endif
 
-  TexturePtr CreateTextureFromIOSurface(const VideoParams &params, void* iosurface, int width, int height);
+  // macOS: import a NV12/P010 IOSurface as two R/RG rectangles, blit each plane into
+  // persistent GL_TEXTURE_2D scratch planes, then run the same two-plane YUV->RGB
+  // shader used by the VA-API path. Importing the surface as GL_RGBA cannot work for
+  // VideoToolbox frames because CVPixelBuffer is bi-planar YUV (CGL returns 10008).
+  TexturePtr CreateTextureFromIOSurface(const VideoParams &params, void* iosurface,
+                                        int width, int height, int bits_per_pixel,
+                                        bool full_range, float yuv_crv, float yuv_cbu,
+                                        float yuv_cgu, float yuv_cgv);
 
   // Patch 0050 / F-10 (HAL/Phase6-8 review): CreateTextureFromEglImage() was removed.
   // It had no callers after 0050 replaced single-image EGLImage wrapping with the
@@ -218,6 +225,25 @@ private:
   int AcquireNativeSurfaceSlot(int width, int height, GLenum target, PixelFormat format,
                                GLuint* out_texture_id = nullptr);
   void DestroyNativeSurfacePool();
+
+  // Shared two-plane YUV->RGB composite used by VA-API and VideoToolbox. The caller owns
+  // y_tex/uv_tex; non-owning Texture views are used only for the duration of the blit.
+  TexturePtr CompositeTextureFromYuvTextures(const VideoParams &params,
+                                             GLuint y_tex, GLuint uv_tex,
+                                             int width, int height,
+                                             int bits_per_pixel, bool full_range,
+                                             float yuv_crv, float yuv_cbu,
+                                             float yuv_cgu, float yuv_cgv);
+
+  // Persistent scratch planes for the VideoToolbox IOSurface path. Recreated only when the
+  // frame size or bit depth changes, so steady-state playback does not allocate textures.
+  void EnsureIOSurfaceScratchTextures(int width, int height, int bits_per_pixel);
+  void DestroyIOSurfaceScratchTextures();
+  GLuint iosurface_y_scratch_{0};
+  GLuint iosurface_uv_scratch_{0};
+  int iosurface_scratch_width_{0};
+  int iosurface_scratch_height_{0};
+  int iosurface_scratch_bits_{0};
 
   // Phase 6 (patch 0026): double-buffered Pixel Unpack Buffer ring for asynchronous
   // CPU->GPU streaming uploads. Frame N is memcpy'd into the next PBO while the GPU

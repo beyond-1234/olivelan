@@ -31,6 +31,8 @@
 #include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QShowEvent>
+#include <QTimer>
 #include <QtMath>
 #include <QVBoxLayout>
 
@@ -345,6 +347,19 @@ void ViewerWidget::resizeEvent(QResizeEvent *event)
   }
 }
 
+void ViewerWidget::showEvent(QShowEvent *event)
+{
+  super::showEvent(event);
+
+  if (floating_controls_ && controls_ && sizer_) {
+    // Position immediately when the sizer already has its final geometry, then defer one
+    // event-loop turn for panels that are shown before their nested layout has run. This keeps
+    // the transport visible (and centered) on first display instead of requiring a resize.
+    PositionFloatingControls();
+    QTimer::singleShot(0, this, [this]() { PositionFloatingControls(); });
+  }
+}
+
 void ViewerWidget::PositionFloatingControls()
 {
   if (!floating_controls_ || !controls_ || !sizer_) {
@@ -362,6 +377,8 @@ void ViewerWidget::PositionFloatingControls()
   const int y = qMax(8, sizer_->height() - bar_height - 16);
 
   const QRect target(x, y, bar_width, bar_height);
+
+  controls_->show();
 
   if (!floating_controls_animated_) {
     floating_controls_animated_ = true;
@@ -907,7 +924,7 @@ void ViewerWidget::ReceivedAudioBufferForScrubbing()
               QString error;
               const QByteArray &packed = buf.at(0);
               AudioManager::instance()->ClearBufferedOutput();
-              if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), packed, &error)) {
+              if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), packed, &error, true)) {
                 Core::instance()->ShowStatusBarMessage(tr("Audio scrubbing failed: %1").arg(error));
               }
               AudioMonitor::PushSampleBufferOnAll(samples);
@@ -1272,6 +1289,10 @@ void ViewerWidget::FinishPlayPreprocess()
 
   // Start audio waveform playback
   if (!prequeued_audio_.isEmpty()) {
+    // Fade out any scrub tail still in the queue and make the first playback buffer start from
+    // silence, otherwise starting playback right after a scrub can step from old to new audio.
+    AudioManager::instance()->ClearBufferedOutput();
+
     QString error;
     if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), prequeued_audio_, &error)) {
       QMessageBox::critical(this, tr("Audio Error"), tr("Failed to start audio: %1\n\n"

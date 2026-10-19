@@ -53,7 +53,8 @@ public:
 
   void SetOutputNotifyInterval(int n);
 
-  bool PushToOutput(const AudioParams &params, const QByteArray& samples, QString *error = nullptr);
+  bool PushToOutput(const AudioParams &params, const QByteArray& samples, QString *error = nullptr,
+                    bool fade_out_tail = false);
 
   void ClearBufferedOutput();
 
@@ -102,12 +103,19 @@ private:
 
   void CloseOutputStream();
 
+  int TransportFadeFrames() const;
+  QByteArray MakeFadeOut(int frames) const;
+  void ApplyFadeIn(QByteArray &samples, int frames) const;
+  void FadeOutBuffer(QByteArray &samples, int frames) const;
+  void FadeOutTail(QByteArray &samples, int frames) const;
+
   static AudioManager* instance_;
 
   PaDeviceIndex output_device_;
   PaStream *output_stream_;
   AudioParams output_params_;
   PreviewAudioDevice *output_buffer_;
+  bool fade_in_next_;
 
   PaDeviceIndex input_device_;
   PaStream *input_stream_;

@@ -492,7 +492,13 @@ void Footage::Reprobe()
       set_timestamp(info.lastModified().toMSecsSinceEpoch());
 
       // Determine if we've already cached the metadata of this file
-      QString meta_cache_file = QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)).filePath(FileFunctions::GetUniqueFileIdentifier(filename));
+      const QString cache_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+      if (!cache_dir.isEmpty()) {
+        // Qt does not create CacheLocation automatically. Without this the metadata save below
+        // fails on a fresh profile, so every footage is probed again on every project load.
+        QDir().mkpath(cache_dir);
+      }
+      QString meta_cache_file = QDir(cache_dir).filePath(FileFunctions::GetUniqueFileIdentifier(filename));
 
       FootageDescription footage_info;
 

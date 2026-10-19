@@ -25,10 +25,111 @@
 #endif
 
 #include <QApplication>
+#include <QElapsedTimer>
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <cstring>
 
 #include "config/config.h"
 
 namespace olive {
+
+namespace {
+
+constexpr int kTransportFadeMs = 5;
+
+// Diagnostic counters for the PortAudio callback. These are deliberately lock-free because the
+// callback runs on CoreAudio's real-time thread.
+std::atomic<quint64> g_output_callbacks{0};
+std::atomic<quint64> g_output_underruns{0};
+std::atomic<quint64> g_output_underrun_frames{0};
+std::atomic<quint64> g_output_hw_underruns{0};
+std::atomic<bool> g_output_stopping{false};
+std::atomic<bool> g_output_paused{false};
+
+bool IsFadeFormat(SampleFormat fmt)
+{
+  return fmt == SampleFormat::S16 || fmt == SampleFormat::S32 || fmt == SampleFormat::F32;
+}
+
+float ReadSampleAsFloat(const char *data, SampleFormat fmt)
+{
+  switch (fmt) {
+  case SampleFormat::S16:
+  {
+    int16_t v;
+    memcpy(&v, data, sizeof(v));
+    return static_cast<float>(v) / 32768.0f;
+  }
+  case SampleFormat::S32:
+  {
+    int32_t v;
+    memcpy(&v, data, sizeof(v));
+    return static_cast<float>(v) / 2147483648.0f;
+  }
+  case SampleFormat::F32:
+  {
+    float v;
+    memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  case SampleFormat::INVALID:
+  case SampleFormat::COUNT:
+  case SampleFormat::U8:
+  case SampleFormat::U8P:
+  case SampleFormat::S16P:
+  case SampleFormat::S32P:
+  case SampleFormat::S64:
+  case SampleFormat::S64P:
+  case SampleFormat::F32P:
+  case SampleFormat::F64:
+  case SampleFormat::F64P:
+    break;
+  }
+
+  return 0.0f;
+}
+
+void WriteSampleFromFloat(char *data, SampleFormat fmt, float v)
+{
+  v = std::clamp(v, -1.0f, 1.0f);
+
+  switch (fmt) {
+  case SampleFormat::S16:
+  {
+    int16_t s = static_cast<int16_t>(std::lround(v * 32767.0f));
+    memcpy(data, &s, sizeof(s));
+    break;
+  }
+  case SampleFormat::S32:
+  {
+    int32_t s = static_cast<int32_t>(std::llround(static_cast<double>(v) * 2147483647.0));
+    memcpy(data, &s, sizeof(s));
+    break;
+  }
+  case SampleFormat::F32:
+  {
+    memcpy(data, &v, sizeof(v));
+    break;
+  }
+  case SampleFormat::INVALID:
+  case SampleFormat::COUNT:
+  case SampleFormat::U8:
+  case SampleFormat::U8P:
+  case SampleFormat::S16P:
+  case SampleFormat::S32P:
+  case SampleFormat::S64:
+  case SampleFormat::S64P:
+  case SampleFormat::F32P:
+  case SampleFormat::F64:
+  case SampleFormat::F64P:
+    break;
+  }
+}
+
+} // namespace
 
 AudioManager* AudioManager::instance_ = nullptr;
 
@@ -57,15 +158,36 @@ void AudioManager::SetOutputNotifyInterval(int n)
 
 int OutputCallback(const void *input, void *output, unsigned long frameCount, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData)
 {
+  Q_UNUSED(input)
+  Q_UNUSED(timeInfo)
+
   PreviewAudioDevice *device = static_cast<PreviewAudioDevice*>(userData);
+
+  g_output_callbacks.fetch_add(1, std::memory_order_relaxed);
+
+  if ((statusFlags & paOutputUnderflow)
+      && !g_output_stopping.load(std::memory_order_relaxed)
+      && !g_output_paused.load(std::memory_order_relaxed)) {
+    g_output_hw_underruns.fetch_add(1, std::memory_order_relaxed);
+  }
 
   qint64 max_read = frameCount * device->bytes_per_frame();
   qint64 read_count = device->read(reinterpret_cast<char*>(output), max_read);
   if (read_count < max_read) {
     memset(reinterpret_cast<uint8_t*>(output) + read_count, 0, max_read - read_count);
+
+    // During an intentional stop/pause the tail is expected to drain through zero; that is not a
+    // playback underrun and would otherwise be reported as a dropout.
+    if (!g_output_stopping.load(std::memory_order_relaxed)
+        && !g_output_paused.load(std::memory_order_relaxed)) {
+      g_output_underruns.fetch_add(1, std::memory_order_relaxed);
+      g_output_underrun_frames.fetch_add(frameCount - (read_count / std::max(1, device->bytes_per_frame())),
+                                         std::memory_order_relaxed);
+    }
   }
 
-  if (output && frameCount > 0) {
+  if ((!g_output_paused.load(std::memory_order_relaxed) || read_count > 0)
+      && output && frameCount > 0) {
     AudioManager::instance()->UpdateOutputPeaks(output, frameCount);
   }
 
@@ -84,7 +206,8 @@ int InputCallback(const void *input, void *output, unsigned long frameCount, con
   return paContinue;
 }
 
-bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &samples, QString *error)
+bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &samples, QString *error,
+                                bool fade_out_tail)
 {
   if (output_device_ == paNoDevice) {
     if (error) *error = tr("No output device is set");
@@ -92,9 +215,11 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
   }
 
   if (output_params_ != params || output_stream_ == nullptr) {
-    output_params_ = params;
-
+    // Close with the old params still in place so a transport fade (if the stream is active) is
+    // generated with the format the device is actually using.
     CloseOutputStream();
+
+    output_params_ = params;
 
     PaStreamParameters p = GetPortAudioParams(params, output_device_);
 
@@ -106,10 +231,49 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
       return false;
     }
 
+    qInfo() << "[Audio] Opened output stream:" << output_params_.sample_rate() << "Hz,"
+            << output_params_.channel_count() << "ch,"
+            << QString::fromStdString(output_params_.format().to_string())
+            << "| device:" << (output_device_ == paNoDevice ? "none" : Pa_GetDeviceInfo(output_device_)->name)
+            << "| suggested latency:" << p.suggestedLatency << "s";
+
     output_buffer_->set_bytes_per_frame(output_params_.samples_to_bytes(1));
+
+    // Start the device while it is still silent. Starting it at the first audible sample makes
+    // CoreAudio produce a small click on some devices even when the waveform itself starts at
+    // zero; priming with silence keeps the stream alive across pause/play.
+    g_output_paused.store(true, std::memory_order_relaxed);
+    if (!Pa_IsStreamActive(output_stream_)) {
+      Pa_StartStream(output_stream_);
+    }
   }
 
-  output_buffer_->write(samples);
+  QByteArray processed;
+  const QByteArray *payload = &samples;
+
+  if (!samples.isEmpty() && (fade_in_next_ || fade_out_tail)) {
+    processed = samples;
+
+    if (fade_in_next_) {
+      ApplyFadeIn(processed, TransportFadeFrames());
+      fade_in_next_ = false;
+    }
+
+    if (fade_out_tail) {
+      // Scrub chunks are the only buffers that may be followed directly by silence (when the user
+      // stops moving the playhead), so give their end the same short ramp the transport uses.
+      FadeOutTail(processed, TransportFadeFrames());
+    }
+
+    payload = &processed;
+  }
+
+  output_buffer_->write(*payload);
+
+  // A scrub chunk may be the last thing the user hears before the playhead stops moving. Keep the
+  // stream in the paused bookkeeping state after it drains so the callback's silence is not
+  // reported as a playback underrun. Normal playback clears this flag and is monitored normally.
+  g_output_paused.store(fade_out_tail, std::memory_order_relaxed);
 
   if (!Pa_IsStreamActive(output_stream_)) {
     Pa_StartStream(output_stream_);
@@ -120,7 +284,204 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
 
 void AudioManager::ClearBufferedOutput()
 {
-  output_buffer_->clear();
+  if (!output_buffer_) {
+    return;
+  }
+
+  // If the queue is already empty the last sample is already in the device buffer. Emit a short
+  // ramp from that sample before the next scrub chunk so the device still gets a clean edge.
+  if (output_buffer_->buffered_bytes() == 0) {
+    const QByteArray fade = MakeFadeOut(TransportFadeFrames());
+    if (!fade.isEmpty()) {
+      output_buffer_->replace_buffer(fade);
+    }
+
+    output_buffer_->reset_last_frame();
+    fade_in_next_ = true;
+    return;
+  }
+
+  // Scrubbing clears the queue on every mouse event. Discarding it outright leaves the device
+  // with an abrupt edge; instead keep only a few milliseconds of the material that is about to
+  // play, ramp that to zero, and let the next chunk fade in behind it.
+  output_buffer_->modify_buffer([this](QByteArray &buffer) {
+    const int frames = TransportFadeFrames();
+    const int frame_bytes = output_buffer_->bytes_per_frame();
+
+    if (buffer.isEmpty() || frames <= 0 || frame_bytes <= 0) {
+      buffer.clear();
+      return;
+    }
+
+    const int available = std::min(frames, static_cast<int>(buffer.size() / frame_bytes));
+    if (available <= 0) {
+      buffer.clear();
+      return;
+    }
+
+    buffer.truncate(available * frame_bytes);
+    FadeOutBuffer(buffer, available);
+  });
+
+  // The retained prefix ends at zero, so the next chunk must start from zero rather than
+  // crossfading from whatever was last read by the callback.
+  output_buffer_->reset_last_frame();
+  fade_in_next_ = true;
+}
+
+int AudioManager::TransportFadeFrames() const
+{
+  if (output_params_.sample_rate() <= 0) {
+    return 0;
+  }
+
+  return std::max(2, output_params_.sample_rate() * kTransportFadeMs / 1000);
+}
+
+QByteArray AudioManager::MakeFadeOut(int frames) const
+{
+  if (!output_buffer_ || frames < 2) {
+    return QByteArray();
+  }
+
+  const QByteArray last = output_buffer_->last_frame();
+  const int frame_bytes = output_buffer_->bytes_per_frame();
+  const int channels = output_params_.channel_count();
+  const SampleFormat fmt = output_params_.format();
+
+  if (frame_bytes <= 0 || last.size() != frame_bytes || channels <= 0
+      || !fmt.is_packed() || !IsFadeFormat(fmt)
+      || frame_bytes != channels * fmt.byte_count()) {
+    return QByteArray();
+  }
+
+  QByteArray fade(frames * frame_bytes, Qt::Uninitialized);
+  char *out = fade.data();
+
+  for (int i = 0; i < frames; ++i) {
+    // The first frame is the last frame actually read by the callback, so the fade connects
+    // seamlessly to whatever the device is currently playing out.
+    const float gain = 1.0f - static_cast<float>(i) / static_cast<float>(frames - 1);
+
+    for (int ch = 0; ch < channels; ++ch) {
+      const int offset = ch * fmt.byte_count();
+      const float v = ReadSampleAsFloat(last.constData() + offset, fmt) * gain;
+      WriteSampleFromFloat(out + i * frame_bytes + offset, fmt, v);
+    }
+  }
+
+  return fade;
+}
+
+void AudioManager::ApplyFadeIn(QByteArray &samples, int frames) const
+{
+  if (!output_buffer_ || frames <= 0) {
+    return;
+  }
+
+  const QByteArray last = output_buffer_->last_frame();
+  const int frame_bytes = output_buffer_->bytes_per_frame();
+  const int channels = output_params_.channel_count();
+  const SampleFormat fmt = output_params_.format();
+
+  if (frame_bytes <= 0 || channels <= 0 || !fmt.is_packed() || !IsFadeFormat(fmt)
+      || frame_bytes != channels * fmt.byte_count()) {
+    return;
+  }
+
+  frames = std::min(frames, static_cast<int>(samples.size() / frame_bytes));
+  if (frames <= 0) {
+    return;
+  }
+
+  const bool have_last = (last.size() == frame_bytes);
+  char *out = samples.data();
+
+  for (int i = 0; i < frames; ++i) {
+    // Crossfade from the previous sample to the new material. On a fresh start the previous
+    // sample is zero, which produces a normal fade-in.
+    const float gain = static_cast<float>(i) / static_cast<float>(frames);
+
+    for (int ch = 0; ch < channels; ++ch) {
+      const int offset = ch * fmt.byte_count();
+      const float old_v = have_last
+          ? ReadSampleAsFloat(last.constData() + offset, fmt)
+          : 0.0f;
+      const float new_v = ReadSampleAsFloat(out + i * frame_bytes + offset, fmt);
+
+      WriteSampleFromFloat(out + i * frame_bytes + offset, fmt,
+                           old_v * (1.0f - gain) + new_v * gain);
+    }
+  }
+}
+
+void AudioManager::FadeOutBuffer(QByteArray &samples, int frames) const
+{
+  const int frame_bytes = output_buffer_ ? output_buffer_->bytes_per_frame() : 0;
+  const int channels = output_params_.channel_count();
+  const SampleFormat fmt = output_params_.format();
+
+  if (frame_bytes <= 0 || channels <= 0 || !fmt.is_packed() || !IsFadeFormat(fmt)
+      || frame_bytes != channels * fmt.byte_count() || samples.isEmpty()) {
+    return;
+  }
+
+  frames = std::min(frames, static_cast<int>(samples.size() / frame_bytes));
+  if (frames <= 0) {
+    return;
+  }
+
+  char *data = samples.data();
+
+  for (int i = 0; i < frames; ++i) {
+    const float gain = (frames > 1)
+        ? 1.0f - static_cast<float>(i) / static_cast<float>(frames - 1)
+        : 0.0f;
+
+    for (int ch = 0; ch < channels; ++ch) {
+      const int offset = ch * fmt.byte_count();
+      const float v = ReadSampleAsFloat(data + i * frame_bytes + offset, fmt) * gain;
+
+      WriteSampleFromFloat(data + i * frame_bytes + offset, fmt, v);
+    }
+  }
+}
+
+void AudioManager::FadeOutTail(QByteArray &samples, int frames) const
+{
+  const int frame_bytes = output_buffer_ ? output_buffer_->bytes_per_frame() : 0;
+  const int channels = output_params_.channel_count();
+  const SampleFormat fmt = output_params_.format();
+
+  if (frame_bytes <= 0 || channels <= 0 || !fmt.is_packed() || !IsFadeFormat(fmt)
+      || frame_bytes != channels * fmt.byte_count() || samples.isEmpty()) {
+    return;
+  }
+
+  const int available = static_cast<int>(samples.size() / frame_bytes);
+  frames = std::min(frames, available);
+  if (frames <= 0) {
+    return;
+  }
+
+  const int start = available - frames;
+  char *data = samples.data();
+
+  for (int i = 0; i < frames; ++i) {
+    // Ramp from unity at the start of the tail to zero on the final frame, leaving the audio
+    // before the tail untouched.
+    const float gain = (frames > 1)
+        ? 1.0f - static_cast<float>(i) / static_cast<float>(frames - 1)
+        : 0.0f;
+
+    for (int ch = 0; ch < channels; ++ch) {
+      const int offset = ch * fmt.byte_count();
+      const int sample_offset = (start + i) * frame_bytes + offset;
+      const float v = ReadSampleAsFloat(data + sample_offset, fmt) * gain;
+
+      WriteSampleFromFloat(data + sample_offset, fmt, v);
+    }
+  }
 }
 
 PaSampleFormat AudioManager::GetPortAudioSampleFormat(SampleFormat fmt)
@@ -155,18 +516,83 @@ void AudioManager::CloseOutputStream()
   if (output_stream_) {
     if (Pa_IsStreamActive(output_stream_)) {
       StopOutput();
+
+      // Unlike a normal pause, closing the device is a one-time operation: drain the fade and
+      // silence before shutting the stream down, so device changes/quit are clean too.
+      if (Pa_IsStreamActive(output_stream_)) {
+        Pa_StopStream(output_stream_);
+      }
     }
+
+    g_output_paused.store(true, std::memory_order_relaxed);
     Pa_CloseStream(output_stream_);
     output_stream_ = nullptr;
+  }
+
+  if (output_buffer_) {
+    output_buffer_->clear();
+    fade_in_next_ = true;
   }
 }
 
 void AudioManager::StopOutput()
 {
-  // Abort the stream so playback stops immediately
-  if (output_stream_) {
-    Pa_AbortStream(output_stream_);
-    ClearBufferedOutput();
+  // The stream stays open while paused and is fed silence, so mark it paused up front. This also
+  // keeps the intentional fade/drain from being reported as an underrun.
+  g_output_paused.store(true, std::memory_order_relaxed);
+
+  if (output_stream_ && output_buffer_) {
+    if (Pa_IsStreamActive(output_stream_)) {
+      const QByteArray fade = MakeFadeOut(TransportFadeFrames());
+
+      g_output_stopping.store(true, std::memory_order_relaxed);
+
+      // Replace queued material atomically with a short ramp from the last sample the callback
+      // read down to zero. Cutting the stream at an arbitrary sample is what causes the
+      // click/pop on CoreAudio when pausing or stopping. Replacing (rather than clearing then
+      // writing) prevents the callback from observing an empty buffer in between.
+      output_buffer_->replace_buffer(fade);
+
+      if (!fade.isEmpty()) {
+        // Let the callback pull the ramp into the device buffer. After the ramp the device keeps
+        // running and simply receives silence; keeping the stream alive avoids the CoreAudio
+        // stop/start transient that remains audible even with a perfectly ramped waveform.
+        QElapsedTimer drain_timer;
+        drain_timer.start();
+        while (output_buffer_->buffered_bytes() > 0 && drain_timer.elapsed() < 100) {
+          QThread::msleep(1);
+        }
+
+        if (output_buffer_->buffered_bytes() > 0) {
+          // The callback never consumed the ramp (stalled or disconnected device); do not leave
+          // the stream in a half-running state.
+          Pa_AbortStream(output_stream_);
+        }
+      }
+
+      g_output_paused.store(true, std::memory_order_relaxed);
+      g_output_stopping.store(false, std::memory_order_relaxed);
+    }
+
+    output_buffer_->reset_last_frame();
+    output_buffer_->clear();
+    fade_in_next_ = true;
+  } else if (output_buffer_) {
+    output_buffer_->reset_last_frame();
+    output_buffer_->clear();
+    fade_in_next_ = true;
+  }
+
+  const quint64 callbacks = g_output_callbacks.exchange(0, std::memory_order_relaxed);
+  const quint64 underruns = g_output_underruns.exchange(0, std::memory_order_relaxed);
+  const quint64 underrun_frames = g_output_underrun_frames.exchange(0, std::memory_order_relaxed);
+  const quint64 hw_underruns = g_output_hw_underruns.exchange(0, std::memory_order_relaxed);
+
+  if (underruns > 0 || hw_underruns > 0) {
+    qWarning() << "[Audio] Output underruns:"
+               << "buffer-short" << underruns << "of" << callbacks << "callbacks"
+               << "| missing frames" << underrun_frames
+               << "| device-underflow flags" << hw_underruns;
   }
 
   for (int i = 0; i < kMaxMonitoredChannels; ++i) {
@@ -256,6 +682,14 @@ void AudioManager::StopRecording()
 
 PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
 {
+  // On macOS the system default output follows the user's active route (Bluetooth headphones,
+  // USB interface, etc.). Pinning the device name saved on first run keeps sending audio to the
+  // built-in speakers after the user has switched the system output. Follow the OS default unless
+  // the user explicitly turned this off in Preferences.
+  if (is_output_device && OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
+    return Pa_GetDefaultOutputDevice();
+  }
+
   QString entry = is_output_device ? QStringLiteral("AudioOutput") : QStringLiteral("AudioInput");
 
   return FindDeviceByName(OLIVE_CONFIG_STR(entry).toString(), is_output_device);
@@ -292,6 +726,8 @@ PaStreamParameters AudioManager::GetPortAudioParams(const AudioParams &params, P
 
 AudioManager::AudioManager() :
   output_stream_(nullptr),
+  output_buffer_(nullptr),
+  fade_in_next_(true),
   input_stream_(nullptr),
   input_encoder_(nullptr)
 {

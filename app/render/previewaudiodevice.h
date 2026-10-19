@@ -21,6 +21,8 @@
 #ifndef PREVIEWAUDIODEVICE_H
 #define PREVIEWAUDIODEVICE_H
 
+#include <functional>
+
 #include "previewautocacher.h"
 
 namespace olive {
@@ -49,6 +51,13 @@ public:
   void set_bytes_per_frame(int b)
   {
     bytes_per_frame_ = b;
+
+    if (b > 0) {
+      // Preallocate here (on the control thread) so the real-time callback never allocates.
+      last_frame_.fill('\0', b);
+    } else {
+      last_frame_.clear();
+    }
   }
 
   void set_notify_interval(qint64 i)
@@ -58,13 +67,25 @@ public:
 
   void clear();
 
+  QByteArray last_frame() const;
+
+  qint64 buffered_bytes() const;
+
+  void modify_buffer(const std::function<void(QByteArray&)> &fn);
+
+  void replace_buffer(const QByteArray &data);
+
+  void reset_last_frame();
+
 signals:
   void Notify();
 
 private:
-  QMutex lock_;
+  mutable QMutex lock_;
 
   QByteArray buffer_;
+
+  QByteArray last_frame_;
 
   int bytes_per_frame_;
 
