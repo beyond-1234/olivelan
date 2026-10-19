@@ -53,6 +53,7 @@ extern "C" {
 }
 
 #include "codec/hal/gpu_environment_probe.h"
+#include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/reinforced_software_pipeline.h"
 
 namespace olive {
@@ -126,6 +127,35 @@ OLIVE_ADD_TEST(HalCapabilityHonesty)
     }
   }
 #endif
+
+  // 5. The recommendation must describe the Tier 2 backend that auto routing actually uses.
+  //    macOS selects VideoToolbox, so an assessment that only checks VA-API used to fall through
+  //    to "Tier 3" even while the factory was decoding with VideoToolbox.
+  {
+    const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
+
+    if (probe.SupportsVideoToolbox()) {
+      if (assessment.tier2_backend != GpuSessionAdvisor::Tier2Backend::VideoToolbox) {
+        std::cout << " - VideoToolbox is available but the advisor did not report it as Tier 2";
+        return __LINE__;
+      }
+      if (!assessment.tier2_possible) {
+        std::cout << " - VideoToolbox is available but the advisor marked Tier 2 unavailable";
+        return __LINE__;
+      }
+      if (!GpuSessionAdvisor::DescribeEffectivePath(assessment)
+               .startsWith(QStringLiteral("Tier 2"))) {
+        std::cout << " - the advisor described auto routing as Tier 3 despite VideoToolbox";
+        return __LINE__;
+      }
+    }
+
+    if (probe.SupportsVaapiDmaBuf()
+        && assessment.tier2_backend != GpuSessionAdvisor::Tier2Backend::VaapiDmaBuf) {
+      std::cout << " - a VA-API device is available but the advisor did not report Tier 2 VA-API";
+      return __LINE__;
+    }
+  }
 
   OLIVE_TEST_END;
 }

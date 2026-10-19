@@ -315,12 +315,20 @@ GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
   // hybrid Wayland session cannot provide.
   assessment.tier1_possible =
       assessment.nvidia_present && probe.HasNvdecSupport() && !probe.IsCudaGlInteropBlocked();
-  assessment.tier2_device_available = probe.SupportsVaapiDmaBuf();
-  assessment.tier2_import_status = probe.GetVaapiImportStatus();
+
+  // Tier 2 is platform-native, not always VA-API. Check VideoToolbox first so macOS reports the
+  // backend that HardwarePipelineFactory actually auto-selects there.
+  if (probe.SupportsVideoToolbox()) {
+    assessment.tier2_backend = Tier2Backend::VideoToolbox;
+  } else if (probe.SupportsVaapiDmaBuf()) {
+    assessment.tier2_backend = Tier2Backend::VaapiDmaBuf;
+    assessment.tier2_import_status = probe.GetVaapiImportStatus();
+  }
+
   // Patch 0094: routing is still per-stream (a 10-bit failure must not disable 8-bit streams), so
-  // tier2_possible remains "the device exists". The import status is reported separately instead
-  // of turning device presence into a zero-copy promise.
-  assessment.tier2_possible = assessment.tier2_device_available;
+  // tier2_possible remains "the backend exists". The VA-API import status is reported separately
+  // instead of turning device presence into a zero-copy promise.
+  assessment.tier2_possible = assessment.tier2_backend != Tier2Backend::None;
   assessment.nvidia_has_display = probe.HasConnectedDisplayOn(GpuVendor::Nvidia);
   assessment.nvdec_available = probe.HasNvdecSupport();
   const std::string gl_vendor_raw = probe.GetOpenGlVendor();
@@ -358,9 +366,14 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
                         : Tr("unavailable - CUDA-GL interop needs the OpenGL context and CUDA on "
                              "the same GPU"));
   QString tier2_description;
-  if (!assessment.tier2_device_available) {
+  switch (assessment.tier2_backend) {
+  case Tier2Backend::None:
     tier2_description = Tr("unavailable");
-  } else {
+    break;
+  case Tier2Backend::VideoToolbox:
+    tier2_description = Tr("available (VideoToolbox, macOS)");
+    break;
+  case Tier2Backend::VaapiDmaBuf:
     switch (assessment.tier2_import_status) {
     case VaapiImportStatus::Unknown:
       tier2_description = Tr("device present; import not yet verified");
@@ -375,6 +388,7 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
       tier2_description = Tr("partial - some streams verified, others read back");
       break;
     }
+    break;
   }
   lines << Tr("Tier 2: %1").arg(tier2_description);
 
@@ -389,6 +403,11 @@ QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)
   }
 
   if (assessment.tier2_possible) {
+    if (assessment.tier2_backend == Tier2Backend::VideoToolbox) {
+      return Tr("Tier 2 - VideoToolbox hardware decode with GPU-side YUV compositing. This is what "
+                "automatic routing selects on this Mac.");
+    }
+
     // Patch 0094: say what has actually been proven. Before the first frame only device creation is
     // known; after a real transfer the probe reports whether EGLImage import succeeded, failed, or
     // varied by stream. Never turn device presence into a zero-copy promise.
@@ -442,8 +461,16 @@ QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
                     .arg(assessment.nvidia_name, assessment.display_gpu);
     }
   } else {
-    actions << Tr("This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two "
-                  "options are the only ones.");
+    if (assessment.tier2_possible) {
+      actions << Tr("This machine has no NVIDIA GPU, so Tier 1 does not apply. Tier 2 (%1) is the "
+                    "best available path and is selected automatically.")
+                     .arg(assessment.tier2_backend == Tier2Backend::VideoToolbox
+                              ? QStringLiteral("VideoToolbox")
+                              : QStringLiteral("VA-API"));
+    } else {
+      actions << Tr("This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two "
+                    "options are the only ones.");
+    }
   }
 
   if (assessment.wayland_session) {

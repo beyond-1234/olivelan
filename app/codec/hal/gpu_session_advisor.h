@@ -99,6 +99,19 @@ public:
   static QString DescribeEnvironment();
 
   /**
+   * @brief Which platform-native path Tier 2 resolves to.
+   *
+   * Tier 2 is not one backend: macOS uses VideoToolbox while Linux uses VA-API DMA-BUF. The
+   * recommendation must name the one this build can actually select, otherwise a working macOS
+   * path is reported as unavailable and auto routing is described as Tier 3.
+   */
+  enum class Tier2Backend {
+    None,
+    VaapiDmaBuf,
+    VideoToolbox
+  };
+
+  /**
    * @brief Patch 0080 (Phase 9): what the probe actually found on this machine.
    *
    * The advice has to come from this rather than from a fixed paragraph - "use Tier 3" is wrong
@@ -112,7 +125,7 @@ public:
     bool nvidia_present{false};
     bool tier1_possible{false};
     bool tier2_possible{false};
-    bool tier2_device_available{false};
+    Tier2Backend tier2_backend{Tier2Backend::None};
     VaapiImportStatus tier2_import_status{VaapiImportStatus::Unknown};
     bool nvidia_has_display{false};
     bool nvdec_available{false};

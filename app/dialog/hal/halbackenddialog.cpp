@@ -151,11 +151,22 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
 
   box.setInformativeText(GpuSessionAdvisor::DescribeAdvice());
 
-  // Offer what will actually work, best first.
-  const bool tier2_usable = probe.SupportsVaapiDmaBuf();
-  QPushButton* use_best_tier = box.addButton(
-      tier2_usable ? tr("Use Tier 2 (VA-API hardware decode)") : tr("Use Tier 3 (CPU decode)"),
-      QMessageBox::AcceptRole);
+  // Offer what will actually work, best first. Tier 2 is VideoToolbox on macOS and VA-API on
+  // Linux, so hard-coding the VA-API question used to hide the working macOS backend here.
+  QString tier2_backend;
+  QString tier2_button;
+  if (probe.SupportsVideoToolbox()) {
+    tier2_backend = QStringLiteral("videotoolbox");
+    tier2_button = tr("Use Tier 2 (VideoToolbox hardware decode)");
+  } else if (probe.SupportsVaapiDmaBuf()) {
+    tier2_backend = QStringLiteral("vaapi");
+    tier2_button = tr("Use Tier 2 (VA-API hardware decode)");
+  } else {
+    tier2_backend = QStringLiteral("software");
+    tier2_button = tr("Use Tier 3 (CPU decode)");
+  }
+
+  QPushButton* use_best_tier = box.addButton(tier2_button, QMessageBox::AcceptRole);
 
   const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
   QPushButton* switch_session = nullptr;
@@ -170,7 +181,7 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
   box.exec();
 
   if (box.clickedButton() == use_best_tier) {
-    return tier2_usable ? QStringLiteral("vaapi") : QStringLiteral("software");
+    return tier2_backend;
   }
 
   if (switch_session && box.clickedButton() == switch_session) {
