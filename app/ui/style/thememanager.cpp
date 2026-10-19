@@ -24,12 +24,16 @@
 #include "style.h"
 #include "capcutstyleconfig.h"
 #include "metrostyleconfig.h"
+#include "ui/icons/icons.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QFont>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPalette>
@@ -39,6 +43,8 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QDebug>
+
+#include <cmath>
 
 #ifdef OLIVE_HAVE_QZIPREADER
 #include <QtCore/private/qzipreader_p.h>
@@ -87,6 +93,140 @@ bool RemovePath(const QString &path)
   return QFile::remove(path);
 }
 
+void ReadIntCapability(const QJsonObject &obj, const QString &key, int minimum, int maximum,
+                       int *target)
+{
+  if (!obj.contains(key)) {
+    return;
+  }
+
+  const QJsonValue value = obj.value(key);
+  if (!value.isDouble()) {
+    qWarning() << "[ThemeManager] Ignoring non-numeric capability" << key;
+    return;
+  }
+
+  const int number = value.toInt(-1);
+  if (number < minimum || number > maximum) {
+    qWarning() << "[ThemeManager] Ignoring out-of-range capability" << key << ":" << number;
+    return;
+  }
+
+  *target = number;
+}
+
+void ReadDoubleCapability(const QJsonObject &obj, const QString &key, double minimum,
+                          double maximum, double *target)
+{
+  if (!obj.contains(key)) {
+    return;
+  }
+
+  const QJsonValue value = obj.value(key);
+  if (!value.isDouble()) {
+    qWarning() << "[ThemeManager] Ignoring non-numeric capability" << key;
+    return;
+  }
+
+  const double number = value.toDouble();
+  if (!std::isfinite(number) || number < minimum || number > maximum) {
+    qWarning() << "[ThemeManager] Ignoring out-of-range capability" << key << ":" << number;
+    return;
+  }
+
+  *target = number;
+}
+
+void ReadBoolCapability(const QJsonObject &obj, const QString &key, bool *target)
+{
+  if (!obj.contains(key)) {
+    return;
+  }
+
+  const QJsonValue value = obj.value(key);
+  if (!value.isBool()) {
+    qWarning() << "[ThemeManager] Ignoring non-boolean capability" << key;
+    return;
+  }
+
+  *target = value.toBool();
+}
+
+void ReadCapabilities(const QJsonObject &manifest, ThemeInfo *info)
+{
+  ThemeCapabilities &caps = info->capabilities;
+
+  const QJsonObject workspace = manifest.value(QStringLiteral("workspace")).toObject();
+  if (!workspace.isEmpty()) {
+    const QString layout = workspace.value(QStringLiteral("layout")).toString().trimmed();
+    if (!layout.isEmpty()) {
+      if (layout.compare(QStringLiteral("standard"), Qt::CaseInsensitive) == 0) {
+        caps.workspace_layout = ThemeCapabilities::WorkspaceLayout::kStandard;
+      } else if (layout.compare(QStringLiteral("threeColumn"), Qt::CaseInsensitive) == 0
+                 || layout.compare(QStringLiteral("three-column"), Qt::CaseInsensitive) == 0
+                 || layout.compare(QStringLiteral("three_column"), Qt::CaseInsensitive) == 0) {
+        caps.workspace_layout = ThemeCapabilities::WorkspaceLayout::kThreeColumn;
+      } else {
+        qWarning() << "[ThemeManager] Unknown workspace layout" << layout
+                   << "for theme" << info->id;
+      }
+    }
+
+    ReadBoolCapability(workspace, QStringLiteral("toolPanel"), &caps.show_tool_panel);
+    ReadBoolCapability(workspace, QStringLiteral("nodePanel"), &caps.show_node_panel);
+    ReadBoolCapability(workspace, QStringLiteral("footageViewer"), &caps.show_footage_viewer);
+    ReadBoolCapability(workspace, QStringLiteral("emptyInspectorWhenUnselected"),
+                       &caps.empty_inspector_when_unselected);
+
+    ReadIntCapability(workspace, QStringLiteral("projectWidth"), 0, 2000,
+                      &caps.project_panel_width);
+    ReadIntCapability(workspace, QStringLiteral("inspectorWidth"), 0, 2000,
+                      &caps.inspector_panel_width);
+    ReadIntCapability(workspace, QStringLiteral("timelineHeightPercent"), 0, 90,
+                      &caps.timeline_height_percent);
+    ReadIntCapability(workspace, QStringLiteral("projectIconSize"), 0, 512,
+                      &caps.project_icon_size);
+    ReadDoubleCapability(workspace, QStringLiteral("projectIconHeightRatio"), 0.0, 2.0,
+                         &caps.project_icon_height_ratio);
+
+    const QString project_view =
+        workspace.value(QStringLiteral("projectView")).toString().trimmed().toLower();
+    if (!project_view.isEmpty()) {
+      if (project_view == QStringLiteral("tree") || project_view == QStringLiteral("list")
+          || project_view == QStringLiteral("icon")) {
+        caps.project_view = project_view;
+      } else {
+        qWarning() << "[ThemeManager] Unknown project view" << project_view
+                   << "for theme" << info->id;
+      }
+    }
+  }
+
+  const QJsonObject fonts = manifest.value(QStringLiteral("fonts")).toObject();
+  const QJsonValue ui_fonts = fonts.value(QStringLiteral("ui"));
+  if (ui_fonts.isArray()) {
+    for (const QJsonValue &value : ui_fonts.toArray()) {
+      if (value.isString()) {
+        const QString family = value.toString().trimmed();
+        if (!family.isEmpty() && !caps.ui_font_families.contains(family, Qt::CaseInsensitive)) {
+          caps.ui_font_families.append(family);
+        }
+      }
+    }
+  } else if (ui_fonts.isString()) {
+    // Comma-separated form keeps hand-written manifests convenient.
+    for (const QString &family : ui_fonts.toString().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+      const QString trimmed = family.trimmed();
+      if (!trimmed.isEmpty() && !caps.ui_font_families.contains(trimmed, Qt::CaseInsensitive)) {
+        caps.ui_font_families.append(trimmed);
+      }
+    }
+  }
+
+  const QJsonObject tokens = manifest.value(QStringLiteral("tokens")).toObject();
+  ReadBoolCapability(tokens, QStringLiteral("inheritPalette"), &caps.inherit_palette_tokens);
+}
+
 void ReadManifest(const QString &theme_directory, ThemeInfo *info)
 {
   const QString manifest_path = theme_directory + QStringLiteral("/manifest.json");
@@ -121,6 +261,8 @@ void ReadManifest(const QString &theme_directory, ThemeInfo *info)
   if (!version.isEmpty()) {
     info->version = version;
   }
+
+  ReadCapabilities(obj, info);
 }
 
 bool CopyDirectoryRecursively(const QString &source, const QString &destination)
@@ -173,24 +315,6 @@ QHash<QString, QColor> PaletteTokens(const QPalette &palette)
   tokens.insert(QStringLiteral("color.accent.primary"), palette.highlight().color());
   tokens.insert(QStringLiteral("color.text.primary"), palette.text().color());
   return tokens;
-}
-
-void ApplyBuiltInTokens(const QString &theme_id)
-{
-  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
-  registry->ResetToDefaults();
-
-  if (theme_id != QString::fromLatin1(metro::kThemeName)) {
-    registry->SetColors(PaletteTokens(qApp->palette()));
-  }
-
-  // The CapCut preset needs a richer token set than the palette can express
-  // (track colours, playhead/keyframe paint, radii and widget flags).
-  if (theme_id == QString::fromLatin1(capcut::kThemeName)) {
-    if (!registry->LoadFromJsonFile(QStringLiteral(":/style/olive-capcut/tokens.json"))) {
-      qWarning() << "[ThemeManager] Cannot read CapCut design tokens";
-    }
-  }
 }
 
 bool ParsePaletteFile(const QString &path, QPalette *palette)
@@ -246,6 +370,12 @@ ThemeManager::ThemeManager(QObject *parent)
   : QObject(parent),
     current_theme_id_(QString::fromLatin1(StyleManager::kDefaultStyle))
 {
+  // Capture the application-wide fallback stack before any theme manifest is
+  // applied. GUI-less tests construct ThemeManager with a QCoreApplication.
+  if (QApplication *app = qobject_cast<QApplication *>(QCoreApplication::instance())) {
+    default_font_families_ = app->font().families();
+  }
+
   connect(&file_watcher_, &QFileSystemWatcher::fileChanged, this, &ThemeManager::OnFileChanged);
 
   reload_timer_.setSingleShot(true);
@@ -295,43 +425,26 @@ void ThemeManager::ScanThemeDirectories()
 {
   themes_.clear();
 
-  // Built-in themes are always first and always use a stable order.
-  {
-    ThemeInfo capcut_theme;
-    capcut_theme.id = QString::fromLatin1(capcut::kThemeName);
-    capcut_theme.name = QString::fromLatin1(capcut::kThemeDisplayName);
-    capcut_theme.author = QStringLiteral("Olive Team");
-    capcut_theme.version = QStringLiteral("1.0");
-    capcut_theme.is_builtin = true;
-    themes_.append(capcut_theme);
-  }
-  {
-    ThemeInfo metro_theme;
-    metro_theme.id = QString::fromLatin1(metro::kThemeName);
-    metro_theme.name = QString::fromLatin1(metro::kThemeDisplayName);
-    metro_theme.author = QStringLiteral("Olive Team");
-    metro_theme.version = QStringLiteral("2.0");
-    metro_theme.is_builtin = true;
-    themes_.append(metro_theme);
-  }
-  {
-    ThemeInfo dark_theme;
-    dark_theme.id = QStringLiteral("olive-dark");
-    dark_theme.name = QStringLiteral("Olive Dark");
-    dark_theme.author = QStringLiteral("Olive Team");
-    dark_theme.version = QStringLiteral("1.0");
-    dark_theme.is_builtin = true;
-    themes_.append(dark_theme);
-  }
-  {
-    ThemeInfo light_theme;
-    light_theme.id = QStringLiteral("olive-light");
-    light_theme.name = QStringLiteral("Olive Light");
-    light_theme.author = QStringLiteral("Olive Team");
-    light_theme.version = QStringLiteral("1.0");
-    light_theme.is_builtin = true;
-    themes_.append(light_theme);
-  }
+  // Built-in themes are always first and use a stable order. Their resources
+  // live under the same :/style/<id>/ convention as the legacy StyleManager,
+  // so the rest of this file can treat built-ins and external folders alike.
+  const auto add_builtin = [this](const char *id, const char *display_name,
+                                  const char *author, const char *version) {
+    ThemeInfo info;
+    info.id = QString::fromLatin1(id);
+    info.name = QString::fromLatin1(display_name);
+    info.author = QString::fromLatin1(author);
+    info.version = QString::fromLatin1(version);
+    info.path = QStringLiteral(":/style/%1").arg(info.id);
+    info.is_builtin = true;
+    ReadManifest(info.path, &info);
+    themes_.append(info);
+  };
+
+  add_builtin(capcut::kThemeName, capcut::kThemeDisplayName, "Olive Team", "1.0");
+  add_builtin(metro::kThemeName, metro::kThemeDisplayName, "Olive Team", "2.0");
+  add_builtin("olive-dark", "Olive Dark", "Olive Team", "1.0");
+  add_builtin("olive-light", "Olive Light", "Olive Team", "1.0");
 
   // Scan external user themes in a deterministic order.
   QDir themes_dir(GetThemesDirectory());
@@ -429,45 +542,57 @@ bool ThemeManager::ApplyTheme(const QString &theme_id)
   }
   reload_timer_.stop();
 
-  if (info->is_builtin) {
-    StyleManager::SetStyle(info->id);
-    ApplyBuiltInTokens(info->id);
-
-    current_theme_id_ = info->id;
-    StyleManager::SetCurrentStyleId(info->id);
-    qInfo() << "[ThemeManager] Applied built-in theme" << info->id;
-
-    emit ThemeChanged(info->id);
-    return true;
-  }
-
   QString error;
-  if (!LoadExternalTheme(*info, &error)) {
+  if (!ApplyThemeResources(*info, &error)) {
     qWarning() << "[ThemeManager] Failed to apply theme" << info->id << ":" << error;
     last_error_ = error;
-    FallbackToDefault();
-    last_error_ = error;
+
+    // Never recurse when the default itself is broken. For any other theme,
+    // fall back to the known-good built-in and keep the original error visible.
+    if (info->id != QString::fromLatin1(StyleManager::kDefaultStyle)) {
+      FallbackToDefault();
+      last_error_ = error;
+    }
     return false;
   }
 
-  current_theme_id_ = info->id;
-  StyleManager::SetCurrentStyleId(info->id);
-  qInfo() << "[ThemeManager] Applied theme" << info->id << "from" << info->path;
+  const QString previous_id = current_theme_id_;
+  const ThemeCapabilities previous_capabilities = current_capabilities_;
 
-  emit ThemeChanged(info->id);
+  current_theme_id_ = info->id;
+  current_capabilities_ = info->capabilities;
+  StyleManager::SetCurrentStyleId(info->id);
+  ApplyThemeFont(*info);
+
+  if (info->is_builtin) {
+    qInfo() << "[ThemeManager] Applied built-in theme" << info->id;
+  } else {
+    qInfo() << "[ThemeManager] Applied theme" << info->id << "from" << info->path;
+  }
+
+  // Hot reloads of QSS/tokens/palette should repaint immediately, but they
+  // must not rebuild the workspace. Only an id or capability change does that.
+  if (previous_id != info->id || previous_capabilities != info->capabilities) {
+    emit ThemeChanged(info->id);
+  }
+
   return true;
 }
 
-bool ThemeManager::LoadExternalTheme(const ThemeInfo &info, QString *error)
+bool ThemeManager::ApplyThemeResources(const ThemeInfo &info, QString *error)
 {
+  const QString resource_root = info.is_builtin
+      ? QStringLiteral(":/style/%1").arg(info.id)
+      : info.path;
+
   // 1. Resolve the stylesheet first so an unreadable theme never mutates the UI.
   QString qss_path;
   if (info.is_pure_qss) {
     qss_path = info.path;
   } else {
-    qss_path = info.path + QStringLiteral("/style.qss");
+    qss_path = resource_root + QStringLiteral("/style.qss");
     if (!QFileInfo(qss_path).isFile()) {
-      qss_path = info.path + QStringLiteral("/style.css");
+      qss_path = resource_root + QStringLiteral("/style.css");
     }
   }
 
@@ -484,13 +609,14 @@ bool ThemeManager::LoadExternalTheme(const ThemeInfo &info, QString *error)
     return false;
   }
 
-  // 2. Resolve the palette. A malformed palette is rejected rather than silently
-  //    replacing the application palette with defaults.
-  QString palette_path = info.is_pure_qss
-      ? QStringLiteral(":/style/olive-metro/palette.ini")
-      : info.path + QStringLiteral("/palette.ini");
-  if (!QFileInfo::exists(palette_path)) {
-    palette_path = QStringLiteral(":/style/olive-metro/palette.ini");
+  // 2. Resolve the palette. Built-in and external folders use the same
+  //    convention; pure QSS files keep the Metro fallback.
+  QString palette_path = QStringLiteral(":/style/olive-metro/palette.ini");
+  if (!info.is_pure_qss) {
+    palette_path = resource_root + QStringLiteral("/palette.ini");
+    if (!QFileInfo::exists(palette_path)) {
+      palette_path = QStringLiteral(":/style/olive-metro/palette.ini");
+    }
   }
 
   QPalette palette;
@@ -499,19 +625,19 @@ bool ThemeManager::LoadExternalTheme(const ThemeInfo &info, QString *error)
     return false;
   }
 
-  DesignTokenRegistry::instance()->ResetToDefaults();
-  if (!info.is_pure_qss) {
-    DesignTokenRegistry::instance()->SetColors(PaletteTokens(palette));
-  }
-  qApp->setPalette(palette);
-
   // 3. Load optional design tokens after the palette-derived defaults so theme
   //    tokens always win.
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  registry->ResetToDefaults();
+  if (!info.is_pure_qss && info.capabilities.inherit_palette_tokens) {
+    registry->SetColors(PaletteTokens(palette));
+  }
+
   QString tokens_path;
   if (!info.is_pure_qss) {
-    tokens_path = info.path + QStringLiteral("/tokens.json");
+    tokens_path = resource_root + QStringLiteral("/tokens.json");
     if (QFileInfo::exists(tokens_path)
-        && !DesignTokenRegistry::instance()->LoadFromJsonFile(tokens_path)) {
+        && !registry->LoadFromJsonFile(tokens_path)) {
       *error = QStringLiteral("cannot parse tokens '%1'").arg(tokens_path);
       return false;
     }
@@ -520,7 +646,7 @@ bool ThemeManager::LoadExternalTheme(const ThemeInfo &info, QString *error)
   // 4. Preprocess and validate the stylesheet before committing it.
   QList<QssMacroPreprocessor::Diagnostic> diagnostics;
   const QString compiled_qss = QssMacroPreprocessor::Process(
-      raw_qss, DesignTokenRegistry::instance()->AllTokens(), &diagnostics);
+      raw_qss, registry->AllTokens(), &diagnostics);
 
   if (!diagnostics.isEmpty()) {
     const QssMacroPreprocessor::Diagnostic &first = diagnostics.constFirst();
@@ -530,38 +656,71 @@ bool ThemeManager::LoadExternalTheme(const ThemeInfo &info, QString *error)
     return false;
   }
 
+  // 5. Built-in themes own their icon set; external themes intentionally keep
+  //    the current icons because packages cannot ship executable icon logic.
+  if (info.is_builtin) {
+    icon::LoadAll(resource_root);
+  }
+
+  qApp->setPalette(palette);
   qApp->setStyleSheet(compiled_qss);
 
-  // 5. Watch the files that can be hot-reloaded.
-  if (hot_reload_enabled_) {
-    if (!tokens_path.isEmpty()) {
-      file_watcher_.addPath(tokens_path);
-    }
-    if (QFileInfo(qss_path).isFile()) {
+  // 6. Watch the files that can be hot-reloaded. Built-in resources live in
+  //    the resource bundle and never need watching.
+  if (!info.is_builtin && hot_reload_enabled_) {
+    if (QFileInfo(qss_path).isFile() && !qss_path.startsWith(QLatin1Char(':'))) {
       file_watcher_.addPath(qss_path);
     }
-    if (palette_path.startsWith(QLatin1Char(':')) == false && QFileInfo::exists(palette_path)) {
+    if (!tokens_path.isEmpty() && QFileInfo::exists(tokens_path)
+        && !tokens_path.startsWith(QLatin1Char(':'))) {
+      file_watcher_.addPath(tokens_path);
+    }
+    if (!palette_path.startsWith(QLatin1Char(':')) && QFileInfo::exists(palette_path)) {
       file_watcher_.addPath(palette_path);
+    }
+    if (!info.is_pure_qss) {
+      const QString manifest_path = info.path + QStringLiteral("/manifest.json");
+      if (QFileInfo::exists(manifest_path)) {
+        file_watcher_.addPath(manifest_path);
+      }
     }
   }
 
   return true;
 }
 
-bool ThemeManager::FallbackToDefault()
+void ThemeManager::ApplyThemeFont(const ThemeInfo &info)
 {
-  const QString default_id = QString::fromLatin1(StyleManager::kDefaultStyle);
-
-  if (current_theme_id_ == default_id && FindTheme(default_id)) {
-    // The default theme is already active; make sure its palette/tokens are sane.
-    StyleManager::SetStyle(default_id);
-    ApplyBuiltInTokens(default_id);
-    StyleManager::SetCurrentStyleId(default_id);
-    emit ThemeChanged(default_id);
-    return true;
+  QApplication *app = qobject_cast<QApplication *>(QCoreApplication::instance());
+  if (!app) {
+    return;
   }
 
-  return ApplyTheme(default_id);
+  QStringList families = info.capabilities.ui_font_families;
+  if (families.isEmpty()) {
+    families = default_font_families_;
+  }
+
+  // The manifest can add a Latin face in front of the standard CJK stack, but
+  // it must never remove the fallback glyph coverage provided by the app font.
+  for (const QString &fallback : default_font_families_) {
+    if (!families.contains(fallback, Qt::CaseInsensitive)) {
+      families.append(fallback);
+    }
+  }
+
+  if (families.isEmpty()) {
+    return;
+  }
+
+  QFont font = app->font();
+  font.setFamilies(families);
+  app->setFont(font);
+}
+
+bool ThemeManager::FallbackToDefault()
+{
+  return ApplyTheme(QString::fromLatin1(StyleManager::kDefaultStyle));
 }
 
 bool ThemeManager::Fail(const QString &message)
@@ -574,6 +733,14 @@ bool ThemeManager::Fail(const QString &message)
 void ThemeManager::OnFileChanged(const QString &path)
 {
   qInfo() << "[ThemeManager] Hot-reload triggered by file change:" << path;
+
+  // Capabilities and fonts live in the manifest. Re-read the theme list so the
+  // pending ApplyTheme() sees the new values. QSS/tokens/palette-only changes
+  // skip this and therefore do not rebuild the workspace.
+  if (QFileInfo(path).fileName() == QStringLiteral("manifest.json")) {
+    ScanThemeDirectories();
+  }
+
   reload_timer_.start();
 }
 

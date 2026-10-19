@@ -25,7 +25,7 @@
 #include <QScrollBar>
 #include <QTimer>
 
-#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokennames.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/timebased/timebasedwidget.h"
 
@@ -185,7 +185,7 @@ void TimeBasedView::drawForeground(QPainter *painter, const QRectF &rect)
     // subtle and uses a crisp white line so the playhead reads against every
     // track colour.
     QColor playhead_color = DesignTokenRegistry::instance()->GetColor(
-        QString::fromLatin1(capcut::kTokenPlayhead), PLAYHEAD_COLOR);
+        QString::fromLatin1(tokens::kPlayhead), PLAYHEAD_COLOR);
     QColor highlight = playhead_color;
     highlight.setAlpha(24);
     painter->setPen(Qt::NoPen);

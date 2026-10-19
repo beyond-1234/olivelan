@@ -46,7 +46,6 @@
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
-#include "ui/style/capcutstyleconfig.h"
 #include "ui/style/thememanager.h"
 
 namespace olive {
@@ -56,7 +55,7 @@ namespace olive {
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
   initial_layout_applied_(false),
-  capcut_dock_sizes_applied_(false),
+  theme_dock_sizes_applied_(false),
   project_(nullptr)
 {
   // Resizes main window to desktop geometry on startup. Fixes the following issues:
@@ -139,6 +138,8 @@ MainWindow::MainWindow(QWidget *parent) :
   sequence_viewer_panel_->ConnectTimeBasedPanel(multicam_panel_);
 
   connect(PanelManager::instance(), &PanelManager::FocusedPanelChanged, this, &MainWindow::FocusedPanelChanged);
+  connect(ThemeManager::instance(), &ThemeManager::ThemeChanged,
+          this, &MainWindow::OnThemeChanged);
 
   sequence_viewer_panel_->AddPlaybackDevice(multicam_panel_->GetMulticamWidget()->GetDisplayWidget());
   sequence_viewer_panel_->ConnectMulticamWidget(multicam_panel_->GetMulticamWidget());
@@ -215,7 +216,8 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
 
 namespace {
 
-bool ApplyCapcutDockSizes(KDDockWidgets::Core::MainWindow *main_window)
+bool ApplyThemeDockSizes(KDDockWidgets::Core::MainWindow *main_window,
+                         const ThemeCapabilities &capabilities)
 {
   if (!main_window) {
     return false;
@@ -233,19 +235,28 @@ bool ApplyCapcutDockSizes(KDDockWidgets::Core::MainWindow *main_window)
     return false;
   }
 
+  const auto separators = drop_area->separators();
+  if (separators.isEmpty()) {
+    return false;
+  }
+
   const int spacing = 5;
-  const int timeline_height = qRound(total_height * 0.38);
+  const int timeline_percent = capabilities.timeline_height_percent > 0
+      ? capabilities.timeline_height_percent : 38;
+  const int timeline_height = qMax(260, qRound(total_height * timeline_percent / 100.0));
   const int top_height = total_height - timeline_height - spacing;
-  const int project_target = 363;
-  const int param_target = total_width - 346;
+  const int project_width = capabilities.project_panel_width > 0
+      ? capabilities.project_panel_width : 363;
+  const int inspector_width = capabilities.inspector_panel_width > 0
+      ? capabilities.inspector_panel_width : 340;
+  const int param_target = total_width - (inspector_width + 6);
   const int tool_target = 60;
 
   // KDDockWidgets does not expose a public "set dock size" API for this layout.
-  // Moving the separators directly is the least invasive way to give the
-  // CapCut preset its fixed side widths and 38% timeline height while keeping
-  // the panels dockable.
-  const auto separators = drop_area->separators();
-
+  // Moving the separators directly is the least invasive way to give a
+  // three-column preset its side widths and timeline height while keeping the
+  // panels dockable.
+  //
   // Move the horizontal separators first. Moving the root separator recreates
   // the child separators, so it has to be the very last operation.
   for (int pass = 0; pass < 2; ++pass) {
@@ -266,7 +277,7 @@ bool ApplyCapcutDockSizes(KDDockWidgets::Core::MainWindow *main_window)
       } else if (separator->geometry().y() > 0) {
         target = tool_target;
       } else {
-        target = separator->position() < total_width / 2 ? project_target : param_target;
+        target = separator->position() < total_width / 2 ? project_width : param_target;
       }
 
       if (target < 0) {
@@ -958,11 +969,12 @@ void MainWindow::UpdateNodePanelContextFromTimelinePanel(TimelinePanel *panel)
     context[i] = blocks.at(i);
   }
 
-  // If no selected blocks, set the context to the sequence. The CapCut preset
-  // keeps the inspector genuinely empty until a clip/effect is selected.
+  // If no selected blocks, most themes show the sequence context. A theme may
+  // declare that the inspector should stay genuinely empty until a clip/effect
+  // is selected.
   ViewerOutput *viewer = panel->GetConnectedViewer();
   if (viewer && context.isEmpty()
-      && ThemeManager::instance()->CurrentThemeId() != QString::fromLatin1(capcut::kThemeName)) {
+      && !ThemeManager::instance()->CurrentCapabilities().empty_inspector_when_unselected) {
     context.append(viewer);
   }
 
@@ -1011,57 +1023,78 @@ void MainWindow::FocusedPanelChanged(PanelWidget *panel)
 
 void MainWindow::SetDefaultLayout()
 {
-  const bool capcut_layout = ThemeManager::instance()->CurrentThemeId()
-      == QString::fromLatin1(capcut::kThemeName);
+  const ThemeCapabilities capabilities = ThemeManager::instance()->CurrentCapabilities();
+  const bool three_column = capabilities.workspace_layout
+      == ThemeCapabilities::WorkspaceLayout::kThreeColumn;
 
-  capcut_dock_sizes_applied_ = false;
+  theme_dock_sizes_applied_ = false;
 
-  if (capcut_layout) {
+  if (three_column) {
     if (auto *drop_area = mainWindow()->dropArea()) {
       const QSize area = size();
       drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
     }
 
     const int total_height = qMax(600, height());
-    const int timeline_height = qMax(260, qRound(total_height * 0.38));
+    const int timeline_percent = capabilities.timeline_height_percent > 0
+        ? capabilities.timeline_height_percent : 38;
+    const int timeline_height = qMax(260, qRound(total_height * timeline_percent / 100.0));
+    const int project_width = capabilities.project_panel_width > 0
+        ? capabilities.project_panel_width : 363;
+    const int inspector_width = capabilities.inspector_panel_width > 0
+        ? capabilities.inspector_panel_width : 340;
 
     // Build the top row first so KDDock's splitter gives the preview the
     // remaining width instead of stretching the inspector.
     KDDockWidgets::InitialOption top;
     top.preferredSize = QSize(0, total_height - timeline_height);
     addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, top);
+    if (capabilities.show_footage_viewer) {
+      sequence_viewer_panel_->addDockWidgetAsTab(footage_viewer_panel_);
+      sequence_viewer_panel_->raise();
+    }
 
     // Left: media library and project history.
     KDDockWidgets::InitialOption left;
-    left.preferredSize = QSize(360, 0);
+    left.preferredSize = QSize(project_width, 0);
     addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, sequence_viewer_panel_, left);
     project_panel_->addDockWidgetAsTab(history_panel_);
     project_panel_->raise();
 
-    // Right: contextual properties. It starts empty when nothing is selected.
+    // Right: contextual properties. The theme may keep it empty until a
+    // clip/effect is selected.
     KDDockWidgets::InitialOption right;
-    right.preferredSize = QSize(340, 0);
+    right.preferredSize = QSize(inspector_width, 0);
     addDockWidget(param_panel_, KDDockWidgets::Location_OnRight, sequence_viewer_panel_, right);
     param_panel_->addDockWidgetAsTab(audio_monitor_panel_);
+    if (capabilities.show_node_panel) {
+      param_panel_->addDockWidgetAsTab(node_panel_);
+    }
     param_panel_->raise();
 
-    // Bottom: timeline spanning the editing area, with a narrow tool rail.
+    // Bottom: timeline spanning the editing area. A theme may keep the legacy
+    // tool rail, but a full-width timeline is the default for this preset.
     KDDockWidgets::InitialOption bottom;
     bottom.preferredSize = QSize(0, timeline_height);
     addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom, nullptr, bottom);
 
-    // The CapCut workspace gives the timeline the full width beneath the
-    // media library and preview. The legacy tool panel remains available from
-    // the Window menu but is not part of the preset.
-    tool_panel_->close();
+    if (capabilities.show_tool_panel) {
+      KDDockWidgets::InitialOption tool;
+      tool.preferredSize = QSize(60, 0);
+      addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), tool);
+    } else {
+      tool_panel_->close();
+    }
 
-    // The CapCut workspace does not use a second footage viewer or a floating
-    // node graph by default; both remain available from the Window menu.
-    footage_viewer_panel_->close();
-    node_panel_->close();
+    if (!capabilities.show_footage_viewer) {
+      footage_viewer_panel_->close();
+    }
+    if (!capabilities.show_node_panel) {
+      node_panel_->close();
+    }
 
     if (width() > 800 && height() > 600) {
-      QTimer::singleShot(0, this, [this]() { ApplyCapcutDockSizesWhenReady(5); });
+      QTimer::singleShot(0, this, [this]() { ApplyThemeDockSizesWhenReady(5); });
     }
   } else {
     KDDockWidgets::InitialOption o;
@@ -1116,9 +1149,14 @@ void MainWindow::SetDefaultLayout()
   premaximized_state_.clear();
 }
 
-void MainWindow::ApplyCapcutDockSizesWhenReady(int attempts)
+void MainWindow::ApplyThemeDockSizesWhenReady(int attempts)
 {
-  if (capcut_dock_sizes_applied_) {
+  if (theme_dock_sizes_applied_) {
+    return;
+  }
+
+  const ThemeCapabilities capabilities = ThemeManager::instance()->CurrentCapabilities();
+  if (capabilities.workspace_layout != ThemeCapabilities::WorkspaceLayout::kThreeColumn) {
     return;
   }
 
@@ -1127,16 +1165,30 @@ void MainWindow::ApplyCapcutDockSizesWhenReady(int attempts)
     drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
   }
 
-  if (ApplyCapcutDockSizes(mainWindow())) {
-    capcut_dock_sizes_applied_ = true;
+  if (ApplyThemeDockSizes(mainWindow(), capabilities)) {
+    theme_dock_sizes_applied_ = true;
     return;
   }
 
   if (attempts > 0) {
     QTimer::singleShot(50, this, [this, attempts]() {
-      ApplyCapcutDockSizesWhenReady(attempts - 1);
+      ApplyThemeDockSizesWhenReady(attempts - 1);
     });
   }
+}
+
+void MainWindow::OnThemeChanged(const QString &theme_id)
+{
+  Q_UNUSED(theme_id)
+
+  if (!initial_layout_applied_) {
+    return;
+  }
+
+  // Rebuild the docks from the new theme's declarative capabilities. QSS-only
+  // hot reloads do not emit ThemeChanged, so this does not disturb the layout
+  // while a user is editing a stylesheet.
+  SetDefaultLayout();
 }
 
 void MainWindow::ApplyInitialLayoutIfNeeded()
@@ -1173,10 +1225,11 @@ void MainWindow::resizeEvent(QResizeEvent *e)
 
   ApplyInitialLayoutIfNeeded();
 
-  if (initial_layout_applied_ && !capcut_dock_sizes_applied_
-      && ThemeManager::instance()->CurrentThemeId() == QString::fromLatin1(capcut::kThemeName)
+  if (initial_layout_applied_ && !theme_dock_sizes_applied_
+      && ThemeManager::instance()->CurrentCapabilities().workspace_layout
+          == ThemeCapabilities::WorkspaceLayout::kThreeColumn
       && width() > 800 && height() > 600) {
-    QTimer::singleShot(0, this, [this]() { ApplyCapcutDockSizesWhenReady(5); });
+    QTimer::singleShot(0, this, [this]() { ApplyThemeDockSizesWhenReady(5); });
   }
 }
 

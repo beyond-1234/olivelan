@@ -31,7 +31,7 @@
 #include "node/node.h"
 #include "node/nodeundo.h"
 #include "node/project/serializer/serializer.h"
-#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokennames.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/menu/menu.h"
 #include "widget/menu/menushared.h"
@@ -435,7 +435,7 @@ void KeyframeView::DrawKeyframe(QPainter *painter, NodeKeyframe *key, KeyframeVi
     painter->setPen(QPen(registry->GetColor(QStringLiteral("color.keyframe.ring"), Qt::black), 1));
     painter->setBrush(IsKeyframeSelected(key)
                           ? registry->GetColor(QStringLiteral("color.accent.primary"), palette().highlight().color())
-                          : registry->GetColor(QString::fromLatin1(capcut::kTokenKeyframe), Qt::white));
+                          : registry->GetColor(QString::fromLatin1(tokens::kKeyframe), Qt::white));
   } else {
     painter->setPen(Qt::black);
 

@@ -242,6 +242,13 @@ OLIVE_ADD_TEST(ThemeImportPackages)
   const QString source_theme = source_root + QStringLiteral("/folder-theme");
   OLIVE_ASSERT(WriteTextFile(source_theme + QStringLiteral("/style.qss"),
                              QByteArray("QWidget { color: #ffffff; }")));
+  OLIVE_ASSERT(WriteTextFile(
+      source_theme + QStringLiteral("/manifest.json"),
+      QByteArray("{\"name\":\"Folder Theme\","
+                 "\"workspace\":{\"layout\":\"threeColumn\","
+                 "\"toolPanel\":false,\"projectView\":\"icon\","
+                 "\"projectIconSize\":96,\"timelineHeightPercent\":42},"
+                 "\"fonts\":{\"ui\":[\"Inter\"]}}")));
   OLIVE_ASSERT(manager->ImportThemePackage(source_theme));
   OLIVE_ASSERT(QFileInfo::exists(themes_dir + QStringLiteral("/folder-theme/style.qss")));
 
@@ -304,6 +311,36 @@ OLIVE_ADD_TEST(ThemeImportPackages)
   OLIVE_ASSERT(ids.contains(QStringLiteral("named-theme")));
   OLIVE_ASSERT(manager->GetThemeInfo(QStringLiteral("named-theme")).name
                == QStringLiteral("Named Theme"));
+
+  // Built-in manifests expose the same declarative capabilities as external
+  // themes. Consumers must not need to compare theme ids.
+  const ThemeInfo capcut = manager->GetThemeInfo(QStringLiteral("olive-capcut"));
+  OLIVE_ASSERT(capcut.is_builtin);
+  OLIVE_ASSERT(capcut.capabilities.workspace_layout
+               == ThemeCapabilities::WorkspaceLayout::kThreeColumn);
+  OLIVE_ASSERT(!capcut.capabilities.show_tool_panel);
+  OLIVE_ASSERT(!capcut.capabilities.show_node_panel);
+  OLIVE_ASSERT(!capcut.capabilities.show_footage_viewer);
+  OLIVE_ASSERT(capcut.capabilities.empty_inspector_when_unselected);
+  OLIVE_ASSERT(capcut.capabilities.project_view == QStringLiteral("icon"));
+  OLIVE_ASSERT(capcut.capabilities.project_icon_size == 160);
+  OLIVE_ASSERT(capcut.capabilities.project_icon_height_ratio == 0.82);
+  OLIVE_ASSERT(capcut.capabilities.ui_font_families.contains(QStringLiteral("Inter")));
+
+  const ThemeInfo metro = manager->GetThemeInfo(QStringLiteral("olive-metro"));
+  OLIVE_ASSERT(metro.is_builtin);
+  OLIVE_ASSERT(!metro.capabilities.inherit_palette_tokens);
+
+  // External packages can opt into workspace/font behavior without shipping
+  // executable code; unsupported or missing fields keep the standard layout.
+  const ThemeInfo imported = manager->GetThemeInfo(QStringLiteral("folder-theme"));
+  OLIVE_ASSERT(imported.capabilities.workspace_layout
+               == ThemeCapabilities::WorkspaceLayout::kThreeColumn);
+  OLIVE_ASSERT(!imported.capabilities.show_tool_panel);
+  OLIVE_ASSERT(imported.capabilities.project_view == QStringLiteral("icon"));
+  OLIVE_ASSERT(imported.capabilities.project_icon_size == 96);
+  OLIVE_ASSERT(imported.capabilities.timeline_height_percent == 42);
+  OLIVE_ASSERT(imported.capabilities.ui_font_families.contains(QStringLiteral("Inter")));
 
   QDir(themes_dir).removeRecursively();
   QDir(source_root).removeRecursively();

@@ -27,6 +27,8 @@ set(OLIVE_RESOURCES
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
   ui/style/capcutstyleconfig.h
+  ui/style/designtokennames.h
+  ui/style/themecapabilities.h
   ui/style/style.h
   ui/style/style.cpp
   ui/style/designtokenregistry.h

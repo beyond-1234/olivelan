@@ -28,6 +28,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include "themecapabilities.h"
+
 namespace olive {
 
 struct ThemeInfo {
@@ -38,6 +40,7 @@ struct ThemeInfo {
   QString path;
   bool is_builtin{false};
   bool is_pure_qss{false};
+  ThemeCapabilities capabilities;
 };
 
 /**
@@ -73,6 +76,14 @@ public:
   const QString &CurrentThemeId() const { return current_theme_id_; }
 
   /**
+   * @brief Declarative layout/view/font options for the active theme.
+   *
+   * Consumers must use these fields instead of comparing theme ids. Missing
+   * values keep the legacy Olive behavior.
+   */
+  const ThemeCapabilities &CurrentCapabilities() const { return current_capabilities_; }
+
+  /**
    * @brief Human-readable reason for the last failed apply/import operation.
    *
    * The UI uses this instead of a generic "import failed" message. It is
@@ -105,13 +116,16 @@ private:
   void ScanThemeDirectories();
   const ThemeInfo *FindTheme(const QString &theme_id) const;
 
-  bool LoadExternalTheme(const ThemeInfo &info, QString *error);
+  bool ApplyThemeResources(const ThemeInfo &info, QString *error);
+  void ApplyThemeFont(const ThemeInfo &info);
   bool ImportThemeDirectory(const QString &source_dir, const QString &id, bool overwrite);
   bool ImportZipPackage(const QString &source_file, const QString &id, bool overwrite);
   bool FallbackToDefault();
   bool Fail(const QString &message);
 
   QString current_theme_id_;
+  ThemeCapabilities current_capabilities_;
+  QStringList default_font_families_;
   QString last_error_;
   QList<ThemeInfo> themes_;
   QFileSystemWatcher file_watcher_;

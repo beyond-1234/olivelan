@@ -1,0 +1,28 @@
+{
+  "name": "CapCut Studio",
+  "author": "Olive Team",
+  "version": "1.0",
+  "workspace": {
+    "layout": "threeColumn",
+    "toolPanel": false,
+    "nodePanel": false,
+    "footageViewer": false,
+    "emptyInspectorWhenUnselected": true,
+    "projectWidth": 363,
+    "inspectorWidth": 340,
+    "timelineHeightPercent": 38,
+    "projectView": "icon",
+    "projectIconSize": 160,
+    "projectIconHeightRatio": 0.82
+  },
+  "fonts": {
+    "ui": [
+      "Inter",
+      "Source Han Sans SC",
+      "Source Han Sans CN",
+      "PingFang SC",
+      "Noto Sans CJK SC",
+      "Microsoft YaHei UI"
+    ]
+  }
+}

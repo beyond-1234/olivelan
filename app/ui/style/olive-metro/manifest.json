@@ -1,0 +1,8 @@
+{
+  "name": "Olive Metro",
+  "author": "Olive Team",
+  "version": "2.0",
+  "tokens": {
+    "inheritPalette": false
+  }
+}

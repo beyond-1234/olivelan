@@ -20,7 +20,6 @@
 
 #include "projectexplorer.h"
 
-#include "ui/style/capcutstyleconfig.h"
 #include "ui/style/thememanager.h"
 
 #include <QDebug>
@@ -90,15 +89,10 @@ ProjectExplorer::ProjectExplorer(QWidget *parent) :
   icon_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   AddView(icon_view_);
 
-  // CapCut Studio opens on a media grid; the other presets keep the tree view.
-  if (ThemeManager::instance()->CurrentThemeId()
-      == QString::fromLatin1(capcut::kThemeName)) {
-    set_view_type(ProjectToolbar::IconView);
-    SizeChangedSlot(160);
-  } else {
-    set_view_type(ProjectToolbar::TreeView);
-    SizeChangedSlot(kProjectIconSizeDefault);
-  }
+  // Theme manifests may declare the initial project view and thumbnail size.
+  ApplyThemeCapabilities(true);
+  connect(ThemeManager::instance(), &ThemeManager::ThemeChanged,
+          this, &ProjectExplorer::OnThemeChanged);
 
   connect(tree_view_, &ProjectExplorerTreeView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
   connect(list_view_, &ProjectExplorerListView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
@@ -285,16 +279,61 @@ void ProjectExplorer::ItemDoubleClickedSlot(const QModelIndex &index)
 
 void ProjectExplorer::SizeChangedSlot(int s)
 {
-  if (ThemeManager::instance()->CurrentThemeId()
-      == QString::fromLatin1(capcut::kThemeName)) {
-    // The delegate lays out a 16:9 thumbnail plus one text row. A slightly
-    // shorter cell removes the empty band the square Metro grid leaves behind.
-    icon_view_->setGridSize(QSize(s, qRound(s * 0.82)));
-  } else {
-    icon_view_->setGridSize(QSize(s, s));
+  const ThemeCapabilities capabilities =
+      ThemeManager::instance()->CurrentCapabilities();
+  const double height_ratio = capabilities.project_icon_height_ratio > 0.0
+      ? capabilities.project_icon_height_ratio : 1.0;
+
+  icon_view_->setGridSize(QSize(s, qRound(s * height_ratio)));
+  list_view_->setIconSize(QSize(s, s));
+}
+
+void ProjectExplorer::ApplyThemeCapabilities(bool initial)
+{
+  const ThemeCapabilities capabilities =
+      ThemeManager::instance()->CurrentCapabilities();
+
+  if (initial) {
+    const QString view = capabilities.project_view.isEmpty()
+        ? QStringLiteral("tree") : capabilities.project_view;
+    if (view == QStringLiteral("icon")) {
+      set_view_type(ProjectToolbar::IconView);
+    } else if (view == QStringLiteral("list")) {
+      set_view_type(ProjectToolbar::ListView);
+    } else {
+      set_view_type(ProjectToolbar::TreeView);
+    }
+
+    SizeChangedSlot(capabilities.project_icon_size > 0
+                        ? capabilities.project_icon_size
+                        : kProjectIconSizeDefault);
+    return;
   }
 
-  list_view_->setIconSize(QSize(s, s));
+  if (!capabilities.project_view.isEmpty()) {
+    if (capabilities.project_view == QStringLiteral("icon")) {
+      set_view_type(ProjectToolbar::IconView);
+    } else if (capabilities.project_view == QStringLiteral("list")) {
+      set_view_type(ProjectToolbar::ListView);
+    } else if (capabilities.project_view == QStringLiteral("tree")) {
+      set_view_type(ProjectToolbar::TreeView);
+    }
+  }
+
+  int icon_size = capabilities.project_icon_size;
+  if (icon_size <= 0) {
+    icon_size = icon_view_->iconSize().width();
+  }
+  if (icon_size <= 0) {
+    icon_size = kProjectIconSizeDefault;
+  }
+  SizeChangedSlot(icon_size);
+}
+
+void ProjectExplorer::OnThemeChanged(const QString &theme_id)
+{
+  Q_UNUSED(theme_id)
+  ApplyThemeCapabilities(false);
 }
 
 void ProjectExplorer::DirUpSlot()

@@ -13,6 +13,7 @@
 # resources.
 
 set(STYLE_RESOURCES
+  manifest.json
   palette.ini
   style.css
   tokens.json

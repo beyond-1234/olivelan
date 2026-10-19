@@ -31,7 +31,7 @@
 #include "dialog/markerproperties/markerpropertiesdialog.h"
 #include "node/project/serializer/serializer.h"
 #include "timeline/timelineundoworkarea.h"
-#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokennames.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/colorlabelmenu/colorlabelmenu.h"
 #include "widget/menu/menushared.h"
@@ -442,7 +442,7 @@ void SeekableWidget::DrawPlayhead(QPainter *p, int x, int y)
 
   DesignTokenRegistry *registry = DesignTokenRegistry::instance();
   const QColor playhead_color = registry->GetColor(
-      QString::fromLatin1(capcut::kTokenPlayhead), PLAYHEAD_COLOR);
+      QString::fromLatin1(tokens::kPlayhead), PLAYHEAD_COLOR);
 
   p->setPen(QPen(playhead_color, 1));
   p->setBrush(playhead_color);

@@ -341,15 +341,13 @@ int main(int argc, char *argv[])
     // can be asserted from a log rather than guessed.
     qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
 
-    // Initialize the UI font stack. Inter covers Latin/numbers for the CapCut
-    // Studio preset, while the embedded Source Han Sans font keeps CJK glyphs
-    // inside the same family list so Qt can fall back per character.
-    QStringList ui_families;
-    int inter_font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Inter.ttf"));
-    if (inter_font_id != -1) {
-      ui_families.append(QFontDatabase::applicationFontFamilies(inter_font_id));
-    }
+    // Initialize the default UI font stack. Inter is registered so theme
+    // manifests can opt into it, but it is not forced globally: the embedded
+    // Source Han Sans font remains the default family for themes that do not
+    // declare a font stack.
+    QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Inter.ttf"));
 
+    QStringList ui_families;
     int cjk_font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.otf"));
     if (cjk_font_id != -1) {
       ui_families.append(QFontDatabase::applicationFontFamilies(cjk_font_id));

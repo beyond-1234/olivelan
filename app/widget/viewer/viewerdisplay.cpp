@@ -44,7 +44,6 @@
 #include "node/gizmo/point.h"
 #include "node/gizmo/polygon.h"
 #include "node/gizmo/screen.h"
-#include "ui/style/capcutstyleconfig.h"
 #include "ui/style/designtokenregistry.h"
 #include "window/mainwindow/mainwindow.h"
 

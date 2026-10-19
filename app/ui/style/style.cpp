@@ -139,10 +139,14 @@ void StyleManager::Init()
 
   QString config_style = OLIVE_CONFIG("Style").toString();
 
+  // ThemeManager is the single authoritative theme-application path. It will
+  // load the palette, tokens, icons and compiled stylesheet after this. Set
+  // the requested id now so Initialize() can resolve it without applying a
+  // half-processed built-in stylesheet first.
   if (config_style.isEmpty() || !available_themes_.contains(config_style)) {
-    SetStyle(kDefaultStyle);
+    SetCurrentStyleId(kDefaultStyle);
   } else {
-    SetStyle(config_style);
+    SetCurrentStyleId(config_style);
   }
 }
 

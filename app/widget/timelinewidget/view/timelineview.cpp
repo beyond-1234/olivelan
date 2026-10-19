@@ -33,7 +33,7 @@
 #include "panel/panelmanager.h"
 #include "panel/timeline/timeline.h"
 #include "ui/colorcoding.h"
-#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokennames.h"
 #include "ui/style/metrostyleconfig.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/timelinewidget/timelinewidget.h"
@@ -50,11 +50,11 @@ QColor GetTrackTypeColor(Track::Type type, const QColor &fallback)
 
   switch (type) {
   case Track::kVideo:
-    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackVideo), fallback);
+    return registry->GetColor(QString::fromLatin1(tokens::kTrackVideo), fallback);
   case Track::kAudio:
-    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackAudio), fallback);
+    return registry->GetColor(QString::fromLatin1(tokens::kTrackAudio), fallback);
   case Track::kSubtitle:
-    return registry->GetColor(QString::fromLatin1(capcut::kTokenTrackSubtitle), fallback);
+    return registry->GetColor(QString::fromLatin1(tokens::kTrackSubtitle), fallback);
   default:
     break;
   }
@@ -494,7 +494,7 @@ void TimelineView::DrawBlock(QPainter *painter, bool foreground, Block *block, q
     // Transitions are visual effects even though Olive stores them on a video
     // track, so give them the effect colour when type colours are active.
     if (use_track_colors && dynamic_cast<TransitionBlock*>(block)) {
-      block_base = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackEffect), block_base);
+      block_base = registry->GetColor(QString::fromLatin1(tokens::kTrackEffect), block_base);
     }
 
     QColor shadow_color = block_base.darker(use_track_colors ? 155 : 200);

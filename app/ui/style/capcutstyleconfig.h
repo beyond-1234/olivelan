@@ -27,15 +27,6 @@ namespace capcut {
 constexpr const char *kThemeName = "olive-capcut";
 constexpr const char *kThemeDisplayName = "CapCut Studio";
 
-// Design-token keys shared by the theme file and custom-painted widgets.
-constexpr const char *kTokenTrackVideo = "color.track.video";
-constexpr const char *kTokenTrackAudio = "color.track.audio";
-constexpr const char *kTokenTrackSubtitle = "color.track.subtitle";
-constexpr const char *kTokenTrackSticker = "color.track.sticker";
-constexpr const char *kTokenTrackEffect = "color.track.effect";
-constexpr const char *kTokenPlayhead = "color.timeline.playhead";
-constexpr const char *kTokenKeyframe = "color.keyframe";
-
 }
 }
 

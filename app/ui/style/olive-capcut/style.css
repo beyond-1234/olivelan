@@ -37,7 +37,6 @@
 /* ---------- Typography & palette baseline ---------- */
 QWidget {
   color: #F2F4F7;
-  font-family: "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   font-size: 9pt;
   selection-background-color: #00C4CC;
   selection-color: #041719;

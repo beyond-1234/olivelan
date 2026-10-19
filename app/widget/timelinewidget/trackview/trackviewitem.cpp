@@ -33,7 +33,7 @@
 #include "core.h"
 #include "timeline/timelineundogeneral.h"
 #include "ui/icons/icons.h"
-#include "ui/style/capcutstyleconfig.h"
+#include "ui/style/designtokennames.h"
 #include "ui/style/designtokenregistry.h"
 #include "widget/menu/menu.h"
 
@@ -101,13 +101,13 @@ void TrackViewItem::paintEvent(QPaintEvent *event)
     QColor color;
     switch (track_->type()) {
     case Track::kVideo:
-      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackVideo), Qt::transparent);
+      color = registry->GetColor(QString::fromLatin1(tokens::kTrackVideo), Qt::transparent);
       break;
     case Track::kAudio:
-      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackAudio), Qt::transparent);
+      color = registry->GetColor(QString::fromLatin1(tokens::kTrackAudio), Qt::transparent);
       break;
     case Track::kSubtitle:
-      color = registry->GetColor(QString::fromLatin1(capcut::kTokenTrackSubtitle), Qt::transparent);
+      color = registry->GetColor(QString::fromLatin1(tokens::kTrackSubtitle), Qt::transparent);
       break;
     default:
       break;

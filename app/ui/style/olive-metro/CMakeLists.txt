@@ -51,7 +51,7 @@ foreach(ICON_FILE ${STYLE_RESOURCES})
   string(APPEND QRC_BODY "<file>png/${ICON_FILE}</file>\n")
 endforeach()
 
-foreach(EXTRA_FILE palette.ini style.css)
+foreach(EXTRA_FILE manifest.json palette.ini style.css)
   string(APPEND QRC_BODY "<file>${EXTRA_FILE}</file>\n")
   configure_file("${EXTRA_FILE}" "${EXTRA_FILE}" COPYONLY)
 endforeach()
