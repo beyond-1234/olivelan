@@ -2,6 +2,8 @@
 
 #include <cuda_fp16.h>
 
+#include "preview_scale.h"
+
 extern "C" {
 #include <libavutil/pixfmt.h>
 }
@@ -25,8 +27,10 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
                                         const uint8_t *uv_plane,
                                         int uv_pitch,
                                         cudaSurfaceObject_t output_surface,
-                                        int width,
-                                        int height,
+                                        int source_width,
+                                        int source_height,
+                                        int output_width,
+                                        int output_height,
                                         int color_space,
                                         bool full_range,
                                         int dst_x,
@@ -34,19 +38,24 @@ __global__ void Nv12ToRgbaSurfaceKernel(const uint8_t *y_plane,
 {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
+  if (x >= output_width || y >= output_height) {
     return;
   }
 
+  // Divider-aware preview: map this output sample to the centre of its source footprint.
+  // With divider == 1 this is the identity mapping.
+  const int source_x = olive::MapPreviewSourceCoordinate(x, output_width, source_width);
+  const int source_y = olive::MapPreviewSourceCoordinate(y, output_height, source_height);
+
   // Access Y plane strictly respecting driver line pitch
-  const float sample_y = static_cast<float>(y_plane[y * y_pitch + x]);
+  const float sample_y = static_cast<float>(y_plane[source_y * y_pitch + source_x]);
 
   // Robust UV subsampling using bitwise ops to round down to even index
-  const int uv_x = (x >> 1) << 1;
-  const int uv_y = y >> 1;
+  const int uv_x = (source_x >> 1) << 1;
+  const int uv_y = source_y >> 1;
 
-  // Boundary clamp: ensure (uv_x + 1) does not exceed valid line pitch
-  const int safe_uv_x = (uv_x + 1 < uv_pitch) ? uv_x : max(0, uv_pitch - 2);
+  // Boundary clamp: ensure (uv_x + 1) does not exceed the source plane
+  const int safe_uv_x = (uv_x + 1 < source_width) ? uv_x : max(0, source_width - 2);
 
   const float u = static_cast<float>(uv_plane[uv_y * uv_pitch + safe_uv_x]) - 128.0f;
   const float v = static_cast<float>(uv_plane[uv_y * uv_pitch + safe_uv_x + 1]) - 128.0f;
@@ -170,8 +179,10 @@ __global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
                                         const uint16_t *uv_plane,
                                         int uv_pitch_bytes,
                                         cudaSurfaceObject_t output_surface,
-                                        int width,
-                                        int height,
+                                        int source_width,
+                                        int source_height,
+                                        int output_width,
+                                        int output_height,
                                         int color_space,
                                         bool full_range,
                                         int dst_x,
@@ -179,9 +190,12 @@ __global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
 {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
+  if (x >= output_width || y >= output_height) {
     return;
   }
+
+  const int source_x = olive::MapPreviewSourceCoordinate(x, output_width, source_width);
+  const int source_y = olive::MapPreviewSourceCoordinate(y, output_height, source_height);
 
   const int y_stride = y_pitch_bytes / sizeof(uint16_t);
   const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
@@ -189,7 +203,8 @@ __global__ void P010ToRgbaSurfaceKernel(const uint16_t *y_plane,
   float red;
   float green;
   float blue;
-  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, x, y, color_space, full_range, red, green, blue);
+  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, source_x, source_y,
+                  color_space, full_range, red, green, blue);
 
   const uchar4 rgba = make_uchar4(ClampByte(red), ClampByte(green), ClampByte(blue), 255);
 
@@ -206,8 +221,10 @@ __global__ void P010ToRgba16fSurfaceKernel(const uint16_t *y_plane,
                                            const uint16_t *uv_plane,
                                            int uv_pitch_bytes,
                                            cudaSurfaceObject_t output_surface,
-                                           int width,
-                                           int height,
+                                           int source_width,
+                                           int source_height,
+                                           int output_width,
+                                           int output_height,
                                            int color_space,
                                            bool full_range,
                                            int dst_x,
@@ -215,9 +232,12 @@ __global__ void P010ToRgba16fSurfaceKernel(const uint16_t *y_plane,
 {
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
+  if (x >= output_width || y >= output_height) {
     return;
   }
+
+  const int source_x = olive::MapPreviewSourceCoordinate(x, output_width, source_width);
+  const int source_y = olive::MapPreviewSourceCoordinate(y, output_height, source_height);
 
   const int y_stride = y_pitch_bytes / sizeof(uint16_t);
   const int uv_stride = uv_pitch_bytes / sizeof(uint16_t);
@@ -225,7 +245,8 @@ __global__ void P010ToRgba16fSurfaceKernel(const uint16_t *y_plane,
   float red;
   float green;
   float blue;
-  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, x, y, color_space, full_range, red, green, blue);
+  P010SampleToRgb(y_plane, y_stride, uv_plane, uv_stride, source_x, source_y,
+                  color_space, full_range, red, green, blue);
 
   const float normalise = 1.0f / 255.0f;
   const ushort4 rgba = make_ushort4(ClampHalfBits(red * normalise),
@@ -252,20 +273,42 @@ cudaError_t OliveLaunchNv12ToRgbaSurface(const uint8_t *y_plane,
                                          int dst_x,
                                          int dst_y)
 {
-  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch <= 0 || uv_pitch <= 0) {
+  return OliveLaunchNv12ToRgbaScaledSurface(y_plane, y_pitch, uv_plane, uv_pitch,
+                                            output_surface, width, height, width, height,
+                                            color_space, full_range, dst_x, dst_y);
+}
+
+cudaError_t OliveLaunchNv12ToRgbaScaledSurface(const uint8_t *y_plane,
+                                               int y_pitch,
+                                               const uint8_t *uv_plane,
+                                               int uv_pitch,
+                                               cudaSurfaceObject_t output_surface,
+                                               int source_width,
+                                               int source_height,
+                                               int output_width,
+                                               int output_height,
+                                               int color_space,
+                                               bool full_range,
+                                               int dst_x,
+                                               int dst_y)
+{
+  if (!y_plane || !uv_plane || !output_surface || source_width <= 0 || source_height <= 0
+      || output_width <= 0 || output_height <= 0 || y_pitch <= 0 || uv_pitch <= 0) {
     return cudaErrorInvalidValue;
   }
 
   const dim3 threads(16, 16);
-  const dim3 blocks((width + threads.x - 1) / threads.x,
-                    (height + threads.y - 1) / threads.y);
+  const dim3 blocks((output_width + threads.x - 1) / threads.x,
+                    (output_height + threads.y - 1) / threads.y);
   Nv12ToRgbaSurfaceKernel<<<blocks, threads>>>(y_plane,
                                                y_pitch,
                                                uv_plane,
                                                uv_pitch,
                                                output_surface,
-                                               width,
-                                               height,
+                                               source_width,
+                                               source_height,
+                                               output_width,
+                                               output_height,
                                                color_space,
                                                full_range,
                                                dst_x,
@@ -285,20 +328,42 @@ cudaError_t OliveLaunchP010ToRgbaSurface(const uint16_t *y_plane,
                                          int dst_x,
                                          int dst_y)
 {
-  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
+  return OliveLaunchP010ToRgbaScaledSurface(y_plane, y_pitch_bytes, uv_plane, uv_pitch_bytes,
+                                            output_surface, width, height, width, height,
+                                            color_space, full_range, dst_x, dst_y);
+}
+
+cudaError_t OliveLaunchP010ToRgbaScaledSurface(const uint16_t *y_plane,
+                                               int y_pitch_bytes,
+                                               const uint16_t *uv_plane,
+                                               int uv_pitch_bytes,
+                                               cudaSurfaceObject_t output_surface,
+                                               int source_width,
+                                               int source_height,
+                                               int output_width,
+                                               int output_height,
+                                               int color_space,
+                                               bool full_range,
+                                               int dst_x,
+                                               int dst_y)
+{
+  if (!y_plane || !uv_plane || !output_surface || source_width <= 0 || source_height <= 0
+      || output_width <= 0 || output_height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
     return cudaErrorInvalidValue;
   }
 
   const dim3 threads(16, 16);
-  const dim3 blocks((width + threads.x - 1) / threads.x,
-                    (height + threads.y - 1) / threads.y);
+  const dim3 blocks((output_width + threads.x - 1) / threads.x,
+                    (output_height + threads.y - 1) / threads.y);
   P010ToRgbaSurfaceKernel<<<blocks, threads>>>(y_plane,
                                                y_pitch_bytes,
                                                uv_plane,
                                                uv_pitch_bytes,
                                                output_surface,
-                                               width,
-                                               height,
+                                               source_width,
+                                               source_height,
+                                               output_width,
+                                               output_height,
                                                color_space,
                                                full_range,
                                                dst_x,
@@ -318,20 +383,42 @@ cudaError_t OliveLaunchP010ToRgba16fSurface(const uint16_t *y_plane,
                                             int dst_x,
                                             int dst_y)
 {
-  if (!y_plane || !uv_plane || !output_surface || width <= 0 || height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
+  return OliveLaunchP010ToRgba16fScaledSurface(y_plane, y_pitch_bytes, uv_plane, uv_pitch_bytes,
+                                               output_surface, width, height, width, height,
+                                               color_space, full_range, dst_x, dst_y);
+}
+
+cudaError_t OliveLaunchP010ToRgba16fScaledSurface(const uint16_t *y_plane,
+                                                  int y_pitch_bytes,
+                                                  const uint16_t *uv_plane,
+                                                  int uv_pitch_bytes,
+                                                  cudaSurfaceObject_t output_surface,
+                                                  int source_width,
+                                                  int source_height,
+                                                  int output_width,
+                                                  int output_height,
+                                                  int color_space,
+                                                  bool full_range,
+                                                  int dst_x,
+                                                  int dst_y)
+{
+  if (!y_plane || !uv_plane || !output_surface || source_width <= 0 || source_height <= 0
+      || output_width <= 0 || output_height <= 0 || y_pitch_bytes <= 0 || uv_pitch_bytes <= 0) {
     return cudaErrorInvalidValue;
   }
 
   const dim3 threads(16, 16);
-  const dim3 blocks((width + threads.x - 1) / threads.x,
-                    (height + threads.y - 1) / threads.y);
+  const dim3 blocks((output_width + threads.x - 1) / threads.x,
+                    (output_height + threads.y - 1) / threads.y);
   P010ToRgba16fSurfaceKernel<<<blocks, threads>>>(y_plane,
                                                   y_pitch_bytes,
                                                   uv_plane,
                                                   uv_pitch_bytes,
                                                   output_surface,
-                                                  width,
-                                                  height,
+                                                  source_width,
+                                                  source_height,
+                                                  output_width,
+                                                  output_height,
                                                   color_space,
                                                   full_range,
                                                   dst_x,

@@ -21,11 +21,13 @@
 #ifndef OPENGLCONTEXT_H
 #define OPENGLCONTEXT_H
 
+#include <cstdint>
+#include <vector>
+
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
 #include <cuda_gl_interop.h>
 #include <QHash>
 #include <QMutex>
-#include <vector>
 struct AVFrame;
 #endif
 
@@ -186,6 +188,7 @@ private:
   // session that cannot do CUDA-GL interop buries its own log in identical warnings.
   bool cuda_pool_capacity_warned_ = false;
   bool cuda_pool_registration_failed_ = false;
+  bool cuda_scaled_preview_announced_ = false;
 
   int AcquireCudaPoolSlot(int width, int height, PixelFormat format);
   bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format);
@@ -235,15 +238,24 @@ private:
                                              float yuv_crv, float yuv_cbu,
                                              float yuv_cgu, float yuv_cgv);
 
-  // Persistent scratch planes for the VideoToolbox IOSurface path. Recreated only when the
-  // frame size or bit depth changes, so steady-state playback does not allocate textures.
-  void EnsureIOSurfaceScratchTextures(int width, int height, int bits_per_pixel);
+  // Persistent scratch planes for the VideoToolbox IOSurface path. Multiple sizes are cached
+  // (bounded by a VRAM budget and an LRU entry cap) so switching between differently sized
+  // clips does not destroy and recreate the same planes on every cut.
+  struct IOSurfaceScratchTexture {
+    GLuint y{0};
+    GLuint uv{0};
+    int width{0};
+    int height{0};
+    int bits_per_pixel{0};
+    qint64 bytes{0};
+    quint64 last_used{0};
+  };
+
+  IOSurfaceScratchTexture* AcquireIOSurfaceScratchTexture(int width, int height,
+                                                         int bits_per_pixel);
   void DestroyIOSurfaceScratchTextures();
-  GLuint iosurface_y_scratch_{0};
-  GLuint iosurface_uv_scratch_{0};
-  int iosurface_scratch_width_{0};
-  int iosurface_scratch_height_{0};
-  int iosurface_scratch_bits_{0};
+  std::vector<IOSurfaceScratchTexture> iosurface_scratch_pool_;
+  quint64 iosurface_scratch_clock_{0};
 
   // Phase 6 (patch 0026): double-buffered Pixel Unpack Buffer ring for asynchronous
   // CPU->GPU streaming uploads. Frame N is memcpy'd into the next PBO while the GPU

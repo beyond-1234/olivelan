@@ -20,6 +20,7 @@
 
 #include "openglrenderer.h"
 
+#include <algorithm>
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
@@ -35,6 +36,9 @@ extern "C" {
 }
 #include "cuda_nv12_to_rgba.h"
 #endif
+
+#include "preview_scale.h"
+#include "scratch_cache_policy.h"
 
 #if defined(__APPLE__)
 #include <CoreVideo/CoreVideo.h>
@@ -552,7 +556,25 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
   const bool is_10bit = (frames_context->sw_format == AV_PIX_FMT_P010);
   const PixelFormat slot_format = is_10bit ? PixelFormat::F16 : PixelFormat::U8;
 
-  const int slot_index = AcquireCudaPoolSlot(frame->width, frame->height, slot_format);
+  // Divider-aware preview: allocate and convert at the preview size, not the full frame size.
+  // Before this, the CUDA surface, pool slot and kernel all used frame->width/height while the
+  // returned Texture only *claimed* a smaller effective size - the compositor downscaled later,
+  // but NVDEC post-processing and VRAM were still paid at full resolution.
+  const PreviewScaleDimensions scale =
+      ComputePreviewScaleDimensions(frame->width, frame->height, params.divider());
+  if (scale.width <= 0 || scale.height <= 0) {
+    return nullptr;
+  }
+
+  if (!cuda_scaled_preview_announced_ && params.divider() > 1) {
+    cuda_scaled_preview_announced_ = true;
+    qInfo() << "[CUDA-NVDEC HAL] Divider-aware preview active:"
+            << scale.source_width << "x" << scale.source_height << "->"
+            << scale.width << "x" << scale.height
+            << "(divider" << params.divider() << "); surface and kernel use the preview size";
+  }
+
+  const int slot_index = AcquireCudaPoolSlot(scale.width, scale.height, slot_format);
   if (slot_index < 0) {
     return nullptr;
   }
@@ -579,25 +601,30 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
 
   if (error == cudaSuccess) {
     if (is_10bit) {
-      error = OliveLaunchP010ToRgba16fSurface(reinterpret_cast<const uint16_t*>(frame->data[0]),
-                                              frame->linesize[0],
-                                              reinterpret_cast<const uint16_t*>(frame->data[1]),
-                                              frame->linesize[1],
-                                              surface,
-                                              frame->width,
-                                              frame->height,
-                                              frame->colorspace,
-                                              frame->color_range == AVCOL_RANGE_JPEG);
+      error = OliveLaunchP010ToRgba16fScaledSurface(
+          reinterpret_cast<const uint16_t*>(frame->data[0]),
+          frame->linesize[0],
+          reinterpret_cast<const uint16_t*>(frame->data[1]),
+          frame->linesize[1],
+          surface,
+          frame->width,
+          frame->height,
+          scale.width,
+          scale.height,
+          frame->colorspace,
+          frame->color_range == AVCOL_RANGE_JPEG);
     } else {
-      error = OliveLaunchNv12ToRgbaSurface(frame->data[0],
-                                           frame->linesize[0],
-                                           frame->data[1],
-                                           frame->linesize[1],
-                                           surface,
-                                           frame->width,
-                                           frame->height,
-                                           frame->colorspace,
-                                           frame->color_range == AVCOL_RANGE_JPEG);
+      error = OliveLaunchNv12ToRgbaScaledSurface(frame->data[0],
+                                                 frame->linesize[0],
+                                                 frame->data[1],
+                                                 frame->linesize[1],
+                                                 surface,
+                                                 frame->width,
+                                                 frame->height,
+                                                 scale.width,
+                                                 scale.height,
+                                                 frame->colorspace,
+                                                 frame->color_range == AVCOL_RANGE_JPEG);
     }
   }
   if (error == cudaSuccess) {
@@ -617,8 +644,13 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
     return nullptr;
   }
 
-  // Return Texture with this as renderer so IsDummy() is false and Texture::~Texture() routes to DestroyTexture
+  // Return Texture with this as renderer so IsDummy() is false and Texture::~Texture() routes to DestroyTexture.
+  // The texture's effective size must equal the surface we just wrote (the preview size), so derive
+  // it from the frame and divider rather than trusting a possibly stale params width/height.
   VideoParams texture_params = params;
+  texture_params.set_width(frame->width);
+  texture_params.set_height(frame->height);
+  texture_params.set_divider(std::max(1, params.divider()));
   if (is_10bit) {
     texture_params.set_format(PixelFormat::F16);
   }
@@ -769,29 +801,59 @@ void OpenGLRenderer::DestroyNativeSurfacePool()
 
 extern const char* kVaapiYuvToRgbFrag;
 
-void OpenGLRenderer::EnsureIOSurfaceScratchTextures(int width, int height, int bits_per_pixel)
+OpenGLRenderer::IOSurfaceScratchTexture*
+OpenGLRenderer::AcquireIOSurfaceScratchTexture(int width, int height, int bits_per_pixel)
 {
 #if !defined(__APPLE__)
   Q_UNUSED(width);
   Q_UNUSED(height);
   Q_UNUSED(bits_per_pixel);
+  return nullptr;
 #else
   if (!functions_ || width <= 0 || height <= 0) {
-    return;
+    return nullptr;
   }
 
   if (bits_per_pixel != 8 && bits_per_pixel != 10) {
     bits_per_pixel = 8;
   }
 
-  if (iosurface_y_scratch_ && iosurface_uv_scratch_
-      && iosurface_scratch_width_ == width
-      && iosurface_scratch_height_ == height
-      && iosurface_scratch_bits_ == bits_per_pixel) {
-    return;
+  ++iosurface_scratch_clock_;
+
+  // Exact hit: keep the same planes for steady-state playback of this size.
+  for (IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+    if (entry.width == width && entry.height == height
+        && entry.bits_per_pixel == bits_per_pixel) {
+      entry.last_used = iosurface_scratch_clock_;
+      return &entry;
+    }
   }
 
-  DestroyIOSurfaceScratchTextures();
+  const int64_t required_bytes = IOSurfaceScratchBytes(width, height, bits_per_pixel);
+
+  std::vector<ScratchCacheEntryInfo> cache_info;
+  cache_info.reserve(iosurface_scratch_pool_.size());
+  for (const IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+    cache_info.push_back({entry.bytes, entry.last_used});
+  }
+
+  std::vector<int> evictions = PlanScratchCacheEvictions(
+      cache_info, required_bytes, kIOSurfaceScratchDefaultBudgetBytes,
+      kIOSurfaceScratchDefaultMaxEntries);
+
+  // Erase from the back so earlier indices remain valid. The selected scratch planes are not
+  // referenced by any returned texture: they are only sampled while compositing this frame.
+  std::sort(evictions.begin(), evictions.end(), [](int lhs, int rhs) { return lhs > rhs; });
+  for (int index : evictions) {
+    IOSurfaceScratchTexture& entry = iosurface_scratch_pool_[index];
+    if (entry.y) {
+      functions_->glDeleteTextures(1, &entry.y);
+    }
+    if (entry.uv) {
+      functions_->glDeleteTextures(1, &entry.uv);
+    }
+    iosurface_scratch_pool_.erase(iosurface_scratch_pool_.begin() + index);
+  }
 
   const int chroma_width = (width + 1) / 2;
   const int chroma_height = (height + 1) / 2;
@@ -814,32 +876,56 @@ void OpenGLRenderer::EnsureIOSurfaceScratchTextures(int width, int height, int b
                              0, format, upload_type, nullptr);
   };
 
-  create_plane(&iosurface_y_scratch_, y_internal, GL_RED, width, height);
-  create_plane(&iosurface_uv_scratch_, uv_internal, GL_RG, chroma_width, chroma_height);
+  IOSurfaceScratchTexture entry;
+  entry.width = width;
+  entry.height = height;
+  entry.bits_per_pixel = bits_per_pixel;
+  entry.bytes = required_bytes;
+
+  create_plane(&entry.y, y_internal, GL_RED, width, height);
+  create_plane(&entry.uv, uv_internal, GL_RG, chroma_width, chroma_height);
 
   functions_->glBindTexture(GL_TEXTURE_2D, previous_texture);
 
-  iosurface_scratch_width_ = width;
-  iosurface_scratch_height_ = height;
-  iosurface_scratch_bits_ = bits_per_pixel;
+  if (!entry.y || !entry.uv) {
+    if (entry.y) {
+      functions_->glDeleteTextures(1, &entry.y);
+    }
+    if (entry.uv) {
+      functions_->glDeleteTextures(1, &entry.uv);
+    }
+    return nullptr;
+  }
+
+  entry.last_used = iosurface_scratch_clock_;
+  iosurface_scratch_pool_.push_back(entry);
+
+  // Only fires when a new size enters the cache, not per frame. This is the point a tester can
+  // watch to confirm that switching between known clip sizes reuses planes instead of rebuilding.
+  qInfo() << "[VideoToolbox-Pool] Cached new IOSurface scratch set"
+          << width << "x" << height << "bits" << bits_per_pixel
+          << "(" << iosurface_scratch_pool_.size() << "set(s) retained)";
+
+  return &iosurface_scratch_pool_.back();
 #endif
 }
 
 void OpenGLRenderer::DestroyIOSurfaceScratchTextures()
 {
   if (functions_) {
-    if (iosurface_y_scratch_) {
-      functions_->glDeleteTextures(1, &iosurface_y_scratch_);
-    }
-    if (iosurface_uv_scratch_) {
-      functions_->glDeleteTextures(1, &iosurface_uv_scratch_);
+    for (IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+      if (entry.y) {
+        functions_->glDeleteTextures(1, &entry.y);
+        entry.y = 0;
+      }
+      if (entry.uv) {
+        functions_->glDeleteTextures(1, &entry.uv);
+        entry.uv = 0;
+      }
     }
   }
-  iosurface_y_scratch_ = 0;
-  iosurface_uv_scratch_ = 0;
-  iosurface_scratch_width_ = 0;
-  iosurface_scratch_height_ = 0;
-  iosurface_scratch_bits_ = 0;
+  iosurface_scratch_pool_.clear();
+  iosurface_scratch_clock_ = 0;
 }
 
 TexturePtr OpenGLRenderer::CompositeTextureFromYuvTextures(const VideoParams &params,
@@ -939,8 +1025,8 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
   CGLContextObj cgl_ctx = CGLGetCurrentContext();
   if (!cgl_ctx) return nullptr;
 
-  EnsureIOSurfaceScratchTextures(width, height, bits_per_pixel);
-  if (!iosurface_y_scratch_ || !iosurface_uv_scratch_) {
+  IOSurfaceScratchTexture* scratch = AcquireIOSurfaceScratchTexture(width, height, bits_per_pixel);
+  if (!scratch || !scratch->y || !scratch->uv) {
     return nullptr;
   }
 
@@ -1026,8 +1112,8 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
     return complete;
   };
 
-  const bool y_copied = blit_plane(y_rect, iosurface_y_scratch_, width, height);
-  const bool uv_copied = blit_plane(uv_rect, iosurface_uv_scratch_, chroma_width, chroma_height);
+  const bool y_copied = blit_plane(y_rect, scratch->y, width, height);
+  const bool uv_copied = blit_plane(uv_rect, scratch->uv, chroma_width, chroma_height);
 
   functions_->glDeleteTextures(1, &y_rect);
   functions_->glDeleteTextures(1, &uv_rect);
@@ -1036,7 +1122,7 @@ TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params,
     return nullptr;
   }
 
-  return CompositeTextureFromYuvTextures(params, iosurface_y_scratch_, iosurface_uv_scratch_,
+  return CompositeTextureFromYuvTextures(params, scratch->y, scratch->uv,
                                          width, height, bits_per_pixel, full_range,
                                          yuv_crv, yuv_cbu, yuv_cgu, yuv_cgv);
 #endif
