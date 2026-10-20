@@ -23,6 +23,7 @@
 
 #include <QFile>
 #include <QLabel>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTimer>
@@ -221,6 +222,7 @@ protected:
 
   bool floating_controls_;
   bool floating_controls_animated_;
+  QPropertyAnimation* floating_controls_animation_;
 
   ViewerDisplayWidget* display_widget() const
   {

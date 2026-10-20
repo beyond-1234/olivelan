@@ -199,12 +199,17 @@ void Config::Load()
   QXmlStreamReader reader(&config_file);
 
   QString config_version;
+  bool has_follow_system_setting = false;
 
   while (XMLReadNextStartElement(&reader)) {
     if (reader.name() == QStringLiteral("Configuration")) {
       while (XMLReadNextStartElement(&reader)) {
         QString key = reader.name().toString();
         QString value = reader.readElementText();
+
+        if (key == QStringLiteral("AudioOutputFollowSystem")) {
+          has_follow_system_setting = true;
+        }
 
         if (key == QStringLiteral("Version")) {
           config_version = value;
@@ -261,6 +266,18 @@ void Config::Load()
       qCritical().noquote() << message;
     }
     current_config_.SetDefaults();
+  } else {
+#if defined(__APPLE__)
+    // Existing configs predate the follow-system option and may deliberately pin a device.
+    // Keep that choice instead of silently migrating them to the OS default. A genuinely new
+    // config never reaches this branch (the file does not exist yet), so it keeps the macOS
+    // default of following the system route.
+    if (!has_follow_system_setting) {
+      current_config_.SetEntryInternal(QStringLiteral("AudioOutputFollowSystem"),
+                                       NodeValue::kBoolean,
+                                       false);
+    }
+#endif
   }
 
   config_file.close();

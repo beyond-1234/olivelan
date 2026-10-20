@@ -76,7 +76,8 @@ PreferencesAudioTab::PreferencesAudioTab()
       audio_output_follow_system_->setChecked(OLIVE_CONFIG("AudioOutputFollowSystem").toBool());
       audio_output_follow_system_->setToolTip(
           tr("Use whatever output is currently selected in the operating system. "
-             "This allows Bluetooth headphones to become the default automatically."));
+             "Devices already present when Olive started switch automatically; start Olive "
+             "after connecting a new device."));
       output_layout->addWidget(audio_output_follow_system_, row, 0, 1, 2);
       audio_output_devices_->setEnabled(!audio_output_follow_system_->isChecked());
       connect(audio_output_follow_system_, &QCheckBox::toggled, audio_output_devices_,

@@ -361,6 +361,22 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
                             p.divider);
       hw_params.set_opaque(true);
 
+      // Carry the stream metadata into the hardware pipeline as a fallback. The decoded frame
+      // still wins when it describes the matrix itself, and VideoToolbox additionally reads the
+      // actual range from the CVPixelBuffer pixel format. Without these fields a decoder that
+      // leaves color metadata unspecified would fall back to the project's cached copy only.
+      const AVCodecParameters *codecpar = instance_.avstream()->codecpar;
+      hw_params.set_color_range(p.force_range);
+      hw_params.set_color_range_overridden(is_user_override);
+      hw_params.set_color_space(codecpar->color_space);
+      hw_params.set_color_primaries(codecpar->color_primaries);
+      hw_params.set_color_trc(codecpar->color_trc);
+      const QString hdr_colorspace =
+          VideoParams::GetHdrColorSpaceForTransfer(codecpar->color_trc);
+      if (!hdr_colorspace.isEmpty()) {
+        hw_params.set_colorspace(hdr_colorspace);
+      }
+
       HardwareDecodedFrame hw_frame;
       if (instance_.hw_pipeline()->ProcessHardwareFrame(f.get(), hw_params, hw_frame) && hw_frame.texture) {
         last_valid_texture_ = hw_frame.texture;

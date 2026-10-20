@@ -23,10 +23,13 @@ extern "C" {
 namespace olive {
 
 #if defined(__APPLE__)
-// Mirror VaapiDmaBufPipeline::ResolveColorMetadata(): the decoded frame is the source of truth,
-// while VideoParams is only the cached/project fallback. The YUV->RGB shader needs the matrix
-// and range that VideoToolbox actually used for this frame.
-static VideoParams ResolveColorMetadata(const VideoParams& params, const AVFrame* frame)
+// Resolve the matrix from the decoded frame and the range from the CVPixelBuffer pixel format.
+// FFmpeg exposes an unspecified frame range as MPEG when the decoder falls back to the cached
+// VideoParams, so frame->color_range alone cannot distinguish a limited NV12 surface from a
+// full-range one. The pixel format names the range VideoToolbox actually produced and is
+// therefore authoritative unless the user explicitly overrode it in Footage Properties.
+static VideoParams ResolveColorMetadata(const VideoParams& params, const AVFrame* frame,
+                                        bool pixel_format_full_range)
 {
   VideoParams effective = params;
 
@@ -52,10 +55,11 @@ static VideoParams ResolveColorMetadata(const VideoParams& params, const AVFrame
     }
   }
 
-  if (frame->color_range == AVCOL_RANGE_JPEG) {
-    effective.set_color_range(VideoParams::kColorRangeFull);
-  } else if (frame->color_range == AVCOL_RANGE_MPEG) {
-    effective.set_color_range(VideoParams::kColorRangeLimited);
+  if (params.color_range_overridden()) {
+    effective.set_color_range(params.color_range());
+  } else {
+    effective.set_color_range(pixel_format_full_range ? VideoParams::kColorRangeFull
+                                                      : VideoParams::kColorRangeLimited);
   }
 
   for (int i = 0; i < frame->nb_side_data; i++) {
@@ -169,14 +173,21 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
   // misclassify an 8-bit surface as P010 and feed the shader the wrong normalization domain.
   const OSType pixel_format = CVPixelBufferGetPixelFormatType(pixel_buffer);
   int bits_per_pixel = 0;
+  bool pixel_format_full_range = false;
   switch (pixel_format) {
   case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
-  case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
     bits_per_pixel = 8;
     break;
+  case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+    bits_per_pixel = 8;
+    pixel_format_full_range = true;
+    break;
   case kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange:
+    bits_per_pixel = 10;
+    break;
   case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
     bits_per_pixel = 10;
+    pixel_format_full_range = true;
     break;
   default:
     qWarning() << "[VideoToolbox-HAL] Unsupported CVPixelBuffer format:"
@@ -184,7 +195,8 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
     return false;
   }
 
-  const VideoParams effective = ResolveColorMetadata(params, hw_frame);
+  const VideoParams effective =
+      ResolveColorMetadata(params, hw_frame, pixel_format_full_range);
   auto* sws_coeffs = sws_getCoefficients(FFmpegUtils::GetSwsColorspaceFromAVColorSpace(
       static_cast<AVColorSpace>(effective.color_space())));
   float crv = 0.0f, cbu = 0.0f, cgu = 0.0f, cgv = 0.0f;

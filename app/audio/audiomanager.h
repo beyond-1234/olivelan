@@ -25,6 +25,7 @@
 #include <memory>
 #include <QtConcurrent/QtConcurrent>
 #include <QThread>
+#include <QTimer>
 #include <portaudio.h>
 
 #include "audiovisualwaveform.h"
@@ -94,6 +95,9 @@ signals:
 
   void OutputParamsChanged();
 
+private slots:
+  void SyncSystemOutputDevice();
+
 private:
   AudioManager();
 
@@ -115,6 +119,7 @@ private:
   PaStream *output_stream_;
   AudioParams output_params_;
   PreviewAudioDevice *output_buffer_;
+  QTimer *output_follow_timer_;
   bool fade_in_next_;
 
   PaDeviceIndex input_device_;

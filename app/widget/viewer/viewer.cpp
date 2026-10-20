@@ -87,6 +87,7 @@ ViewerWidget::ViewerWidget(ViewerDisplayWidget *display, QWidget *parent) :
   floating_controls_ = DesignTokenRegistry::instance()->GetInt(
       QStringLiteral("viewer.controls.floating"), 0);
   floating_controls_animated_ = false;
+  floating_controls_animation_ = nullptr;
 
   // Set up main layout
   QVBoxLayout* layout = new QVBoxLayout(this);
@@ -387,13 +388,28 @@ void ViewerWidget::PositionFloatingControls()
     // motion in the editing surface.
     controls_->setGeometry(target.translated(0, 8));
 
-    QPropertyAnimation *animation = new QPropertyAnimation(controls_, "geometry", controls_);
-    animation->setDuration(DesignTokenRegistry::instance()->GetInt(
+    floating_controls_animation_ = new QPropertyAnimation(controls_, "geometry", this);
+    floating_controls_animation_->setDuration(DesignTokenRegistry::instance()->GetInt(
         QStringLiteral("motion.duration.ms"), 200));
-    animation->setEasingCurve(QEasingCurve::OutCubic);
-    animation->setStartValue(target.translated(0, 8));
-    animation->setEndValue(target);
-    animation->start(QAbstractAnimation::DeleteWhenStopped);
+    floating_controls_animation_->setEasingCurve(QEasingCurve::OutCubic);
+    floating_controls_animation_->setStartValue(target.translated(0, 8));
+    floating_controls_animation_->setEndValue(target);
+    QPropertyAnimation *animation = floating_controls_animation_;
+    connect(animation, &QPropertyAnimation::finished, this, [this, animation]() {
+      if (floating_controls_animation_ == animation) {
+        floating_controls_animation_ = nullptr;
+      }
+      animation->deleteLater();
+    });
+    animation->start();
+  } else if (floating_controls_animation_
+             && floating_controls_animation_->state() == QAbstractAnimation::Running) {
+    // The first showEvent has already started the entrance animation. A deferred layout pass or
+    // a resize must retarget that animation rather than setGeometry() it (which would stop the
+    // animation mid-flight and make the controls jump/off-center on first display).
+    if (floating_controls_animation_->endValue().toRect() != target) {
+      floating_controls_animation_->setEndValue(target);
+    }
   } else {
     controls_->setGeometry(target);
   }
