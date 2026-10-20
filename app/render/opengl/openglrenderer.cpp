@@ -574,6 +574,16 @@ TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params,
             << "(divider" << params.divider() << "); surface and kernel use the preview size";
   }
 
+  if (!cuda_color_metadata_announced_) {
+    cuda_color_metadata_announced_ = true;
+    qInfo() << "[CUDA-NVDEC HAL] Frame colour metadata:"
+            << scale.source_width << "x" << scale.source_height
+            << "bits" << (is_10bit ? 10 : 8)
+            << "range" << (frame->color_range == AVCOL_RANGE_JPEG ? "full" : "limited")
+            << "matrix" << frame->colorspace
+            << "transfer" << frame->color_trc;
+  }
+
   const int slot_index = AcquireCudaPoolSlot(scale.width, scale.height, slot_format);
   if (slot_index < 0) {
     return nullptr;

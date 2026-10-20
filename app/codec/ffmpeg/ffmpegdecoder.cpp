@@ -44,6 +44,7 @@ extern "C" {
 #include <QThread>
 #include <QtConcurrent/QtConcurrent>
 
+#include "codec/decode_input_policy.h"
 #include "codec/hal/gpu_environment_probe.h"
 
 #include "codec/planarfiledevice.h"
@@ -495,6 +496,18 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
               || avstream->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE)) {
 
         if (avstream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+
+          const int dovi_profile = GetDoviProfile(avstream->codecpar);
+          if (dovi_profile == 5) {
+            qCritical() << "[FFmpegDecoder] Refusing Dolby Vision Profile 5 stream"
+                        << filename << "stream" << i
+                        << "- it uses IPT/ICtCp without an HDR10/HLG base layer;"
+                        << "transcode to HDR10 or HLG before importing.";
+            continue;
+          } else if (dovi_profile != 0) {
+            qInfo() << "[FFmpegDecoder] Dolby Vision profile" << dovi_profile
+                    << "detected; RPU is not processed, using the base layer.";
+          }
 
           AVPixelFormat compatible_pix_fmt = AV_PIX_FMT_NONE;
 
@@ -1306,6 +1319,22 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   // Get reference to correct AVStream
   avstream_ = fmt_ctx_->streams[stream_index];
+
+  // Refuse Profile 5 before creating a decoder or hardware pipeline. Its base layer is IPT,
+  // not YCbCr, and no path in this tree applies the Dolby RPU; decoding it would silently
+  // paint wrong colours. Existing projects with such a clip fail loudly (and stay offline)
+  // instead of looking "successful" with corrupt colour.
+  if (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+    const int dovi_profile = GetDoviProfile(avstream_->codecpar);
+    if (dovi_profile == 5) {
+      qCritical() << "[FFmpegDecoder] Dolby Vision Profile 5 is not supported:"
+                  << filename << "- transcode to HDR10 or HLG before importing.";
+      return false;
+    } else if (dovi_profile != 0) {
+      qInfo() << "[FFmpegDecoder] Dolby Vision profile" << dovi_profile
+              << "detected; RPU is not processed, using the base layer.";
+    }
+  }
 
   // Find decoder
   const AVCodec* codec = avcodec_find_decoder(avstream_->codecpar->codec_id);

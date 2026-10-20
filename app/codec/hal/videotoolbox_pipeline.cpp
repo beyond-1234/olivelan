@@ -4,11 +4,13 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/mastering_display_metadata.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include <atomic>
 
 #include <QDebug>
+#include "codec/decode_input_policy.h"
 #include "common/ffmpegutils.h"
 #include "render/opengl/openglrenderer.h"
 
@@ -104,6 +106,14 @@ bool VideoToolboxPipeline::ProbeAndInitialize(AVCodecContext* codec_ctx, int max
   return false;
 #else
   if (!codec_ctx) {
+    return false;
+  }
+
+  if (!IsVideoToolboxBiPlanar420Input(codec_ctx->codec_id, codec_ctx->pix_fmt)) {
+    qWarning() << "[VideoToolbox-HAL] Input layout" << av_get_pix_fmt_name(codec_ctx->pix_fmt)
+               << "for codec" << avcodec_get_name(codec_ctx->codec_id)
+               << "is not a 4:2:0 bi-planar format; refusing VideoToolbox import"
+               << "(route to software/Tier 3 instead).";
     return false;
   }
 

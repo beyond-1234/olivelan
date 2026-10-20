@@ -189,6 +189,7 @@ private:
   bool cuda_pool_capacity_warned_ = false;
   bool cuda_pool_registration_failed_ = false;
   bool cuda_scaled_preview_announced_ = false;
+  bool cuda_color_metadata_announced_ = false;
 
   int AcquireCudaPoolSlot(int width, int height, PixelFormat format);
   bool AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format);
