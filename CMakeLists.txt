@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
 project(olive-editor VERSION 0.2.0 LANGUAGES C CXX)
 
@@ -250,12 +250,17 @@ if (UNIX AND NOT APPLE)
   list(APPEND QT_LIBRARIES DBus)
 endif()
 
-find_package(Qt6 6.2 REQUIRED
+# Phase 10/14 baseline: Qt 6.6 is the minimum that keeps QZipReader in
+# QtCore/private across supported distributions. Product builds pin Qt 6.8 LTS;
+# Ubuntu 24.04's system Qt 6.4.2 is no longer a supported build baseline.
+find_package(Qt6 6.6 REQUIRED
   COMPONENTS
     ${QT_LIBRARIES}
   OPTIONAL_COMPONENTS
     Network
 )
+
+message(STATUS "Qt6 baseline: minimum 6.6, found ${Qt6_VERSION}")
 
 if (NOT Qt6Network_FOUND)
   message("   Qt6::Network module not found, crash reporting will be disabled.")
