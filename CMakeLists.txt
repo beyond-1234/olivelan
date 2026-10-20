@@ -194,6 +194,10 @@ list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 # Configure with -DOLIVE_ENABLE_OCIO=ON to restore the full OpenColorIO backend,
 # which is also the reference the colour-equivalence gate compares against.
 #
+# Phase 10: prefer the modern OpenColorIO package config (2.2+) and fall back to
+# cmake/FindOpenColorIO.cmake for older package-manager layouts. OCIO is a colour
+# evaluation dependency only; do not reintroduce OpenImageIO/OpenEXR here.
+#
 # HONESTY NOTE (patch 0043): the built-in engine has NOT yet been measured against
 # the OpenColorIO golden at the A-class gate (mean dE00 < 1.0, PSNR > 45 dB) - that
 # requires a GPU session. This default therefore selects an engine whose
@@ -202,9 +206,26 @@ list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 option(OLIVE_ENABLE_OCIO "Enable the full OpenColorIO colour backend" OFF)
 
 if(OLIVE_ENABLE_OCIO)
-  find_package(OpenColorIO 2.1.1 REQUIRED)
-  list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
-  list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+  # Prefer the upstream CMake package (OpenColorIO::OpenColorIO), which carries
+  # include directories, transitive dependencies and the correct platform runtime.
+  find_package(OpenColorIO 2.2.0 CONFIG QUIET)
+
+  if(NOT OpenColorIO_FOUND)
+    # Fallback for distributions that only ship headers/libraries (or an older
+    # module layout). The module lives in cmake/FindOpenColorIO.cmake.
+    find_package(OpenColorIO 2.2.0 REQUIRED MODULE)
+  endif()
+
+  if(TARGET OpenColorIO::OpenColorIO)
+    list(APPEND OLIVE_LIBRARIES OpenColorIO::OpenColorIO)
+  elseif(OpenColorIO_LIBRARIES)
+    list(APPEND OLIVE_LIBRARIES ${OpenColorIO_LIBRARIES})
+    list(APPEND OLIVE_INCLUDE_DIRS ${OpenColorIO_INCLUDE_DIRS})
+  else()
+    list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
+    list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+  endif()
+
   list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_OCIO)
 endif()
 

@@ -309,7 +309,17 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       OCIO::GpuShaderDesc::TextureType channel = OCIO::GpuShaderDesc::TEXTURE_RGB_CHANNEL;
       OCIO::Interpolation interpolation = OCIO::INTERP_LINEAR;
 
+#if OCIO_VERSION_HEX >= 0x02030000
+      // OCIO 2.3 added TextureDimensions to the GpuShaderDesc texture query. The
+      // texture storage is still width x height, so keep using that below; the
+      // dimension flag only tells clients whether the generated sampler is 1D or 2D.
+      OCIO::GpuShaderDesc::TextureDimensions dimensions =
+          OCIO::GpuShaderDesc::TEXTURE_1D;
+      shader_desc->getTexture(i, tex_name, sampler_name, width, height, channel,
+                              dimensions, interpolation);
+#else
       shader_desc->getTexture(i, tex_name, sampler_name, width, height, channel, interpolation);
+#endif
 
       if (!tex_name || !*tex_name
           || !sampler_name || !*sampler_name
