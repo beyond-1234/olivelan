@@ -24,6 +24,7 @@
 #include <atomic>
 #include <memory>
 #include <QtConcurrent/QtConcurrent>
+#include <QElapsedTimer>
 #include <QThread>
 #include <QTimer>
 #include <portaudio.h>
@@ -107,6 +108,8 @@ private:
 
   void CloseOutputStream();
 
+  bool RefreshPortAudioDevices();
+
   int TransportFadeFrames() const;
   QByteArray MakeFadeOut(int frames) const;
   void ApplyFadeIn(QByteArray &samples, int frames) const;
@@ -120,6 +123,8 @@ private:
   AudioParams output_params_;
   PreviewAudioDevice *output_buffer_;
   QTimer *output_follow_timer_;
+  QElapsedTimer output_rescan_timer_;
+  bool output_rescan_in_progress_;
   bool fade_in_next_;
 
   PaDeviceIndex input_device_;

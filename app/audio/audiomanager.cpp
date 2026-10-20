@@ -134,6 +134,16 @@ void WriteSampleFromFloat(char *data, SampleFormat fmt, float v)
   }
 }
 
+QString PortAudioDeviceName(PaDeviceIndex device)
+{
+  if (device == paNoDevice) {
+    return QString();
+  }
+
+  const PaDeviceInfo* info = Pa_GetDeviceInfo(device);
+  return info ? QString::fromUtf8(info->name) : QString();
+}
+
 #if defined(__APPLE__)
 #if defined(MAC_OS_VERSION_12_0)
 constexpr AudioObjectPropertyElement kDefaultOutputPropertyElement =
@@ -152,7 +162,7 @@ constexpr AudioObjectPropertyElement kDefaultOutputPropertyElement =
  * name against PortAudio's snapshot.
  *
  * @return True if CoreAudio answered. @p out_device is then either the matching PortAudio
- *         index or paNoDevice when the device was not present at PortAudio initialization.
+ *         index or paNoDevice when the device is missing from PortAudio's current snapshot.
  */
 bool QueryMacSystemDefaultOutputDevice(PaDeviceIndex* out_device, QString* out_name)
 {
@@ -226,7 +236,7 @@ bool QueryMacSystemDefaultOutputDevice(PaDeviceIndex* out_device, QString* out_n
   }
 
   // The default may be a device connected after PortAudio built its snapshot. Returning
-  // paNoDevice lets the caller keep the current stream and emit a one-time warning.
+  // paNoDevice lets the caller rebuild the device list and retry.
   *out_device = first_match;
   return true;
 }
@@ -709,6 +719,88 @@ void AudioManager::StopOutput()
   }
 }
 
+bool AudioManager::RefreshPortAudioDevices()
+{
+  if (output_rescan_in_progress_) {
+    return false;
+  }
+
+  if (input_stream_) {
+    // Pa_Terminate() invalidates the recording stream. Do not interrupt an active take; the
+    // caller will retry after recording stops (or the user can refresh in Preferences).
+    qWarning() << "[Audio] Cannot rebuild the device list while recording; stop recording first";
+    return false;
+  }
+
+  output_rescan_in_progress_ = true;
+
+  const QString previous_output_name = PortAudioDeviceName(output_device_);
+  const QString previous_input_name = PortAudioDeviceName(input_device_);
+
+  // The stream must be gone before Pa_Terminate(). The custom ring buffer is independent of
+  // PortAudio and survives the reinitialization.
+  CloseOutputStream();
+
+  Pa_Terminate();
+
+  const PaError init_error = Pa_Initialize();
+  if (init_error != paNoError) {
+    output_device_ = paNoDevice;
+    input_device_ = paNoDevice;
+    output_rescan_in_progress_ = false;
+    qWarning() << "[Audio] Failed to rebuild PortAudio device list:"
+               << Pa_GetErrorText(init_error);
+    return false;
+  }
+
+  // Every PaDeviceIndex is invalid after reinitialization, so remap by name.
+  input_device_ = previous_input_name.isEmpty()
+      ? Pa_GetDefaultInputDevice()
+      : FindDeviceByName(previous_input_name, false);
+
+  PaDeviceIndex resolved_output = paNoDevice;
+
+#if defined(__APPLE__)
+  // Prefer CoreAudio's live default. If it still is not exposed by PortAudio, fall through and
+  // keep the previous route rather than silently switching to an unrelated device.
+  if (OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
+    PaDeviceIndex mac_default_device = paNoDevice;
+    QString mac_default_name;
+    if (QueryMacSystemDefaultOutputDevice(&mac_default_device, &mac_default_name)) {
+      resolved_output = mac_default_device;
+    }
+  }
+#endif
+
+  if (resolved_output == paNoDevice && !previous_output_name.isEmpty()) {
+    // The live default is still absent from PortAudio. Keep the previous route until the next
+    // poll rather than jumping to an unrelated device.
+    resolved_output = FindDeviceByName(previous_output_name, true);
+  }
+
+  if (resolved_output == paNoDevice) {
+    if (OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
+      resolved_output = Pa_GetDefaultOutputDevice();
+    } else {
+      resolved_output = FindConfigDeviceByName(true);
+    }
+  }
+
+  qInfo() << "[Audio] Rebuilt PortAudio device list"
+          << "| output:" << (resolved_output == paNoDevice
+                                 ? QStringLiteral("none")
+                                 : PortAudioDeviceName(resolved_output))
+          << "| input:" << (input_device_ == paNoDevice
+                                ? QStringLiteral("none")
+                                : PortAudioDeviceName(input_device_));
+
+  SetOutputDevice(resolved_output);
+  SetInputDevice(input_device_);
+
+  output_rescan_in_progress_ = false;
+  return resolved_output != paNoDevice;
+}
+
 void AudioManager::SetOutputDevice(PaDeviceIndex device)
 {
   const PaDeviceInfo *device_info = (device == paNoDevice) ? nullptr : Pa_GetDeviceInfo(device);
@@ -732,9 +824,9 @@ void AudioManager::SetOutputDevice(PaDeviceIndex device)
 
 void AudioManager::SyncSystemOutputDevice()
 {
-  // The system default route can change at runtime (Control Center, unplugging an already-known
-  // device, etc.). PortAudio's device list is a startup snapshot, so follow devices it already
-  // knows about; a brand-new device is reported once and requires an application restart.
+  // The system default route can change at runtime (Control Center, Bluetooth connection,
+  // unplugging an already-known device, etc.). PortAudio snapshots its device list at
+  // Pa_Initialize(), so rebuild it when the new default is not in the current snapshot.
   if (!OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
     return;
   }
@@ -742,6 +834,7 @@ void AudioManager::SyncSystemOutputDevice()
   PaDeviceIndex default_device = Pa_GetDefaultOutputDevice();
 
 #if defined(__APPLE__)
+  static bool warned_unknown_device = false;
   // PortAudio caches its default device at Pa_Initialize(), so query CoreAudio directly and
   // map the result back to PortAudio's device list. This keeps the existing PortAudio stream
   // handling while making route changes visible at runtime.
@@ -749,14 +842,30 @@ void AudioManager::SyncSystemOutputDevice()
   QString mac_default_name;
   if (QueryMacSystemDefaultOutputDevice(&mac_default_device, &mac_default_name)) {
     if (mac_default_device == paNoDevice) {
-      static bool warned_unknown_device = false;
+      // A device that was not present when PortAudio initialized (e.g. Bluetooth headphones
+      // connected after Olive started) has no valid index in the snapshot. Rebuild the list and
+      // retry. Rate-limit this because Pa_Terminate()/Pa_Initialize() is relatively expensive and
+      // the OS may expose a new route a moment after it becomes the default.
+      if (!output_rescan_in_progress_
+          && (!output_rescan_timer_.isValid() || output_rescan_timer_.elapsed() >= 2000)) {
+        output_rescan_timer_.restart();
+        qInfo() << "[Audio] System default output" << mac_default_name
+                << "is not in PortAudio's device list; rebuilding it";
+        if (RefreshPortAudioDevices()) {
+          // RefreshPortAudioDevices() has already remapped and reopened the output.
+          return;
+        }
+      }
+
       if (!warned_unknown_device) {
         warned_unknown_device = true;
         qWarning() << "[Audio] System default output" << mac_default_name
-                   << "is not in PortAudio's device list; restart Olive after connecting a new device";
+                   << "is still not in PortAudio's device list; will retry automatically";
       }
       return;
     }
+
+    warned_unknown_device = false;
     default_device = mac_default_device;
   }
 #endif
@@ -785,9 +894,7 @@ void AudioManager::SetInputDevice(PaDeviceIndex device)
 
 void AudioManager::HardReset()
 {
-  CloseOutputStream();
-  Pa_Terminate();
-  Pa_Initialize();
+  RefreshPortAudioDevices();
 }
 
 bool AudioManager::StartRecording(const EncodingParams &params, QString *error_str)
@@ -887,6 +994,7 @@ AudioManager::AudioManager() :
   output_stream_(nullptr),
   output_buffer_(nullptr),
   output_follow_timer_(nullptr),
+  output_rescan_in_progress_(false),
   fade_in_next_(true),
   input_stream_(nullptr),
   input_encoder_(nullptr)
@@ -914,9 +1022,9 @@ AudioManager::AudioManager() :
   output_buffer_->open(PreviewAudioDevice::ReadWrite);
   connect(output_buffer_, &PreviewAudioDevice::Notify, this, &AudioManager::OutputNotify);
 
-  // Poll frequently enough to follow route changes made in Control Center. PortAudio snapshots
-  // its device list at Pa_Initialize(), so devices connected after startup are reported once and
-  // then require an application restart (see SyncSystemOutputDevice()).
+  // Poll frequently enough to follow route changes made in Control Center. If the live default
+  // is absent from PortAudio's snapshot (e.g. Bluetooth headphones connected after startup),
+  // SyncSystemOutputDevice() rebuilds the PortAudio device list and reopens the stream.
   output_follow_timer_ = new QTimer(this);
   output_follow_timer_->setInterval(250);
   connect(output_follow_timer_, &QTimer::timeout, this, &AudioManager::SyncSystemOutputDevice);
