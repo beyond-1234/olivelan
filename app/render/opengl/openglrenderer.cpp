@@ -1977,6 +1977,9 @@ void OpenGLRenderer::ClearDestinationInternal(double r, double g, double b, doub
 int OpenGLRenderer::GetGpuShaderLanguage() const
 {
 #ifdef OLIVE_ENABLE_OCIO
+  // ARCHITECTURAL NOTE:
+  // The GLES branches (GLSL_ES_3_0 and #version 300 es) serve as an architectural fallback stub.
+  // The active product baseline enforces Desktop OpenGL 3.2 Core (see main.cpp).
   if (context_ && context_->isOpenGLES()) {
     return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
   }
@@ -1992,8 +1995,10 @@ GLuint OpenGLRenderer::CompileShader(GLenum type, const QString &code)
 
   if (!code.startsWith(QStringLiteral("#version"))) {
     if (context_ && context_->isOpenGLES()) {
+      // OpenGL ES 3.x fallback stub (requires dedicated verification if GLES-only targets are re-enabled)
       complete_code = QStringLiteral("#version 300 es\n\nprecision highp float;\n\n");
     } else {
+      // Desktop OpenGL 3.2 Core Profile (#version 150 without illegal ES precision qualifiers)
       complete_code = QStringLiteral("#version 150\n\n");
     }
   }

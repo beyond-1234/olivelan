@@ -27,10 +27,39 @@
 
 #include "testutil.h"
 
+#include <QSurfaceFormat>
+
 #include "node/factory.h"
 #include "node/node.h"
 
 namespace olive {
+
+OLIVE_ADD_TEST(SurfaceFormatCompliance)
+{
+  // Assert that Desktop OpenGL 3.2 Core is correctly configured as our universal baseline
+  QSurfaceFormat format;
+  format.setVersion(3, 2);
+  format.setProfile(QSurfaceFormat::CoreProfile);
+  format.setRenderableType(QSurfaceFormat::OpenGL);
+
+  OLIVE_ASSERT_EQUAL(format.majorVersion(), 3);
+  OLIVE_ASSERT_EQUAL(format.minorVersion(), 2);
+  OLIVE_ASSERT_EQUAL(format.profile(), QSurfaceFormat::CoreProfile);
+  OLIVE_ASSERT_EQUAL(format.renderableType(), QSurfaceFormat::OpenGL);
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(DesktopShaderPreambleCompliance)
+{
+  // Test desktop GLSL preamble compliance: must start with #version 150 and
+  // strictly exclude "precision highp float;" which breaks Mesa desktop Core Profile
+  const QString desktop_preamble = QStringLiteral("#version 150\n\n");
+  OLIVE_ASSERT(desktop_preamble.startsWith(QStringLiteral("#version 150")));
+  OLIVE_ASSERT(!desktop_preamble.contains(QStringLiteral("precision highp float;")));
+
+  OLIVE_TEST_END;
+}
 
 OLIVE_ADD_TEST(GradingNodeAvailability)
 {

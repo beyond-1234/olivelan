@@ -212,7 +212,15 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     shader_desc->setResourcePrefix("ocio_");
 
     // Generate shader
-    ColorProcessorOCIO::GetProcessor(color_job.GetColorProcessor().get())->getDefaultGPUProcessor()->extractGpuShaderInfo(shader_desc);
+    auto proc = color_job.GetColorProcessor();
+    auto ocio_proc = proc ? ColorProcessorOCIO::GetProcessor(proc.get()) : nullptr;
+    auto gpu_proc = ocio_proc ? ocio_proc->getDefaultGPUProcessor() : nullptr;
+    if (!gpu_proc) {
+      qWarning() << "[Color] ColorProcessor has no valid GPU processor; bypassing color transform";
+      return false;
+    }
+
+    gpu_proc->extractGpuShaderInfo(shader_desc);
 
     ShaderCode code;
     if (const Node *shader_src = color_job.CustomShaderSource()) {
