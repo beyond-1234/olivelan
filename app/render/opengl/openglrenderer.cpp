@@ -30,6 +30,11 @@
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 
+#ifdef OLIVE_ENABLE_OCIO
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+#endif
+
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
 extern "C" {
 #include <libavutil/hwcontext.h>
@@ -1969,17 +1974,28 @@ void OpenGLRenderer::ClearDestinationInternal(double r, double g, double b, doub
   functions_->glClear(GL_COLOR_BUFFER_BIT);
 }
 
+int OpenGLRenderer::GetGpuShaderLanguage() const
+{
+#ifdef OLIVE_ENABLE_OCIO
+  if (context_ && context_->isOpenGLES()) {
+    return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
+  }
+  return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_1_3);
+#else
+  return 0;
+#endif
+}
+
 GLuint OpenGLRenderer::CompileShader(GLenum type, const QString &code)
 {
-  static const QString shader_preamble =
-      // Use appropriate GL 3.2 shader header
-      QStringLiteral("#version 150\n\n"
-                     "precision highp float;\n\n");
-
   QString complete_code;
 
   if (!code.startsWith(QStringLiteral("#version"))) {
-    complete_code = shader_preamble;
+    if (context_ && context_->isOpenGLES()) {
+      complete_code = QStringLiteral("#version 300 es\n\nprecision highp float;\n\n");
+    } else {
+      complete_code = QStringLiteral("#version 150\n\n");
+    }
   }
 
   if (code.isEmpty()) {

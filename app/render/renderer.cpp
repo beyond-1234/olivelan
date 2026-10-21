@@ -207,7 +207,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       ocio_func_name = color_job.GetFunctionName();
     }
     auto shader_desc = OCIO::GpuShaderDesc::CreateShaderDesc();
-    shader_desc->setLanguage(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
+    shader_desc->setLanguage(static_cast<OCIO::GpuLanguage>(GetGpuShaderLanguage()));
     shader_desc->setFunctionName(ocio_func_name.toUtf8());
     shader_desc->setResourcePrefix("ocio_");
 

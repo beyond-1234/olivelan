@@ -107,7 +107,19 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
 
   }
 
-  impl_->cpu_processor = impl_->processor->getDefaultCPUProcessor();
+  if (!impl_->processor) {
+    qWarning() << "[Color] ColorProcessor failed to create processor for" << input << "->" << output
+               << "; falling back to raw identity pass-through";
+    try {
+      auto raw_config = OCIO::Config::CreateRaw();
+      impl_->processor = raw_config->getProcessor("raw", "raw");
+    } catch (...) {
+    }
+  }
+
+  if (impl_->processor) {
+    impl_->cpu_processor = impl_->processor->getDefaultCPUProcessor();
+  }
 }
 
 ColorProcessor::~ColorProcessor() = default;

@@ -312,6 +312,7 @@ int main(int argc, char *argv[])
   QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
   format.setVersion(3, 2);
   format.setProfile(QSurfaceFormat::CoreProfile);
+  format.setRenderableType(QSurfaceFormat::OpenGL);
 
   format.setDepthBufferSize(24);
   QSurfaceFormat::setDefaultFormat(format);

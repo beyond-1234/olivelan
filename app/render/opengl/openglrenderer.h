@@ -104,6 +104,8 @@ public:
 
   virtual Color GetPixelFromTexture(olive::Texture *texture, const QPointF &pt) override;
 
+  virtual int GetGpuShaderLanguage() const override;
+
 protected:
   virtual void Blit(QVariant shader,
                     olive::ShaderJob job,
