@@ -139,4 +139,22 @@ OLIVE_ADD_TEST(LinuxAudioRouteEmptyDeviceList)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(LinuxAudioRouteBlacklistSkipsFailedBridge)
+{
+  const QVector<AudioRouteDevice> devices = TypicalDesktop();
+
+  // Normally selects pipewire (id 1)
+  OLIVE_ASSERT_EQUAL(AudioRouteChoose(devices, AudioRouteDirection::Output, QString()), 1);
+
+  // If pipewire failed and is blacklisted, it must select pulse (id 2) instead of oscillating
+  auto pipewire_failed = [](int id) { return id == 1; };
+  OLIVE_ASSERT_EQUAL(AudioRouteChoose(devices, AudioRouteDirection::Output, QString(), pipewire_failed), 2);
+
+  // If both pipewire and pulse failed, it must select ALSA default (id 3)
+  auto bridges_failed = [](int id) { return id == 1 || id == 2; };
+  OLIVE_ASSERT_EQUAL(AudioRouteChoose(devices, AudioRouteDirection::Output, QString(), bridges_failed), 3);
+
+  OLIVE_TEST_END;
+}
+
 } // namespace olive

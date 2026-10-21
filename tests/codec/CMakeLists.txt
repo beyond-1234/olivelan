@@ -36,6 +36,9 @@ olive_add_test(Codec audio-processor-tests audio-processor-tests.cpp)
 # deliberately independent of PortAudio so this runs headless on every platform.
 olive_add_test(Codec linux-audio-route-tests linux-audio-route-tests.cpp)
 
+# Cross-platform Lock-Free SPSC Ring Buffer verification
+olive_add_test(Codec audio-ring-buffer-tests audio-ring-buffer-tests.cpp)
+
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.
 target_compile_definitions(

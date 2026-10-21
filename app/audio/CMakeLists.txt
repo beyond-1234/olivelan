@@ -16,6 +16,9 @@
 
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
+  audio/iaudiosink.h
+  audio/portaudiosink.cpp
+  audio/portaudiosink.h
   audio/audiomanager.cpp
   audio/audiomanager.h
   audio/audioprocessor.cpp

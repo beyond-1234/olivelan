@@ -1,68 +1,46 @@
-/***
-
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-***/
-
 #ifndef PREVIEWAUDIODEVICE_H
 #define PREVIEWAUDIODEVICE_H
 
+#include <QIODevice>
+#include <QByteArray>
+#include <atomic>
+#include <vector>
 #include <functional>
-
-#include "previewautocacher.h"
 
 namespace olive {
 
+/**
+ * @brief Lock-free Single-Producer Single-Consumer (SPSC) Ring Buffer Audio Device.
+ *
+ * Writer: Main / Playback queue thread
+ * Reader: Real-time PortAudio / CoreAudio / ALSA callback thread
+ *
+ * Guarantees zero memory allocations and zero memmove shifts inside the real-time audio callback.
+ */
 class PreviewAudioDevice : public QIODevice
 {
   Q_OBJECT
 public:
-  PreviewAudioDevice(QObject *parent = nullptr);
+  static constexpr size_t kRingBufferCapacity = 1024 * 1024 * 2; // 2 MB power of two
 
-  virtual ~PreviewAudioDevice() override;
+  explicit PreviewAudioDevice(QObject *parent = nullptr);
+  ~PreviewAudioDevice() override;
 
-  void StartQueuing();
+  bool isSequential() const override;
 
-  virtual bool isSequential() const override;
-
-  virtual qint64 readData(char *data, qint64 maxSize) override;
-
-  virtual qint64 writeData(const char *data, qint64 length) override;
+  qint64 readData(char *data, qint64 maxSize) override;
+  qint64 writeData(const char *data, qint64 length) override;
 
   int bytes_per_frame() const
   {
-    return bytes_per_frame_;
+    return bytes_per_frame_.load(std::memory_order_relaxed);
   }
 
-  void set_bytes_per_frame(int b)
-  {
-    bytes_per_frame_ = b;
-
-    if (b > 0) {
-      // Preallocate here (on the control thread) so the real-time callback never allocates.
-      last_frame_.fill('\0', b);
-    } else {
-      last_frame_.clear();
-    }
-  }
+  void set_bytes_per_frame(int b);
 
   void set_notify_interval(qint64 i)
   {
-    notify_interval_ = i;
+    notify_interval_.store(i, std::memory_order_relaxed);
   }
 
   void clear();
@@ -81,20 +59,23 @@ signals:
   void Notify();
 
 private:
-  mutable QMutex lock_;
+  void SaveLastFrame(const char *data, int len);
 
-  QByteArray buffer_;
+  std::vector<char> ring_storage_;
 
-  QByteArray last_frame_;
+  alignas(64) std::atomic<size_t> write_pos_{0};
+  alignas(64) std::atomic<size_t> read_pos_{0};
 
-  int bytes_per_frame_;
+  std::atomic<int> bytes_per_frame_{0};
+  std::atomic<qint64> notify_interval_{0};
+  std::atomic<qint64> bytes_read_{0};
 
-  qint64 notify_interval_;
-
-  qint64 bytes_read_;
-
+  // Seqlock protected last frame (max 64 bytes)
+  alignas(64) mutable std::atomic<uint32_t> last_frame_seq_{0};
+  char last_frame_buf_[64]{0};
+  int last_frame_len_{0};
 };
 
-}
+} // namespace olive
 
 #endif // PREVIEWAUDIODEVICE_H

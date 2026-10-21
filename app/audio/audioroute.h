@@ -24,6 +24,8 @@
 #include <QString>
 #include <QVector>
 
+#include <functional>
+
 namespace olive {
 
 /**
@@ -107,42 +109,54 @@ inline int AudioRouteFindByHostApi(const QVector<AudioRouteDevice> &devices,
  */
 inline int AudioRouteChoose(const QVector<AudioRouteDevice> &devices,
                             AudioRouteDirection direction,
-                            const QString &configured)
+                            const QString &configured,
+                            const std::function<bool(int)> &is_blacklisted = nullptr)
 {
   if (devices.isEmpty()) {
     return -1;
   }
 
+  auto is_usable = [&is_blacklisted](int id) {
+    return id >= 0 && (!is_blacklisted || !is_blacklisted(id));
+  };
+
   if (!AudioRouteIsAutomatic(configured)) {
     const int exact = AudioRouteFindByName(devices, configured, direction);
-    if (exact >= 0) {
+    if (is_usable(exact)) {
       return exact;
     }
   }
 
   for (const char *bridge : {"pipewire", "pulse"}) {
     const int id = AudioRouteFindByName(devices, QString::fromLatin1(bridge), direction);
-    if (id >= 0) {
+    if (is_usable(id)) {
       return id;
     }
   }
 
   const int jack = AudioRouteFindByHostApi(devices, QStringLiteral("JACK"), direction);
-  if (jack >= 0) {
+  if (is_usable(jack)) {
     return jack;
   }
 
   const int alsa_default = AudioRouteFindByName(devices, QStringLiteral("default"), direction);
-  if (alsa_default >= 0) {
+  if (is_usable(alsa_default)) {
     return alsa_default;
   }
 
   for (const AudioRouteDevice &device : devices) {
-    if (AudioRouteSupports(device, direction) && device.is_portaudio_default) {
+    if (AudioRouteSupports(device, direction) && device.is_portaudio_default && is_usable(device.id)) {
       return device.id;
     }
   }
 
+  for (const AudioRouteDevice &device : devices) {
+    if (AudioRouteSupports(device, direction) && is_usable(device.id)) {
+      return device.id;
+    }
+  }
+
+  // If every preferred device is blacklisted, fall back to any supported device without filter
   for (const AudioRouteDevice &device : devices) {
     if (AudioRouteSupports(device, direction)) {
       return device.id;

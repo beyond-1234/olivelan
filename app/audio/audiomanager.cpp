@@ -37,8 +37,9 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#include "config/config.h"
 #include "audio/audioroute.h"
+#include "audio/portaudiosink.h"
+#include "config/config.h"
 
 namespace olive {
 
@@ -46,14 +47,11 @@ namespace {
 
 constexpr int kTransportFadeMs = 5;
 
-// Diagnostic counters for the PortAudio callback. These are deliberately lock-free because the
-// callback runs on CoreAudio's real-time thread.
+// Diagnostic counters for the audio callback.
 std::atomic<quint64> g_output_callbacks{0};
 std::atomic<quint64> g_output_underruns{0};
 std::atomic<quint64> g_output_underrun_frames{0};
 std::atomic<quint64> g_output_hw_underruns{0};
-std::atomic<bool> g_output_stopping{false};
-std::atomic<bool> g_output_paused{false};
 
 bool IsFadeFormat(SampleFormat fmt)
 {
@@ -186,13 +184,14 @@ QVector<AudioRouteDevice> BuildLinuxAudioCandidates(bool is_output)
   return candidates;
 }
 
-PaDeviceIndex FindLinuxAudioDevice(bool is_output, const QString &configured)
+PaDeviceIndex FindLinuxAudioDevice(bool is_output, const QString &configured,
+                                   const std::function<bool(int)> &is_blacklisted = nullptr)
 {
   const AudioRouteDirection direction = is_output ? AudioRouteDirection::Output
                                                   : AudioRouteDirection::Input;
   const QVector<AudioRouteDevice> candidates = BuildLinuxAudioCandidates(is_output);
   return static_cast<PaDeviceIndex>(
-      AudioRouteChoose(candidates, direction, configured));
+      AudioRouteChoose(candidates, direction, configured, is_blacklisted));
 }
 #endif
 
@@ -205,17 +204,6 @@ constexpr AudioObjectPropertyElement kDefaultOutputPropertyElement =
     kAudioObjectPropertyElementMaster;
 #endif
 
-/**
- * @brief Query CoreAudio's current default output and map it to PortAudio.
- *
- * Pa_GetDefaultOutputDevice() cannot be used for live following: PortAudio's CoreAudio
- * backend reads kAudioHardwarePropertyDefaultOutputDevice once during Pa_Initialize() and
- * caches the resulting index. We therefore query CoreAudio directly, then match the device
- * name against PortAudio's snapshot.
- *
- * @return True if CoreAudio answered. @p out_device is then either the matching PortAudio
- *         index or paNoDevice when the device is missing from PortAudio's current snapshot.
- */
 bool QueryMacSystemDefaultOutputDevice(PaDeviceIndex* out_device, QString* out_name)
 {
   if (!out_device) {
@@ -241,7 +229,10 @@ bool QueryMacSystemDefaultOutputDevice(PaDeviceIndex* out_device, QString* out_n
     return false;
   }
 
-  address.mSelector = kAudioObjectPropertyName;
+  address.mSelector = kAudioDevicePropertyDeviceNameCFString;
+  address.mScope = kAudioObjectPropertyScopeGlobal;
+  address.mElement = kDefaultOutputPropertyElement;
+
   CFStringRef cf_name = nullptr;
   size = sizeof(cf_name);
   status = AudioObjectGetPropertyData(device_id, &address, 0, nullptr, &size, &cf_name);
@@ -287,8 +278,6 @@ bool QueryMacSystemDefaultOutputDevice(PaDeviceIndex* out_device, QString* out_n
     }
   }
 
-  // The default may be a device connected after PortAudio built its snapshot. Returning
-  // paNoDevice lets the caller rebuild the device list and retry.
   *out_device = first_match;
   return true;
 }
@@ -300,9 +289,7 @@ AudioManager* AudioManager::instance_ = nullptr;
 
 void AudioManager::CreateInstance()
 {
-  if (instance_ == nullptr) {
-    instance_ = new AudioManager();
-  }
+  instance_ = new AudioManager();
 }
 
 void AudioManager::DestroyInstance()
@@ -318,49 +305,17 @@ AudioManager *AudioManager::instance()
 
 void AudioManager::SetOutputNotifyInterval(int n)
 {
-  output_buffer_->set_notify_interval(n);
-}
-
-int OutputCallback(const void *input, void *output, unsigned long frameCount, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData)
-{
-  Q_UNUSED(input)
-  Q_UNUSED(timeInfo)
-
-  PreviewAudioDevice *device = static_cast<PreviewAudioDevice*>(userData);
-
-  g_output_callbacks.fetch_add(1, std::memory_order_relaxed);
-
-  if ((statusFlags & paOutputUnderflow)
-      && !g_output_stopping.load(std::memory_order_relaxed)
-      && !g_output_paused.load(std::memory_order_relaxed)) {
-    g_output_hw_underruns.fetch_add(1, std::memory_order_relaxed);
+  if (output_buffer_) {
+    output_buffer_->set_notify_interval(n);
   }
-
-  qint64 max_read = frameCount * device->bytes_per_frame();
-  qint64 read_count = device->read(reinterpret_cast<char*>(output), max_read);
-  if (read_count < max_read) {
-    memset(reinterpret_cast<uint8_t*>(output) + read_count, 0, max_read - read_count);
-
-    // During an intentional stop/pause the tail is expected to drain through zero; that is not a
-    // playback underrun and would otherwise be reported as a dropout.
-    if (!g_output_stopping.load(std::memory_order_relaxed)
-        && !g_output_paused.load(std::memory_order_relaxed)) {
-      g_output_underruns.fetch_add(1, std::memory_order_relaxed);
-      g_output_underrun_frames.fetch_add(frameCount - (read_count / std::max(1, device->bytes_per_frame())),
-                                         std::memory_order_relaxed);
-    }
-  }
-
-  if ((!g_output_paused.load(std::memory_order_relaxed) || read_count > 0)
-      && output && frameCount > 0) {
-    AudioManager::instance()->UpdateOutputPeaks(output, frameCount);
-  }
-
-  return paContinue;
 }
 
 int InputCallback(const void *input, void *output, unsigned long frameCount, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData)
 {
+  Q_UNUSED(output)
+  Q_UNUSED(timeInfo)
+  Q_UNUSED(statusFlags)
+
   FFmpegEncoder *f = static_cast<FFmpegEncoder*>(userData);
 
   AudioParams our_params = f->params().audio_params();
@@ -374,9 +329,7 @@ int InputCallback(const void *input, void *output, unsigned long frameCount, con
 bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &samples, QString *error,
                                 bool fade_out_tail)
 {
-  // Re-check the route when a stream is about to be created. While a stream is already running,
-  // the timer handles route changes; querying CoreAudio for every audio buffer is unnecessary.
-  if (output_stream_ == nullptr) {
+  if (!audio_sink_ || !audio_sink_->IsActive()) {
     SyncSystemOutputDevice();
   }
 
@@ -385,72 +338,57 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
     return false;
   }
 
-  if (output_params_ != params || output_stream_ == nullptr) {
-    // Close with the old params still in place so a transport fade (if the stream is active) is
-    // generated with the format the device is actually using.
-    CloseOutputStream();
+  if (!audio_sink_) {
+    audio_sink_ = std::make_unique<PortAudioSink>();
+  }
 
-    output_params_ = params;
+  if (output_params_ != params || !audio_sink_->IsActive()) {
+    if (output_params_ != params || audio_sink_->current_device() != output_device_) {
+      CloseOutputStream();
 
-    PaStreamParameters p = GetPortAudioParams(params, output_device_);
+      output_params_ = params;
 
-    const PaError format_support =
-        Pa_IsFormatSupported(nullptr, &p, output_params_.sample_rate());
-    if (format_support != paNoError) {
-      qWarning() << "[Audio] Output format may not be natively supported by"
-                 << PortAudioDeviceName(output_device_) << ":"
-                 << Pa_GetErrorText(format_support)
-                 << "- the host audio server will convert if possible";
-    }
+      auto audio_callback = [this](const void *input, void *output,
+                                   unsigned long frame_count,
+                                   uint32_t status_flags) -> int {
+        Q_UNUSED(input)
+        g_output_callbacks.fetch_add(1, std::memory_order_relaxed);
 
-    PaError r = Pa_OpenStream(&output_stream_, nullptr, &p, output_params_.sample_rate(), paFramesPerBufferUnspecified, paNoFlag, OutputCallback, output_buffer_);
-
-#if defined(__linux__)
-    if (r != paNoError && output_device_ != Pa_GetDefaultOutputDevice()) {
-      // A bridge device can be enumerated while its server is restarting, or an explicitly
-      // selected USB/HDMI device can disappear between the poll and the open. Try PortAudio's
-      // default route once rather than leaving playback permanently silent.
-      const PaDeviceIndex fallback = Pa_GetDefaultOutputDevice();
-      if (fallback != paNoDevice && fallback != output_device_) {
-        const PaStreamParameters fallback_params = GetPortAudioParams(params, fallback);
-        const PaError fallback_result =
-            Pa_OpenStream(&output_stream_, nullptr, &fallback_params,
-                          output_params_.sample_rate(), paFramesPerBufferUnspecified,
-                          paNoFlag, OutputCallback, output_buffer_);
-        if (fallback_result == paNoError) {
-          qWarning() << "[Audio] Failed to open" << PortAudioDeviceName(output_device_)
-                     << "(" << Pa_GetErrorText(r) << "); falling back to"
-                     << PortAudioDeviceName(fallback)
-                     << "| host API:" << PortAudioHostApiName(fallback);
-          output_device_ = fallback;
-          r = paNoError;
+        if (status_flags & paOutputUnderflow) {
+          g_output_hw_underruns.fetch_add(1, std::memory_order_relaxed);
         }
+
+        qint64 max_read = frame_count * output_buffer_->bytes_per_frame();
+        qint64 read_count = output_buffer_->read(reinterpret_cast<char*>(output), max_read);
+        if (read_count < max_read) {
+          memset(reinterpret_cast<uint8_t*>(output) + read_count, 0, max_read - read_count);
+          g_output_underruns.fetch_add(1, std::memory_order_relaxed);
+          g_output_underrun_frames.fetch_add(
+              frame_count - (read_count / std::max(1, output_buffer_->bytes_per_frame())),
+              std::memory_order_relaxed);
+        }
+
+        if (output && frame_count > 0) {
+          UpdateOutputPeaks(output, frame_count);
+        }
+
+        return paContinue;
+      };
+
+      if (!audio_sink_->Open(output_params_, output_device_, audio_callback, error)) {
+        return false;
       }
-    }
-#endif
 
-    if (r != paNoError) {
-      // Unhandled error
-      //qCritical() << "Failed to open output stream:" << Pa_GetErrorText(r);
-      if (error) *error = Pa_GetErrorText(r);
-      return false;
-    }
+      output_device_ = audio_sink_->current_device();
 
-    qInfo() << "[Audio] Opened output stream:" << output_params_.sample_rate() << "Hz,"
-            << output_params_.channel_count() << "ch,"
-            << QString::fromStdString(output_params_.format().to_string())
-            << "| device:" << (output_device_ == paNoDevice ? "none" : Pa_GetDeviceInfo(output_device_)->name)
-            << "| host API:" << PortAudioHostApiName(output_device_)
-            << "| suggested latency:" << p.suggestedLatency << "s";
+      qInfo() << "[Audio] Opened output stream:" << output_params_.sample_rate() << "Hz,"
+              << output_params_.channel_count() << "ch,"
+              << QString::fromStdString(output_params_.format().to_string())
+              << "| device:" << (output_device_ == paNoDevice ? "none" : Pa_GetDeviceInfo(output_device_)->name)
+              << "| host API:" << PortAudioHostApiName(output_device_)
+              << "| suggested latency:" << audio_sink_->suggested_latency() << "s";
 
-    output_buffer_->set_bytes_per_frame(output_params_.samples_to_bytes(1));
-
-    // Start the device while it is still silent. Starting it at the first audible sample makes
-    // CoreAudio produce a small click on some devices even when the waveform itself starts at
-    // zero; priming with silence keeps the stream alive across pause/play.
-    g_output_paused.store(true, std::memory_order_relaxed);
-    if (!Pa_IsStreamActive(output_stream_)) {
-      Pa_StartStream(output_stream_);
+      output_buffer_->set_bytes_per_frame(output_params_.samples_to_bytes(1));
     }
   }
 
@@ -466,8 +404,6 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
     }
 
     if (fade_out_tail) {
-      // Scrub chunks are the only buffers that may be followed directly by silence (when the user
-      // stops moving the playhead), so give their end the same short ramp the transport uses.
       FadeOutTail(processed, TransportFadeFrames());
     }
 
@@ -476,13 +412,8 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
 
   output_buffer_->write(*payload);
 
-  // A scrub chunk may be the last thing the user hears before the playhead stops moving. Keep the
-  // stream in the paused bookkeeping state after it drains so the callback's silence is not
-  // reported as a playback underrun. Normal playback clears this flag and is monitored normally.
-  g_output_paused.store(fade_out_tail, std::memory_order_relaxed);
-
-  if (!Pa_IsStreamActive(output_stream_)) {
-    Pa_StartStream(output_stream_);
+  if (!audio_sink_->IsActive()) {
+    audio_sink_->Start();
   }
 
   return true;
@@ -494,8 +425,6 @@ void AudioManager::ClearBufferedOutput()
     return;
   }
 
-  // If the queue is already empty the last sample is already in the device buffer. Emit a short
-  // ramp from that sample before the next scrub chunk so the device still gets a clean edge.
   if (output_buffer_->buffered_bytes() == 0) {
     const QByteArray fade = MakeFadeOut(TransportFadeFrames());
     if (!fade.isEmpty()) {
@@ -507,9 +436,6 @@ void AudioManager::ClearBufferedOutput()
     return;
   }
 
-  // Scrubbing clears the queue on every mouse event. Discarding it outright leaves the device
-  // with an abrupt edge; instead keep only a few milliseconds of the material that is about to
-  // play, ramp that to zero, and let the next chunk fade in behind it.
   output_buffer_->modify_buffer([this](QByteArray &buffer) {
     const int frames = TransportFadeFrames();
     const int frame_bytes = output_buffer_->bytes_per_frame();
@@ -529,8 +455,6 @@ void AudioManager::ClearBufferedOutput()
     FadeOutBuffer(buffer, available);
   });
 
-  // The retained prefix ends at zero, so the next chunk must start from zero rather than
-  // crossfading from whatever was last read by the callback.
   output_buffer_->reset_last_frame();
   fade_in_next_ = true;
 }
@@ -565,8 +489,6 @@ QByteArray AudioManager::MakeFadeOut(int frames) const
   char *out = fade.data();
 
   for (int i = 0; i < frames; ++i) {
-    // The first frame is the last frame actually read by the callback, so the fade connects
-    // seamlessly to whatever the device is currently playing out.
     const float gain = 1.0f - static_cast<float>(i) / static_cast<float>(frames - 1);
 
     for (int ch = 0; ch < channels; ++ch) {
@@ -604,8 +526,6 @@ void AudioManager::ApplyFadeIn(QByteArray &samples, int frames) const
   char *out = samples.data();
 
   for (int i = 0; i < frames; ++i) {
-    // Crossfade from the previous sample to the new material. On a fresh start the previous
-    // sample is zero, which produces a normal fade-in.
     const float gain = static_cast<float>(i) / static_cast<float>(frames);
 
     for (int ch = 0; ch < channels; ++ch) {
@@ -674,8 +594,6 @@ void AudioManager::FadeOutTail(QByteArray &samples, int frames) const
   char *data = samples.data();
 
   for (int i = 0; i < frames; ++i) {
-    // Ramp from unity at the start of the tail to zero on the final frame, leaving the audio
-    // before the tail untouched.
     const float gain = (frames > 1)
         ? 1.0f - static_cast<float>(i) / static_cast<float>(frames - 1)
         : 0.0f;
@@ -692,47 +610,13 @@ void AudioManager::FadeOutTail(QByteArray &samples, int frames) const
 
 PaSampleFormat AudioManager::GetPortAudioSampleFormat(SampleFormat fmt)
 {
-  switch (fmt) {
-  case SampleFormat::U8:
-  case SampleFormat::U8P:
-    return paUInt8;
-  case SampleFormat::S16:
-  case SampleFormat::S16P:
-    return paInt16;
-  case SampleFormat::S32:
-  case SampleFormat::S32P:
-    return paInt32;
-  case SampleFormat::F32:
-  case SampleFormat::F32P:
-    return paFloat32;
-  case SampleFormat::S64:
-  case SampleFormat::S64P:
-  case SampleFormat::F64:
-  case SampleFormat::F64P:
-  case SampleFormat::INVALID:
-  case SampleFormat::COUNT:
-    break;
-  }
-
-  return 0;
+  return PortAudioSink::ToPortAudioFormat(fmt);
 }
 
 void AudioManager::CloseOutputStream()
 {
-  if (output_stream_) {
-    if (Pa_IsStreamActive(output_stream_)) {
-      StopOutput();
-
-      // Unlike a normal pause, closing the device is a one-time operation: drain the fade and
-      // silence before shutting the stream down, so device changes/quit are clean too.
-      if (Pa_IsStreamActive(output_stream_)) {
-        Pa_StopStream(output_stream_);
-      }
-    }
-
-    g_output_paused.store(true, std::memory_order_relaxed);
-    Pa_CloseStream(output_stream_);
-    output_stream_ = nullptr;
+  if (audio_sink_) {
+    audio_sink_->Close();
   }
 
   if (output_buffer_) {
@@ -743,42 +627,20 @@ void AudioManager::CloseOutputStream()
 
 void AudioManager::StopOutput()
 {
-  // The stream stays open while paused and is fed silence, so mark it paused up front. This also
-  // keeps the intentional fade/drain from being reported as an underrun.
-  g_output_paused.store(true, std::memory_order_relaxed);
+  if (audio_sink_ && audio_sink_->IsActive() && output_buffer_) {
+    const QByteArray fade = MakeFadeOut(TransportFadeFrames());
 
-  if (output_stream_ && output_buffer_) {
-    if (Pa_IsStreamActive(output_stream_)) {
-      const QByteArray fade = MakeFadeOut(TransportFadeFrames());
-
-      g_output_stopping.store(true, std::memory_order_relaxed);
-
-      // Replace queued material atomically with a short ramp from the last sample the callback
-      // read down to zero. Cutting the stream at an arbitrary sample is what causes the
-      // click/pop on CoreAudio when pausing or stopping. Replacing (rather than clearing then
-      // writing) prevents the callback from observing an empty buffer in between.
+    if (!fade.isEmpty()) {
       output_buffer_->replace_buffer(fade);
-
-      if (!fade.isEmpty()) {
-        // Let the callback pull the ramp into the device buffer. After the ramp the device keeps
-        // running and simply receives silence; keeping the stream alive avoids the CoreAudio
-        // stop/start transient that remains audible even with a perfectly ramped waveform.
-        QElapsedTimer drain_timer;
-        drain_timer.start();
-        while (output_buffer_->buffered_bytes() > 0 && drain_timer.elapsed() < 100) {
-          QThread::msleep(1);
-        }
-
-        if (output_buffer_->buffered_bytes() > 0) {
-          // The callback never consumed the ramp (stalled or disconnected device); do not leave
-          // the stream in a half-running state.
-          Pa_AbortStream(output_stream_);
-        }
+      QElapsedTimer drain_timer;
+      drain_timer.start();
+      while (output_buffer_->buffered_bytes() > 0 && drain_timer.elapsed() < 25) {
+        QThread::msleep(1);
       }
-
-      g_output_paused.store(true, std::memory_order_relaxed);
-      g_output_stopping.store(false, std::memory_order_relaxed);
     }
+
+    // Stop hardware stream safely: no DC pop, no ALSA underruns
+    audio_sink_->Stop();
 
     output_buffer_->reset_last_frame();
     output_buffer_->clear();
@@ -813,8 +675,6 @@ bool AudioManager::RefreshPortAudioDevices()
   }
 
   if (input_stream_) {
-    // Pa_Terminate() invalidates the recording stream. Do not interrupt an active take; the
-    // caller will retry after recording stops (or the user can refresh in Preferences).
     qWarning() << "[Audio] Cannot rebuild the device list while recording; stop recording first";
     return false;
   }
@@ -824,8 +684,6 @@ bool AudioManager::RefreshPortAudioDevices()
   const QString previous_output_name = PortAudioDeviceName(output_device_);
   const QString previous_input_name = PortAudioDeviceName(input_device_);
 
-  // The stream must be gone before Pa_Terminate(). The custom ring buffer is independent of
-  // PortAudio and survives the reinitialization.
   CloseOutputStream();
 
   Pa_Terminate();
@@ -843,27 +701,24 @@ bool AudioManager::RefreshPortAudioDevices()
   PaDeviceIndex resolved_output = paNoDevice;
 
 #if defined(__linux__)
-  // Every PaDeviceIndex is invalid after reinitialization, so remap by name through the same
-  // Linux policy. If the old explicit device disappeared, this automatically falls back to the
-  // host bridge instead of leaving the app on a dead hardware index.
   input_device_ = FindLinuxAudioDevice(false, previous_input_name);
   if (input_device_ == paNoDevice) {
     input_device_ = FindConfigDeviceByName(false);
   }
 
-  resolved_output = FindLinuxAudioDevice(true, previous_output_name);
+  auto blacklist_filter = [this](int id) {
+    return audio_sink_ && audio_sink_->IsDeviceFailed(id);
+  };
+  resolved_output = FindLinuxAudioDevice(true, previous_output_name, blacklist_filter);
   if (resolved_output == paNoDevice) {
     resolved_output = FindConfigDeviceByName(true);
   }
 #else
-  // Every PaDeviceIndex is invalid after reinitialization, so remap by name.
   input_device_ = previous_input_name.isEmpty()
       ? Pa_GetDefaultInputDevice()
       : FindDeviceByName(previous_input_name, false);
 
 #if defined(__APPLE__)
-  // Prefer CoreAudio's live default. If it still is not exposed by PortAudio, fall through and
-  // keep the previous route rather than silently switching to an unrelated device.
   if (OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
     PaDeviceIndex mac_default_device = paNoDevice;
     QString mac_default_name;
@@ -874,8 +729,6 @@ bool AudioManager::RefreshPortAudioDevices()
 #endif
 
   if (resolved_output == paNoDevice && !previous_output_name.isEmpty()) {
-    // The live default is still absent from PortAudio. Keep the previous route until the next
-    // poll rather than jumping to an unrelated device.
     resolved_output = FindDeviceByName(previous_output_name, true);
   }
 
@@ -894,7 +747,7 @@ bool AudioManager::RefreshPortAudioDevices()
                                  : PortAudioDeviceName(resolved_output))
           << "| input:" << (input_device_ == paNoDevice
                                 ? QStringLiteral("none")
-                                : PortAudioDeviceName(input_device_));
+                                 : PortAudioDeviceName(input_device_));
 
   SetOutputDevice(resolved_output);
   SetInputDevice(input_device_);
@@ -918,20 +771,18 @@ void AudioManager::SetOutputDevice(PaDeviceIndex device)
 
   CloseOutputStream();
 
-  // Closing the stream stops the callback that normally asks the viewer for another audio
-  // buffer. Request the normal two-chunk prequeue so playback can reopen the stream on the new
-  // device without waiting for a callback notification that cannot arrive while it is closed.
   emit OutputNotify();
   emit OutputNotify();
 }
 
 void AudioManager::SyncSystemOutputDevice()
 {
+  // Do not steal or interrupt audio devices while playback is actively running!
+  if (audio_sink_ && audio_sink_->IsActive()) {
+    return;
+  }
+
 #if defined(__linux__)
-  // PortAudio caches device indices at Pa_Initialize(). An unplugged USB interface, a stopped
-  // PipeWire/Pulse server, or a container recreated without the bridge can invalidate the index.
-  // Validate it even when "follow system" is off; otherwise playback would keep writing to a
-  // stream that can never reopen.
   const PaDeviceInfo *current_info =
       (output_device_ >= 0 && output_device_ < Pa_GetDeviceCount())
           ? Pa_GetDeviceInfo(output_device_)
@@ -939,34 +790,32 @@ void AudioManager::SyncSystemOutputDevice()
   const bool invalid_output = (output_device_ == paNoDevice || !current_info
                                || current_info->maxOutputChannels <= 0);
 
+  // Missing or channel-less input devices must NEVER trigger full sound system reconstruction!
   const PaDeviceInfo *current_input_info =
       (input_device_ >= 0 && input_device_ < Pa_GetDeviceCount())
           ? Pa_GetDeviceInfo(input_device_)
           : nullptr;
-  const bool invalid_input = (input_device_ != paNoDevice
-                              && (!current_input_info
-                                  || current_input_info->maxInputChannels <= 0));
+  if (input_device_ != paNoDevice && (!current_input_info || current_input_info->maxInputChannels <= 0)) {
+    input_device_ = paNoDevice;
+  }
 
-  if ((invalid_output || invalid_input)
+  if (invalid_output
       && !output_rescan_in_progress_
       && (!output_rescan_timer_.isValid() || output_rescan_timer_.elapsed() >= 2000)) {
     output_rescan_timer_.restart();
-    qWarning() << "[Audio] Current"
-               << (invalid_output ? "output" : "input")
-               << "device is no longer available; rebuilding the route";
+    qWarning() << "[Audio] Current output device is no longer available; rebuilding the route";
     if (RefreshPortAudioDevices()) {
       return;
     }
   }
 
-  // The implicit/default setting is a request for the best host route, not a one-time choice.
-  // Keep resolving it so a server that starts after Olive (or a bridge that reappears after a
-  // restart) takes over from a temporary HDMI fallback. An explicitly selected hardware device
-  // is never stolen.
   const bool automatic_output = OLIVE_CONFIG("AudioOutputFollowSystem").toBool()
       || AudioRouteIsAutomatic(OLIVE_CONFIG_STR("AudioOutput").toString());
   if (automatic_output) {
-    const PaDeviceIndex resolved = FindLinuxAudioDevice(true, QString());
+    auto blacklist_filter = [this](int id) {
+      return audio_sink_ && audio_sink_->IsDeviceFailed(id);
+    };
+    const PaDeviceIndex resolved = FindLinuxAudioDevice(true, QString(), blacklist_filter);
     if (resolved != paNoDevice && resolved != output_device_) {
       qInfo() << "[Audio] Linux automatic output route changed; following"
               << PortAudioDeviceName(resolved)
@@ -988,9 +837,6 @@ void AudioManager::SyncSystemOutputDevice()
   return;
 
 #else
-  // The system default route can change at runtime (Control Center, Bluetooth connection,
-  // unplugging an already-known device, etc.). PortAudio snapshots its device list at
-  // Pa_Initialize(), so rebuild it when the new default is not in the current snapshot.
   if (!OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
     return;
   }
@@ -999,24 +845,16 @@ void AudioManager::SyncSystemOutputDevice()
 
 #if defined(__APPLE__)
   static bool warned_unknown_device = false;
-  // PortAudio caches its default device at Pa_Initialize(), so query CoreAudio directly and
-  // map the result back to PortAudio's device list. This keeps the existing PortAudio stream
-  // handling while making route changes visible at runtime.
   PaDeviceIndex mac_default_device = paNoDevice;
   QString mac_default_name;
   if (QueryMacSystemDefaultOutputDevice(&mac_default_device, &mac_default_name)) {
     if (mac_default_device == paNoDevice) {
-      // A device that was not present when PortAudio initialized (e.g. Bluetooth headphones
-      // connected after Olive started) has no valid index in the snapshot. Rebuild the list and
-      // retry. Rate-limit this because Pa_Terminate()/Pa_Initialize() is relatively expensive and
-      // the OS may expose a new route a moment after it becomes the default.
       if (!output_rescan_in_progress_
           && (!output_rescan_timer_.isValid() || output_rescan_timer_.elapsed() >= 2000)) {
         output_rescan_timer_.restart();
         qInfo() << "[Audio] System default output" << mac_default_name
                 << "is not in PortAudio's device list; rebuilding it";
         if (RefreshPortAudioDevices()) {
-          // RefreshPortAudioDevices() has already remapped and reopened the output.
           return;
         }
       }
@@ -1079,7 +917,6 @@ bool AudioManager::StartRecording(const EncodingParams &params, QString *error_s
 
   PaError r = Pa_OpenStream(&input_stream_, &p, nullptr, params.audio_params().sample_rate(), paFramesPerBufferUnspecified, paNoFlag, InputCallback, input_encoder_);
   if (r == paNoError) {
-    //const PaStreamInfo* info = Pa_GetStreamInfo(input_stream_);
     r = Pa_StartStream(input_stream_);
     if (r == paNoError) {
       return true;
@@ -1114,14 +951,8 @@ void AudioManager::StopRecording()
 
 PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
 {
-  // On macOS the system default output follows the user's active route (Bluetooth headphones,
-  // USB interface, etc.). Pinning the device name saved on first run keeps sending audio to the
-  // built-in speakers after the user has switched the system output. Follow the OS default unless
-  // the user explicitly turned this off in Preferences.
   if (is_output_device && OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
 #if defined(__linux__)
-    // The `pipewire`/`pulse` bridge follows the host server's default sink, unlike
-    // Pa_GetDefaultOutputDevice() which can be the first raw ALSA/HDMI device.
     const PaDeviceIndex resolved = FindLinuxAudioDevice(true, QString());
     if (resolved != paNoDevice) {
       qInfo() << "[Audio] Linux output route:"
@@ -1139,12 +970,6 @@ PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
   const QString configured = OLIVE_CONFIG_STR(entry).toString();
 
 #if defined(__linux__)
-  // PortAudio's ALSA backend enumerates hardware devices in addition to the
-  // ALSA bridge plugins. In a distrobox/container the hardware default is often
-  // an unconnected HDMI output, while the host audio server is exposed through
-  // `pulse` (or `pipewire` on hosts that install the native plugin). Treat the
-  // implicit `default` setting as "the host route" rather than pinning the
-  // first HDMI device. Explicit device names still win.
   const PaDeviceIndex resolved = FindLinuxAudioDevice(is_output_device, configured);
   if (resolved != paNoDevice) {
     const QString device_name = PortAudioDeviceName(resolved);
@@ -1194,17 +1019,19 @@ PaStreamParameters AudioManager::GetPortAudioParams(const AudioParams &params, P
   p.device = device;
   p.hostApiSpecificStreamInfo = nullptr;
   p.sampleFormat = GetPortAudioSampleFormat(params.format());
-  p.suggestedLatency = Pa_GetDeviceInfo(device)->defaultLowOutputLatency;
+  const PaDeviceInfo *info = (device == paNoDevice) ? nullptr : Pa_GetDeviceInfo(device);
+  p.suggestedLatency = info ? std::max(info->defaultHighOutputLatency, 0.050) : 0.050;
 
   return p;
 }
 
 AudioManager::AudioManager() :
-  output_stream_(nullptr),
+  output_device_(paNoDevice),
   output_buffer_(nullptr),
   output_follow_timer_(nullptr),
   output_rescan_in_progress_(false),
   fade_in_next_(true),
+  input_device_(paNoDevice),
   input_stream_(nullptr),
   input_encoder_(nullptr)
 {
@@ -1213,27 +1040,23 @@ AudioManager::AudioManager() :
   }
 
 #ifdef PA_HAS_JACK
-  // PortAudio doesn't do a strcpy, so we need a const char that's readily accessible (i.e. not
-  // a QString converted to UTF-8)
   PaJack_SetClientName("Olive");
 #endif
 
   Pa_Initialize();
 
-  // Get device from config
+  audio_sink_ = std::make_unique<PortAudioSink>();
+
+  output_buffer_ = new PreviewAudioDevice(this);
+  output_buffer_->open(PreviewAudioDevice::ReadWrite);
+  connect(output_buffer_, &PreviewAudioDevice::Notify, this, &AudioManager::OutputNotify);
+
   PaDeviceIndex output_device = FindConfigDeviceByName(true);
   PaDeviceIndex input_device = FindConfigDeviceByName(false);
 
   SetOutputDevice(output_device);
   SetInputDevice(input_device);
 
-  output_buffer_ = new PreviewAudioDevice(this);
-  output_buffer_->open(PreviewAudioDevice::ReadWrite);
-  connect(output_buffer_, &PreviewAudioDevice::Notify, this, &AudioManager::OutputNotify);
-
-  // Poll frequently enough to follow route changes made in Control Center. If the live default
-  // is absent from PortAudio's snapshot (e.g. Bluetooth headphones connected after startup),
-  // SyncSystemOutputDevice() rebuilds the PortAudio device list and reopens the stream.
   output_follow_timer_ = new QTimer(this);
   output_follow_timer_->setInterval(250);
   connect(output_follow_timer_, &QTimer::timeout, this, &AudioManager::SyncSystemOutputDevice);
@@ -1247,6 +1070,8 @@ AudioManager::~AudioManager()
   }
 
   CloseOutputStream();
+
+  audio_sink_.reset();
 
   Pa_Terminate();
 }
@@ -1289,10 +1114,11 @@ void AudioManager::UpdateOutputPeaks(const void *data, unsigned long frames)
 
 float AudioManager::GetOutputPeak(int channel)
 {
-  if (channel >= 0 && channel < kMaxMonitoredChannels) {
-    return output_peaks_[channel].exchange(0.0f, std::memory_order_relaxed);
+  if (channel < 0 || channel >= kMaxMonitoredChannels) {
+    return 0.0f;
   }
-  return 0.0f;
+
+  return output_peaks_[channel].exchange(0.0f, std::memory_order_relaxed);
 }
 
-}
+} // namespace olive
