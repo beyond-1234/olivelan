@@ -68,6 +68,9 @@ PreferencesAudioTab::PreferencesAudioTab()
       output_layout->addWidget(new QLabel(tr("Device:")), row, 0);
 
       audio_output_devices_ = new QComboBox();
+      audio_output_devices_->setToolTip(
+          tr("PipeWire and Pulse entries are host audio-server bridges; they follow the "
+             "server's current default sink. Raw ALSA/JACK entries pin a specific device."));
       output_layout->addWidget(audio_output_devices_, row, 1);
 
       row++;
@@ -75,9 +78,9 @@ PreferencesAudioTab::PreferencesAudioTab()
       audio_output_follow_system_ = new QCheckBox(tr("Follow system default output device"));
       audio_output_follow_system_->setChecked(OLIVE_CONFIG("AudioOutputFollowSystem").toBool());
       audio_output_follow_system_->setToolTip(
-          tr("Use whatever output is currently selected in the operating system. "
-             "Devices already present when Olive started switch automatically; start Olive "
-             "after connecting a new device."));
+          tr("Use the host audio server's current default output. On Linux this prefers "
+             "PipeWire/Pulse so changing the system sink is followed automatically; on macOS "
+             "it follows the CoreAudio default route."));
       output_layout->addWidget(audio_output_follow_system_, row, 0, 1, 2);
       audio_output_devices_->setEnabled(!audio_output_follow_system_->isChecked());
       connect(audio_output_follow_system_, &QCheckBox::toggled, audio_output_devices_,
@@ -139,6 +142,8 @@ PreferencesAudioTab::PreferencesAudioTab()
       input_layout->addWidget(new QLabel(tr("Device:")), row, 0);
 
       audio_input_devices_ = new QComboBox();
+      audio_input_devices_->setToolTip(
+          tr("PipeWire and Pulse entries follow the host audio server's current default source."));
       input_layout->addWidget(audio_input_devices_, row, 1);
 
       row++;
@@ -190,21 +195,23 @@ void PreferencesAudioTab::Accept(MultiUndoCommand *command)
 {
   Q_UNUSED(command)
 
-  // Get device indexes
+  const bool follow_system_output = audio_output_follow_system_->isChecked();
+
+  // Get device indexes. When following the system route, let AudioManager resolve it: on Linux
+  // this selects the PipeWire/Pulse bridge instead of PortAudio's potentially raw HDMI default.
   PaDeviceIndex output_device = audio_output_devices_->currentData().value<PaDeviceIndex>();
   PaDeviceIndex input_device = audio_input_devices_->currentData().value<PaDeviceIndex>();
 
-  const bool follow_system_output = audio_output_follow_system_->isChecked();
-  if (follow_system_output) {
-    output_device = Pa_GetDefaultOutputDevice();
-  }
-
-  // Get device names, which seem to be the closest thing we have to a "unique identifier" for them
   OLIVE_CONFIG("AudioOutputFollowSystem") = follow_system_output;
-  OLIVE_CONFIG("AudioOutput") =
-      (output_device != paNoDevice
-           ? QString::fromUtf8(Pa_GetDeviceInfo(output_device)->name)
-           : QString());
+  if (follow_system_output) {
+    OLIVE_CONFIG("AudioOutput") = QString();
+    output_device = AudioManager::FindConfigDeviceByName(true);
+  } else {
+    OLIVE_CONFIG("AudioOutput") =
+        (output_device != paNoDevice
+             ? QString::fromUtf8(Pa_GetDeviceInfo(output_device)->name)
+             : QString());
+  }
   OLIVE_CONFIG("AudioInput") = audio_input_devices_->currentText();
 
   // Set devices to be used from now on

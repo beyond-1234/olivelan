@@ -32,6 +32,10 @@ olive_add_test(Codec interlace-tests interlace-tests.cpp)
 # ever called Convert()).
 olive_add_test(Codec audio-processor-tests audio-processor-tests.cpp)
 
+# Patch 0141: Linux PipeWire/Pulse/ALSA/JACK routing policy. The helper is header-only and
+# deliberately independent of PortAudio so this runs headless on every platform.
+olive_add_test(Codec linux-audio-route-tests linux-audio-route-tests.cpp)
+
 # The Golden snapshots live in the source tree (tests/golden) so they are
 # version-controlled and reviewable, not regenerated per build directory.
 target_compile_definitions(

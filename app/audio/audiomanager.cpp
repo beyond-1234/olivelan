@@ -38,6 +38,7 @@
 #endif
 
 #include "config/config.h"
+#include "audio/audioroute.h"
 
 namespace olive {
 
@@ -143,6 +144,57 @@ QString PortAudioDeviceName(PaDeviceIndex device)
   const PaDeviceInfo* info = Pa_GetDeviceInfo(device);
   return info ? QString::fromUtf8(info->name) : QString();
 }
+
+QString PortAudioHostApiName(PaDeviceIndex device)
+{
+  if (device == paNoDevice) {
+    return QString();
+  }
+
+  const PaDeviceInfo *info = Pa_GetDeviceInfo(device);
+  if (!info) {
+    return QString();
+  }
+
+  const PaHostApiInfo *host = Pa_GetHostApiInfo(info->hostApi);
+  return host ? QString::fromUtf8(host->name) : QString();
+}
+
+#if defined(__linux__)
+QVector<AudioRouteDevice> BuildLinuxAudioCandidates(bool is_output)
+{
+  QVector<AudioRouteDevice> candidates;
+  const PaDeviceIndex default_device = is_output ? Pa_GetDefaultOutputDevice()
+                                                 : Pa_GetDefaultInputDevice();
+
+  for (PaDeviceIndex i = 0, end = Pa_GetDeviceCount(); i < end; i++) {
+    const PaDeviceInfo *info = Pa_GetDeviceInfo(i);
+    if (!info) {
+      continue;
+    }
+
+    AudioRouteDevice candidate;
+    candidate.id = i;
+    candidate.name = QString::fromUtf8(info->name);
+    candidate.host_api = PortAudioHostApiName(i);
+    candidate.max_output_channels = info->maxOutputChannels;
+    candidate.max_input_channels = info->maxInputChannels;
+    candidate.is_portaudio_default = (i == default_device);
+    candidates.push_back(candidate);
+  }
+
+  return candidates;
+}
+
+PaDeviceIndex FindLinuxAudioDevice(bool is_output, const QString &configured)
+{
+  const AudioRouteDirection direction = is_output ? AudioRouteDirection::Output
+                                                  : AudioRouteDirection::Input;
+  const QVector<AudioRouteDevice> candidates = BuildLinuxAudioCandidates(is_output);
+  return static_cast<PaDeviceIndex>(
+      AudioRouteChoose(candidates, direction, configured));
+}
+#endif
 
 #if defined(__APPLE__)
 #if defined(MAC_OS_VERSION_12_0)
@@ -342,7 +394,41 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
 
     PaStreamParameters p = GetPortAudioParams(params, output_device_);
 
+    const PaError format_support =
+        Pa_IsFormatSupported(nullptr, &p, output_params_.sample_rate());
+    if (format_support != paNoError) {
+      qWarning() << "[Audio] Output format may not be natively supported by"
+                 << PortAudioDeviceName(output_device_) << ":"
+                 << Pa_GetErrorText(format_support)
+                 << "- the host audio server will convert if possible";
+    }
+
     PaError r = Pa_OpenStream(&output_stream_, nullptr, &p, output_params_.sample_rate(), paFramesPerBufferUnspecified, paNoFlag, OutputCallback, output_buffer_);
+
+#if defined(__linux__)
+    if (r != paNoError && output_device_ != Pa_GetDefaultOutputDevice()) {
+      // A bridge device can be enumerated while its server is restarting, or an explicitly
+      // selected USB/HDMI device can disappear between the poll and the open. Try PortAudio's
+      // default route once rather than leaving playback permanently silent.
+      const PaDeviceIndex fallback = Pa_GetDefaultOutputDevice();
+      if (fallback != paNoDevice && fallback != output_device_) {
+        const PaStreamParameters fallback_params = GetPortAudioParams(params, fallback);
+        const PaError fallback_result =
+            Pa_OpenStream(&output_stream_, nullptr, &fallback_params,
+                          output_params_.sample_rate(), paFramesPerBufferUnspecified,
+                          paNoFlag, OutputCallback, output_buffer_);
+        if (fallback_result == paNoError) {
+          qWarning() << "[Audio] Failed to open" << PortAudioDeviceName(output_device_)
+                     << "(" << Pa_GetErrorText(r) << "); falling back to"
+                     << PortAudioDeviceName(fallback)
+                     << "| host API:" << PortAudioHostApiName(fallback);
+          output_device_ = fallback;
+          r = paNoError;
+        }
+      }
+    }
+#endif
+
     if (r != paNoError) {
       // Unhandled error
       //qCritical() << "Failed to open output stream:" << Pa_GetErrorText(r);
@@ -354,6 +440,7 @@ bool AudioManager::PushToOutput(const AudioParams &params, const QByteArray &sam
             << output_params_.channel_count() << "ch,"
             << QString::fromStdString(output_params_.format().to_string())
             << "| device:" << (output_device_ == paNoDevice ? "none" : Pa_GetDeviceInfo(output_device_)->name)
+            << "| host API:" << PortAudioHostApiName(output_device_)
             << "| suggested latency:" << p.suggestedLatency << "s";
 
     output_buffer_->set_bytes_per_frame(output_params_.samples_to_bytes(1));
@@ -753,12 +840,26 @@ bool AudioManager::RefreshPortAudioDevices()
     return false;
   }
 
+  PaDeviceIndex resolved_output = paNoDevice;
+
+#if defined(__linux__)
+  // Every PaDeviceIndex is invalid after reinitialization, so remap by name through the same
+  // Linux policy. If the old explicit device disappeared, this automatically falls back to the
+  // host bridge instead of leaving the app on a dead hardware index.
+  input_device_ = FindLinuxAudioDevice(false, previous_input_name);
+  if (input_device_ == paNoDevice) {
+    input_device_ = FindConfigDeviceByName(false);
+  }
+
+  resolved_output = FindLinuxAudioDevice(true, previous_output_name);
+  if (resolved_output == paNoDevice) {
+    resolved_output = FindConfigDeviceByName(true);
+  }
+#else
   // Every PaDeviceIndex is invalid after reinitialization, so remap by name.
   input_device_ = previous_input_name.isEmpty()
       ? Pa_GetDefaultInputDevice()
       : FindDeviceByName(previous_input_name, false);
-
-  PaDeviceIndex resolved_output = paNoDevice;
 
 #if defined(__APPLE__)
   // Prefer CoreAudio's live default. If it still is not exposed by PortAudio, fall through and
@@ -785,6 +886,7 @@ bool AudioManager::RefreshPortAudioDevices()
       resolved_output = FindConfigDeviceByName(true);
     }
   }
+#endif
 
   qInfo() << "[Audio] Rebuilt PortAudio device list"
           << "| output:" << (resolved_output == paNoDevice
@@ -805,7 +907,8 @@ void AudioManager::SetOutputDevice(PaDeviceIndex device)
 {
   const PaDeviceInfo *device_info = (device == paNoDevice) ? nullptr : Pa_GetDeviceInfo(device);
   if (device_info) {
-    qInfo() << "Setting output audio device to" << device_info->name;
+    qInfo() << "Setting output audio device to" << device_info->name
+            << "| host API:" << PortAudioHostApiName(device);
   } else {
     qInfo() << "No output device found";
     device = paNoDevice;
@@ -824,6 +927,67 @@ void AudioManager::SetOutputDevice(PaDeviceIndex device)
 
 void AudioManager::SyncSystemOutputDevice()
 {
+#if defined(__linux__)
+  // PortAudio caches device indices at Pa_Initialize(). An unplugged USB interface, a stopped
+  // PipeWire/Pulse server, or a container recreated without the bridge can invalidate the index.
+  // Validate it even when "follow system" is off; otherwise playback would keep writing to a
+  // stream that can never reopen.
+  const PaDeviceInfo *current_info =
+      (output_device_ >= 0 && output_device_ < Pa_GetDeviceCount())
+          ? Pa_GetDeviceInfo(output_device_)
+          : nullptr;
+  const bool invalid_output = (output_device_ == paNoDevice || !current_info
+                               || current_info->maxOutputChannels <= 0);
+
+  const PaDeviceInfo *current_input_info =
+      (input_device_ >= 0 && input_device_ < Pa_GetDeviceCount())
+          ? Pa_GetDeviceInfo(input_device_)
+          : nullptr;
+  const bool invalid_input = (input_device_ != paNoDevice
+                              && (!current_input_info
+                                  || current_input_info->maxInputChannels <= 0));
+
+  if ((invalid_output || invalid_input)
+      && !output_rescan_in_progress_
+      && (!output_rescan_timer_.isValid() || output_rescan_timer_.elapsed() >= 2000)) {
+    output_rescan_timer_.restart();
+    qWarning() << "[Audio] Current"
+               << (invalid_output ? "output" : "input")
+               << "device is no longer available; rebuilding the route";
+    if (RefreshPortAudioDevices()) {
+      return;
+    }
+  }
+
+  // The implicit/default setting is a request for the best host route, not a one-time choice.
+  // Keep resolving it so a server that starts after Olive (or a bridge that reappears after a
+  // restart) takes over from a temporary HDMI fallback. An explicitly selected hardware device
+  // is never stolen.
+  const bool automatic_output = OLIVE_CONFIG("AudioOutputFollowSystem").toBool()
+      || AudioRouteIsAutomatic(OLIVE_CONFIG_STR("AudioOutput").toString());
+  if (automatic_output) {
+    const PaDeviceIndex resolved = FindLinuxAudioDevice(true, QString());
+    if (resolved != paNoDevice && resolved != output_device_) {
+      qInfo() << "[Audio] Linux automatic output route changed; following"
+              << PortAudioDeviceName(resolved)
+              << "| host API:" << PortAudioHostApiName(resolved);
+      SetOutputDevice(resolved);
+    }
+  }
+
+  if (!input_stream_
+      && AudioRouteIsAutomatic(OLIVE_CONFIG_STR("AudioInput").toString())) {
+    const PaDeviceIndex resolved_input = FindLinuxAudioDevice(false, QString());
+    if (resolved_input != paNoDevice && resolved_input != input_device_) {
+      qInfo() << "[Audio] Linux automatic input route changed; following"
+              << PortAudioDeviceName(resolved_input)
+              << "| host API:" << PortAudioHostApiName(resolved_input);
+      SetInputDevice(resolved_input);
+    }
+  }
+  return;
+
+#else
   // The system default route can change at runtime (Control Center, Bluetooth connection,
   // unplugging an already-known device, etc.). PortAudio snapshots its device list at
   // Pa_Initialize(), so rebuild it when the new default is not in the current snapshot.
@@ -879,6 +1043,7 @@ void AudioManager::SyncSystemOutputDevice()
   qInfo() << "[Audio] System default output changed; following"
           << (device_info ? device_info->name : "no device");
   SetOutputDevice(default_device);
+#endif
 }
 
 void AudioManager::SetInputDevice(PaDeviceIndex device)
@@ -886,7 +1051,8 @@ void AudioManager::SetInputDevice(PaDeviceIndex device)
   if (device == paNoDevice) {
     qInfo() << "No input device found";
   } else {
-    qInfo() << "Setting input audio device to" << Pa_GetDeviceInfo(device)->name;
+    qInfo() << "Setting input audio device to" << Pa_GetDeviceInfo(device)->name
+            << "| host API:" << PortAudioHostApiName(device);
   }
 
   input_device_ = device;
@@ -953,7 +1119,20 @@ PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
   // built-in speakers after the user has switched the system output. Follow the OS default unless
   // the user explicitly turned this off in Preferences.
   if (is_output_device && OLIVE_CONFIG("AudioOutputFollowSystem").toBool()) {
+#if defined(__linux__)
+    // The `pipewire`/`pulse` bridge follows the host server's default sink, unlike
+    // Pa_GetDefaultOutputDevice() which can be the first raw ALSA/HDMI device.
+    const PaDeviceIndex resolved = FindLinuxAudioDevice(true, QString());
+    if (resolved != paNoDevice) {
+      qInfo() << "[Audio] Linux output route:"
+              << PortAudioDeviceName(resolved)
+              << "| requested: system default"
+              << "| host API:" << PortAudioHostApiName(resolved);
+      return resolved;
+    }
+#else
     return Pa_GetDefaultOutputDevice();
+#endif
   }
 
   QString entry = is_output_device ? QStringLiteral("AudioOutput") : QStringLiteral("AudioInput");
@@ -965,17 +1144,26 @@ PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
   // an unconnected HDMI output, while the host audio server is exposed through
   // `pulse` (or `pipewire` on hosts that install the native plugin). Treat the
   // implicit `default` setting as "the host route" rather than pinning the
-  // first HDMI device.
-  if (is_output_device && (configured.isEmpty() || configured == QStringLiteral("default"))) {
-    for (const char *bridge : {"pipewire", "pulse"}) {
-      for (PaDeviceIndex i = 0, end = Pa_GetDeviceCount(); i < end; i++) {
-        const PaDeviceInfo *device = Pa_GetDeviceInfo(i);
-        if (device && device->maxOutputChannels > 0
-            && !qstrcmp(device->name, bridge)) {
-          return i;
-        }
-      }
+  // first HDMI device. Explicit device names still win.
+  const PaDeviceIndex resolved = FindLinuxAudioDevice(is_output_device, configured);
+  if (resolved != paNoDevice) {
+    const QString device_name = PortAudioDeviceName(resolved);
+    const QString host_api = PortAudioHostApiName(resolved);
+    qInfo() << "[Audio] Linux" << (is_output_device ? "output" : "input") << "route:"
+            << device_name
+            << "| requested:" << (configured.isEmpty() ? "auto" : configured)
+            << "| host API:" << host_api;
+
+    if (is_output_device && AudioRouteIsAutomatic(configured)
+        && device_name.compare(QStringLiteral("pipewire"), Qt::CaseInsensitive)
+        && device_name.compare(QStringLiteral("pulse"), Qt::CaseInsensitive)
+        && !host_api.contains(QStringLiteral("JACK"), Qt::CaseInsensitive)) {
+      qWarning() << "[Audio] No PipeWire/Pulse audio bridge is available; using raw device"
+                 << device_name
+                 << "- install pipewire-alsa or libasound2-plugins for host-server routing";
     }
+
+    return resolved;
   }
 #endif
 
