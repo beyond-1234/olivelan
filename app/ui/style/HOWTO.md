@@ -20,4 +20,4 @@ Phase 11 also supports user themes loaded from the application data directory at
 
 Runtime themes currently do **not** load an `icons/` directory or install fonts. Icon replacements still require the
 built-in theme pipeline above (`generate-style.sh` + QRC + `icon::LoadAll()`), and `manifest.json` font fields are
-ignored. See `reports/how-to-use-and-customize-themes.md` for the supported schema and paths.
+ignored. See `reports/guide-theme-customization.md` for the supported schema and paths.
