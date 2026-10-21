@@ -957,8 +957,29 @@ PaDeviceIndex AudioManager::FindConfigDeviceByName(bool is_output_device)
   }
 
   QString entry = is_output_device ? QStringLiteral("AudioOutput") : QStringLiteral("AudioInput");
+  const QString configured = OLIVE_CONFIG_STR(entry).toString();
 
-  return FindDeviceByName(OLIVE_CONFIG_STR(entry).toString(), is_output_device);
+#if defined(__linux__)
+  // PortAudio's ALSA backend enumerates hardware devices in addition to the
+  // ALSA bridge plugins. In a distrobox/container the hardware default is often
+  // an unconnected HDMI output, while the host audio server is exposed through
+  // `pulse` (or `pipewire` on hosts that install the native plugin). Treat the
+  // implicit `default` setting as "the host route" rather than pinning the
+  // first HDMI device.
+  if (is_output_device && (configured.isEmpty() || configured == QStringLiteral("default"))) {
+    for (const char *bridge : {"pipewire", "pulse"}) {
+      for (PaDeviceIndex i = 0, end = Pa_GetDeviceCount(); i < end; i++) {
+        const PaDeviceInfo *device = Pa_GetDeviceInfo(i);
+        if (device && device->maxOutputChannels > 0
+            && !qstrcmp(device->name, bridge)) {
+          return i;
+        }
+      }
+    }
+  }
+#endif
+
+  return FindDeviceByName(configured, is_output_device);
 }
 
 PaDeviceIndex AudioManager::FindDeviceByName(const QString &s, bool is_output_device)
