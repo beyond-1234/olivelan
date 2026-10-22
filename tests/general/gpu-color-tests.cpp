@@ -27,6 +27,7 @@
 #include <QOpenGLContext>
 #include <QSurfaceFormat>
 
+#include "common/ociobridge.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/project.h"
 #include "render/colorprocessor.h"
@@ -125,6 +126,42 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
   }
   if (hdr_output[0] > 1.01f) {
     std::cout << " - GPU HDR-to-SDR output is still clipping: " << hdr_output[0];
+    return __LINE__;
+  }
+
+  // Primary grading: verify the OCIO GradingPrimary GPU shader applies +1 stop
+  // exposure, using the same CPU reference comparison.
+  OCIO::GradingPrimaryTransformRcPtr gp =
+      OCIO::GradingPrimaryTransform::Create(OCIO::GRADING_LIN);
+  gp->setDirection(OCIO::TRANSFORM_DIR_FORWARD);
+  OCIO::GradingPrimary primary(OCIO::GRADING_LIN);
+  primary.m_exposure = OCIO::GradingRGBM(1.0, 1.0, 1.0, 0.0);
+  gp->setValue(primary);
+
+  ColorProcessorPtr primary_processor = ColorProcessorOCIO::Create(
+        ColorManagerOCIO::GetConfig(project.color_manager())->getProcessor(gp));
+  OLIVE_ASSERT(primary_processor);
+
+  const float mid_grey[4] = {0.18f, 0.18f, 0.18f, 1.0f};
+  TexturePtr primary_source = renderer.CreateTexture(params, mid_grey);
+  TexturePtr primary_destination = renderer.CreateTexture(params);
+  ColorTransformJob primary_job;
+  primary_job.SetColorProcessor(primary_processor);
+  primary_job.SetInputTexture(primary_source);
+  renderer.BlitColorManaged(primary_job, primary_destination.get());
+
+  float primary_output[4] = {0, 0, 0, 0};
+  renderer.DownloadFromTexture(primary_destination->id(), params, primary_output,
+                               sizeof(float) * 4);
+  const Color primary_cpu = primary_processor->ConvertColor(Color(0.18f, 0.18f, 0.18f, 1.0f));
+  if (std::fabs(double(primary_output[0]) - primary_cpu.red()) > 0.02) {
+    std::cout << " - GPU Primary output " << primary_output[0]
+              << " differs from CPU reference " << primary_cpu.red();
+    return __LINE__;
+  }
+  if (std::fabs(double(primary_output[0]) - 0.36) > 0.02) {
+    std::cout << " - GPU Primary +1 stop did not produce the expected mid-grey: "
+              << primary_output[0];
     return __LINE__;
   }
 
