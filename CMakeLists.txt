@@ -188,46 +188,30 @@ endif()
 find_package(OpenGL REQUIRED)
 list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 
-# OpenColorIO is optional and is OFF by default: the default build uses Olive's
-# built-in colour engine (see app/render/colorprocessor.cpp and
-# app/render/renderer.cpp) and therefore pulls in no VFX colour dependency.
-# Configure with -DOLIVE_ENABLE_OCIO=ON to restore the full OpenColorIO backend,
-# which is also the reference the colour-equivalence gate compares against.
-#
-# Phase 10: prefer the modern OpenColorIO package config (2.2+) and fall back to
-# cmake/FindOpenColorIO.cmake for older package-manager layouts. OCIO is a colour
-# evaluation dependency only; do not reintroduce OpenImageIO/OpenEXR here.
-#
-# HONESTY NOTE (patch 0043): the built-in engine has NOT yet been measured against
-# the OpenColorIO golden at the A-class gate (mean dE00 < 1.0, PSNR > 45 dB) - that
-# requires a GPU session. This default therefore selects an engine whose
-# equivalence to the OCIO backend is still unquantified. It is a deliberate flip of
-# the default pending that measurement, not a claim that the two backends match.
-option(OLIVE_ENABLE_OCIO "Enable the full OpenColorIO colour backend" OFF)
+# Phase 15: OpenColorIO is a required product dependency. The former
+# OLIVE_ENABLE_OCIO OFF build and built-in colour engine are being removed.
+# Prefer the upstream CONFIG target (2.2+); keep the module fallback for
+# distributions that only ship headers/libraries. OCIO is a colour evaluation
+# dependency only; do not reintroduce OpenImageIO/OpenEXR here.
+find_package(OpenColorIO 2.2.0 CONFIG QUIET)
 
-if(OLIVE_ENABLE_OCIO)
-  # Prefer the upstream CMake package (OpenColorIO::OpenColorIO), which carries
-  # include directories, transitive dependencies and the correct platform runtime.
-  find_package(OpenColorIO 2.2.0 CONFIG QUIET)
-
-  if(NOT OpenColorIO_FOUND)
-    # Fallback for distributions that only ship headers/libraries (or an older
-    # module layout). The module lives in cmake/FindOpenColorIO.cmake.
-    find_package(OpenColorIO 2.2.0 REQUIRED MODULE)
-  endif()
-
-  if(TARGET OpenColorIO::OpenColorIO)
-    list(APPEND OLIVE_LIBRARIES OpenColorIO::OpenColorIO)
-  elseif(OpenColorIO_LIBRARIES)
-    list(APPEND OLIVE_LIBRARIES ${OpenColorIO_LIBRARIES})
-    list(APPEND OLIVE_INCLUDE_DIRS ${OpenColorIO_INCLUDE_DIRS})
-  else()
-    list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
-    list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
-  endif()
-
-  list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_OCIO)
+if(NOT OpenColorIO_FOUND)
+  find_package(OpenColorIO 2.2.0 REQUIRED MODULE)
 endif()
+
+if(TARGET OpenColorIO::OpenColorIO)
+  list(APPEND OLIVE_LIBRARIES OpenColorIO::OpenColorIO)
+elseif(OpenColorIO_LIBRARIES)
+  list(APPEND OLIVE_LIBRARIES ${OpenColorIO_LIBRARIES})
+  list(APPEND OLIVE_INCLUDE_DIRS ${OpenColorIO_INCLUDE_DIRS})
+else()
+  list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
+  list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+endif()
+
+# Temporary P15-A compatibility define. P15-B removes the conditional code and
+# then this definition. No build without OCIO is supported anymore.
+list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_OCIO)
 
 # Link Olive
 list(APPEND OLIVE_LIBRARIES olivecore)

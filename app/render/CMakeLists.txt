@@ -15,11 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 add_subdirectory(job)
-if(OLIVE_ENABLE_OCIO)
-  # The bundled OCIO config is only useful to the OCIO backend; skipping it in a
-  # built-in-engine build keeps the resource out of the binary entirely.
-  add_subdirectory(ocioconf)
-endif()
+add_subdirectory(ocioconf)
 add_subdirectory(opengl)
 
 set(OLIVE_SOURCES

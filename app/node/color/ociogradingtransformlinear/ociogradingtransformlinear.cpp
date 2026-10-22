@@ -20,7 +20,6 @@
 
 #include "ociogradingtransformlinear.h"
 
-#include <atomic>
 #include <iostream>
 
 #include "common/ociobridge.h"
@@ -44,14 +43,6 @@ const QString OCIOGradingTransformLinearNode::kClampWhiteInput = QStringLiteral(
 
 OCIOGradingTransformLinearNode::OCIOGradingTransformLinearNode()
 {
-#ifndef OLIVE_ENABLE_OCIO
-  // Phase 10: the built-in engine has no GradingPrimary implementation yet. Do not
-  // advertise a node that accepts Offset/Exposure/Contrast but forwards the texture
-  // unchanged. Existing projects that already contain it still load, but new menus
-  // must not offer a silent no-op.
-  SetFlag(kDontShowInCreateMenu);
-#endif
-
   AddInput(kContrastInput, NodeValue::kVec4, QVector4D{1.0, 1.0, 1.0, 1.0});
   // Minimum based on OCIO::GradingPrimary::validate
   SetInputProperty(kContrastInput, QStringLiteral("min"), QVector4D{0.01f, 0.01f, 0.01f, 0.01f});
@@ -150,7 +141,6 @@ void OCIOGradingTransformLinearNode::InputValueChangedEvent(const QString &input
 void OCIOGradingTransformLinearNode::GenerateProcessor()
 {
   if (manager()) {
-#ifdef OLIVE_ENABLE_OCIO
     OCIO::GradingPrimaryTransformRcPtr gp = OCIO::GradingPrimaryTransform::Create(OCIO::GRADING_LIN);
     gp->makeDynamic();
     gp->setDirection(OCIO::TransformDirection::TRANSFORM_DIR_FORWARD);
@@ -160,19 +150,12 @@ void OCIOGradingTransformLinearNode::GenerateProcessor()
     } catch (const OCIO::Exception &e) {
       std::cerr << std::endl << e.what() << std::endl;
     }
-#else
-    // Patch 0039: the built-in engine does not implement Lift/Gamma/Gain grading
-    // yet (that lands in patch 0040). Value() forwards its input unchanged in
-    // this mode, so no processor is required.
-    set_processor(nullptr);
-#endif
   }
 }
 
 void OCIOGradingTransformLinearNode::Value(const NodeValueRow &value, const NodeGlobals &globals, NodeValueTable *table) const
 {
   if (TexturePtr tex = value[kTextureInput].toTexture()) {
-#ifdef OLIVE_ENABLE_OCIO
     if (processor()) {
       ColorTransformJob job(value);
 
@@ -216,19 +199,6 @@ void OCIOGradingTransformLinearNode::Value(const NodeValueRow &value, const Node
 
       table->Push(NodeValue::kTexture, tex->toJob(job), this);
     }
-#else
-    // Patch 0039: the built-in engine has no grading processor yet, so this node
-    // forwards its input texture unchanged (Lift/Gamma/Gain lands in patch 0040).
-    // Phase 10 hides the node from the create menu, but a pre-existing project can
-    // still contain it; emit one explicit warning instead of staying completely silent.
-    static std::atomic<bool> warned_inactive{false};
-    if (!warned_inactive.exchange(true)) {
-      qWarning() << "[Color] OCIOGradingTransformLinearNode is inactive because"
-                 << "OLIVE_ENABLE_OCIO=OFF; this node forwards its input unchanged."
-                 << "Rebuild with OCIO enabled or remove the node.";
-    }
-    table->Push(NodeValue::kTexture, tex, this);
-#endif
   }
 }
 

@@ -30,10 +30,8 @@
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 
-#ifdef OLIVE_ENABLE_OCIO
 #include <OpenColorIO/OpenColorIO.h>
 namespace OCIO = OCIO_NAMESPACE;
-#endif
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)
 extern "C" {
@@ -1976,7 +1974,6 @@ void OpenGLRenderer::ClearDestinationInternal(double r, double g, double b, doub
 
 int OpenGLRenderer::GetGpuShaderLanguage() const
 {
-#ifdef OLIVE_ENABLE_OCIO
   // ARCHITECTURAL NOTE:
   // The GLES branches (GLSL_ES_3_0 and #version 300 es) serve as an architectural fallback stub.
   // The active product baseline enforces Desktop OpenGL 3.2 Core (see main.cpp).
@@ -1984,9 +1981,6 @@ int OpenGLRenderer::GetGpuShaderLanguage() const
     return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
   }
   return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_1_3);
-#else
-  return 0;
-#endif
 }
 
 GLuint OpenGLRenderer::CompileShader(GLenum type, const QString &code)
