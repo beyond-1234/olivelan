@@ -21,6 +21,7 @@
 #ifndef VIEWERGLWIDGET_H
 #define VIEWERGLWIDGET_H
 
+#include <QImage>
 #include <QMatrix4x4>
 #include <QRubberBand>
 
@@ -138,6 +139,14 @@ public:
   {
     return texture_;
   }
+
+  /**
+   * @brief Hidden frame-dump/readback test hook.
+   *
+   * Returns the current OpenGL widget framebuffer. Used by the autoplay harness when
+   * OLIVE_DUMP_FRAME is set; not exposed in the normal UI.
+   */
+  QImage GrabFrame();
 
   void Play(const int64_t &start_timestamp, const int &playback_speed, const rational &timebase, bool start_updating);
 

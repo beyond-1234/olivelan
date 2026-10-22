@@ -38,6 +38,8 @@
 #include "viewersizer.h"
 #include "viewerwindow.h"
 #include "widget/playbackcontrols/playbackcontrols.h"
+#include <QImage>
+
 #include "widget/timebased/timebasedwidget.h"
 #include "widget/timelinewidget/timelinewidget.h"
 
@@ -82,6 +84,13 @@ public:
   int GetPresentedFrameCount() const;
 
   int GetSkippedFrameCount() const;
+
+  /**
+   * @brief Hidden frame-dump/readback test hook.
+   *
+   * Grabs the current viewer OpenGL framebuffer after playback has been paused.
+   */
+  QImage GrabFrame();
 
   /**
    * @brief Enable or disable the color management menu

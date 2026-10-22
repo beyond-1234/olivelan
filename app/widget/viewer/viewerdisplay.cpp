@@ -29,6 +29,7 @@
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
+#include <QOpenGLWidget>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
@@ -139,6 +140,12 @@ void ViewerDisplayWidget::SetSignalCursorColorEnabled(bool e)
 {
   signal_cursor_color_ = e;
   SetInnerMouseTracking(e);
+}
+
+QImage ViewerDisplayWidget::GrabFrame()
+{
+  QOpenGLWidget *widget = qobject_cast<QOpenGLWidget *>(inner_widget());
+  return widget ? widget->grabFramebuffer() : QImage();
 }
 
 void ViewerDisplayWidget::SetImage(const QVariant &buffer)

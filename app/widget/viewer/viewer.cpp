@@ -446,6 +446,11 @@ int ViewerWidget::GetSkippedFrameCount() const
   return display_widget_->GetSkippedFrameCount();
 }
 
+QImage ViewerWidget::GrabFrame()
+{
+  return display_widget_->GrabFrame();
+}
+
 void ViewerWidget::SetColorMenuEnabled(bool enabled)
 {
   color_menu_enabled_ = enabled;

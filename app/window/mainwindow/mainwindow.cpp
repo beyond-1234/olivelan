@@ -24,6 +24,7 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QImage>
 #include <QMessageBox>
 #include <QScreen>
 #include <QStatusBar>
@@ -1348,6 +1349,22 @@ void MainWindow::TryStartAutoplayBenchmark()
     const int presented_frames = viewer->GetPresentedFrameCount();
     const int skipped_frames = viewer->GetSkippedFrameCount();
     viewer->Pause();
+
+    // Hidden GPU frame-dump/readback hook for pixel-golden validation. This deliberately grabs
+    // the viewer's OpenGL framebuffer rather than decoding a file again, so OCIO/VideoToolbox/
+    // CUDA output is captured after the same render path used by playback.
+    const QString dump_path = QString::fromLocal8Bit(qgetenv("OLIVE_DUMP_FRAME"));
+    if (!dump_path.isEmpty()) {
+      const QImage frame = viewer->GrabFrame();
+      if (frame.isNull()) {
+        qWarning() << "[Autoplay] frame dump requested but the viewer framebuffer is empty";
+      } else if (!frame.save(dump_path, "PNG")) {
+        qWarning() << "[Autoplay] failed to save frame dump to" << dump_path;
+      } else {
+        qInfo() << "[Autoplay] saved GL framebuffer readback" << frame.size() << "to" << dump_path;
+      }
+    }
+
     const double advanced = (node->GetPlayhead() - start).toDouble();
     const double wall_elapsed = double(wall_timer.elapsed()) / 1000.0;
     const rational frame_time = node->GetVideoParams().frame_rate_as_time_base();
