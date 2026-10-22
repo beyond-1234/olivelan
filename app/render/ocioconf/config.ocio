@@ -311,6 +311,40 @@ colorspaces:
         - !<FileTransform> {src: rec709_to_linear.spi1d, interpolation: linear}
 
   - !<ColorSpace>
+    name: Rec.2020 PQ
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Rec.2020 / SMPTE ST-2084 (PQ) HDR input. PQ is decoded with OCIO's
+      built-in ST-2084 curve and converted from Rec.2020 primaries to the
+      Rec.709 linear reference.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<GroupTransform>
+      children:
+        - !<BuiltinTransform> {style: "CURVE - ST-2084_to_LINEAR"}
+        - !<MatrixTransform> {matrix: [1.66049633, -0.58765635, -0.07284083, 0, -0.12454704, 1.13289513, -0.00834832, 0, -0.01815369, -0.10059740, 1.11875110, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Rec.2020 HLG
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Rec.2020 / ITU-R BT.2100 HLG HDR input. HLG is decoded with the
+      BT.2100 inverse OETF and converted from Rec.2020 primaries to the
+      Rec.709 linear reference.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<GroupTransform>
+      children:
+        - !<FileTransform> {src: HLG_OETF_to_Linear.spi1d, interpolation: linear}
+        - !<MatrixTransform> {matrix: [1.66049633, -0.58765635, -0.07284083, 0, -0.12454704, 1.13289513, -0.00834832, 0, -0.01815369, -0.10059740, 1.11875110, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
     name: Rec.601 OETF (NTSC)
     family:
     equalitygroup:

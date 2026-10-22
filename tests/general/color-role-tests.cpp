@@ -135,6 +135,31 @@ OLIVE_ADD_TEST(LegacyColorSpaceAliases)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(InvalidColorSpaceRejected)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  ColorProcessorPtr invalid = ColorProcessor::Create(
+        manager,
+        QStringLiteral("Definitely Not A Colour Space"),
+        ColorTransform(QStringLiteral("Linear")));
+
+  if (invalid) {
+    std::cout << " - unknown colour space unexpectedly produced a processor";
+    return __LINE__;
+  }
+
+  if (manager->GetCompliantColorSpace(QStringLiteral("Definitely Not A Colour Space"))
+      != QStringLiteral("Definitely Not A Colour Space")) {
+    std::cout << " - unknown colour space was silently replaced by a default";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
 OLIVE_ADD_TEST(ColorspaceImplementationParity)
 {
   std::cout << " (OCIO build - colour spaces come from config.ocio)";

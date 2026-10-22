@@ -87,31 +87,19 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
 
   } else {
 
-    try {
-      if (direction == kNormal) {
-        impl_->processor = ocio_config->getProcessor(input.toUtf8(), output.toUtf8());
-      } else {
-        impl_->processor = ocio_config->getProcessor(output.toUtf8(), input.toUtf8());
-      }
-    } catch (OCIO::Exception &e) {
-      qWarning() << "ColorProcessor exception:" << e.what();
+    if (direction == kNormal) {
+      impl_->processor = ocio_config->getProcessor(input.toUtf8(), output.toUtf8());
+    } else {
+      impl_->processor = ocio_config->getProcessor(output.toUtf8(), input.toUtf8());
     }
 
   }
 
-  if (!impl_->processor) {
-    qWarning() << "[Color] ColorProcessor failed to create processor for" << input << "->" << output
-               << "; falling back to raw identity pass-through";
-    try {
-      auto raw_config = OCIO::Config::CreateRaw();
-      impl_->processor = raw_config->getProcessor("raw", "raw");
-    } catch (...) {
-    }
-  }
-
-  if (impl_->processor) {
-    impl_->cpu_processor = impl_->processor->getDefaultCPUProcessor();
-  }
+  // Do not substitute a raw identity transform when OCIO cannot resolve the
+  // requested conversion. A silent identity would display an incorrect image
+  // while making the project look healthy. Create() catches the exception and
+  // returns nullptr so callers can report the actual failure.
+  impl_->cpu_processor = impl_->processor->getDefaultCPUProcessor();
 }
 
 ColorProcessor::~ColorProcessor() = default;
@@ -157,24 +145,30 @@ Color ColorProcessor::ConvertColor(const Color& in)
 
 const char *ColorProcessor::id() const
 {
-  if (!impl_->processor) {
-    return "identity_fallback";
-  }
-
-  return impl_->processor->getCacheID();
+  return impl_->processor ? impl_->processor->getCacheID() : "invalid";
 }
 
 bool ColorProcessor::IsDefaulted() const
 {
-  // OpenColorIO resolves colour space names when the processor is built; an
-  // unknown name throws rather than yielding an unconverted passthrough, so a
-  // constructed processor is never silently defaulted on this path.
-  return false;
+  // A successfully constructed processor always has an OCIO processor. This
+  // accessor exists for callers that receive a processor from a context where
+  // construction may have failed.
+  return !impl_->processor;
 }
 
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)
 {
-  return std::make_shared<ColorProcessor>(config, input, transform, direction);
+  try {
+    return std::make_shared<ColorProcessor>(config, input, transform, direction);
+  } catch (const OCIO::Exception &e) {
+    qWarning() << "[Color] Failed to create processor for" << input << "->"
+               << (transform.is_display() ? transform.display() : transform.output())
+               << ":" << e.what();
+  } catch (const std::exception &e) {
+    qWarning() << "[Color] Failed to create processor:" << e.what();
+  }
+
+  return nullptr;
 }
 
 void ColorProcessor::ConvertFrame(FramePtr f)
@@ -184,6 +178,10 @@ void ColorProcessor::ConvertFrame(FramePtr f)
 
 ColorProcessorPtr ColorProcessorOCIO::Create(OCIO::ConstProcessorRcPtr processor)
 {
+  if (!processor) {
+    return nullptr;
+  }
+
   ColorProcessorPtr p(new ColorProcessor());
 
   p->impl_->processor = processor;

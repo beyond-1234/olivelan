@@ -213,12 +213,13 @@ QString ColorManager::GetCompliantColorSpace(const QString &s)
     return migrated;
   }
 
-  // Do not silently turn an unsupported input into the project default. Log the
-  // exact name so the user can fix the project/config; the returned default is
-  // still a usable fallback for UI code paths that must remain interactive.
+  // Keep the requested name instead of substituting the project default. A
+  // downstream ColorProcessor will then fail loudly (and the UI shows its
+  // error path) rather than displaying a different image under the wrong
+  // colour-space label.
   qWarning() << "[Color] Unsupported colour space" << s
-             << "- falling back to default" << GetDefaultInputColorSpace();
-  return GetDefaultInputColorSpace();
+             << "- keeping the name so the conversion fails explicitly";
+  return s;
 }
 
 ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transform, bool force_display)

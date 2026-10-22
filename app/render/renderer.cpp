@@ -172,6 +172,11 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
 
   // HDR display rendering is handled by the OCIO GPU shader; no extra
   // mastering-peak cache key is needed here.
+  if (!color_job.GetColorProcessor()) {
+    qWarning() << "[Color] Refusing to blit a color job with no valid ColorProcessor";
+    return false;
+  }
+
   QString proc_id = color_job.id();
 
   if (color_cache_.contains(proc_id)) {

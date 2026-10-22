@@ -414,6 +414,10 @@ void ManagedDisplayWidget::SetupColorProcessor()
                             tr("Failed to set color configuration: %1").arg(e.what()),
                             QMessageBox::Ok);
     }
+
+    if (!color_service_) {
+      qWarning() << "[Color] ManagedDisplay could not create a valid color processor";
+    }
   } else {
     color_service_ = nullptr;
   }

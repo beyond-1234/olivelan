@@ -408,6 +408,12 @@ void RenderProcessor::ProcessVideoFootage(TexturePtr destination, const FootageJ
                                                                using_colorspace,
                                                                color_manager->GetReferenceColorSpace());
 
+          if (!processor) {
+            qWarning() << "[Color] RenderProcessor could not convert"
+                       << using_colorspace << "to the reference color space";
+            return;
+          }
+
           ColorTransformJob job;
 
           job.SetColorProcessor(processor);
@@ -569,6 +575,11 @@ void RenderProcessor::ConvertToReferenceSpace(TexturePtr destination, TexturePtr
 
   ColorManager* color_manager = QtUtils::ValueToPtr<ColorManager>(ticket_->property("colormanager"));
   ColorProcessorPtr cp = ColorProcessor::Create(color_manager, input_cs, color_manager->GetReferenceColorSpace());
+
+  if (!cp) {
+    qWarning() << "[Color] RenderProcessor could not convert" << input_cs << "to the reference color space";
+    return;
+  }
 
   ColorTransformJob ctj;
 

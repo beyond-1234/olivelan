@@ -89,6 +89,12 @@ void ColorButton::UpdateColor()
                                             color_.color_input(),
                                             color_.color_output());
 
+  if (!color_processor_) {
+    qWarning() << "[Color] ColorButton has no valid color processor; showing unmanaged color";
+    setStyleSheet(QStringLiteral("%1--ColorButton {background: %2;}").arg(MACRO_VAL_AS_STR(olive), QtUtils::toQColor(color_).name()));
+    return;
+  }
+
   QColor managed = QtUtils::toQColor(color_processor_->ConvertColor(color_));
 
   setStyleSheet(QStringLiteral("%1--ColorButton {background: %2;}").arg(MACRO_VAL_AS_STR(olive), managed.name()));

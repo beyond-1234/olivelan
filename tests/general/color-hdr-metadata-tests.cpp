@@ -258,10 +258,41 @@ OLIVE_ADD_TEST(ColorHdrMetadataSerialization)
 
 OLIVE_ADD_TEST(ColorHdrTransferFunctions)
 {
-  // The OCIO config intentionally has no PQ/HLG display transforms; the removed
-  // built-in curves were the only implementation. Keep the test registered so the
-  // runner layout is stable while PQ/HLG get proper OCIO transforms.
-  std::cout << " (PQ/HLG curves are not in the bundled OCIO config; skipped)";
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  ColorProcessorPtr pq_to_linear = ColorProcessor::Create(
+        manager, QStringLiteral("Rec.2020 PQ"), ColorTransform(QStringLiteral("Linear")));
+  ColorProcessorPtr hlg_to_linear = ColorProcessor::Create(
+        manager, QStringLiteral("Rec.2020 HLG"), ColorTransform(QStringLiteral("Linear")));
+
+  if (!pq_to_linear || !hlg_to_linear) {
+    std::cout << " - HDR input colour spaces could not be created";
+    return __LINE__;
+  }
+
+  // ST-2084: 0.5 code value is ~92.25 cd/m2 on OCIO's 100-nit normalised
+  // scale (the config's Linear reference). HLG's inverse OETF maps 0.5 to
+  // 0.25 and 1.0 to 3.0.
+  if (!NearlyEqual(pq_to_linear->ConvertColor(Color(0.5f, 0.5f, 0.5f)).red(),
+                   0.922456, 1e-4)) {
+    std::cout << " - PQ 0.5 did not decode to the expected linear value";
+    return __LINE__;
+  }
+
+  if (!NearlyEqual(hlg_to_linear->ConvertColor(Color(0.5f, 0.5f, 0.5f)).red(),
+                   0.25, 1e-5)) {
+    std::cout << " - HLG 0.5 did not decode to 0.25";
+    return __LINE__;
+  }
+
+  if (!NearlyEqual(hlg_to_linear->ConvertColor(Color(1.0f, 1.0f, 1.0f)).red(),
+                   3.0, 1e-5)) {
+    std::cout << " - HLG 1.0 did not decode to 3.0";
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 
