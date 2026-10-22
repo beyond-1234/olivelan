@@ -67,6 +67,15 @@ public:
 
   ColorTransform GetCompliantColorSpace(const ColorTransform& transform, bool force_display = false);
 
+  /**
+   * @brief Resolve a transform for restoring state after a config/HDR change.
+   *
+   * Unlike GetCompliantColorSpace(), this method never returns an unknown
+   * colour-space name. Missing/removed colour spaces fall back to a valid
+   * project default, and invalid display/view/look names are repaired.
+   */
+  ColorTransform GetRestorableColorTransform(const ColorTransform& transform);
+
   void GetDefaultLumaCoefs(double *rgb) const;
 
   Project *project() const;

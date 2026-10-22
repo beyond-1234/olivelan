@@ -268,6 +268,61 @@ ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transf
   }
 }
 
+ColorTransform ColorManager::GetRestorableColorTransform(const ColorTransform &transform)
+{
+  const QStringList available = ListAvailableColorspaces();
+
+  if (!transform.is_display()) {
+    const QString requested = transform.output();
+    if (requested.isEmpty()) {
+      return ColorTransform(GetDefaultInputColorSpace());
+    }
+
+    if (available.contains(requested)) {
+      return ColorTransform(requested);
+    }
+
+    const QString migrated = ResolveLegacyColorSpace(requested, available);
+    if (!migrated.isEmpty()) {
+      return ColorTransform(migrated);
+    }
+
+    qWarning() << "[Color] Cannot restore removed colour space" << requested
+               << "- using project default";
+
+    QString fallback = GetDefaultInputColorSpace();
+    if (!available.contains(fallback)) {
+      const QString fallback_alias = ResolveLegacyColorSpace(fallback, available);
+      fallback = !fallback_alias.isEmpty()
+          ? fallback_alias
+          : (available.isEmpty() ? GetReferenceColorSpace() : available.first());
+    }
+    return ColorTransform(fallback);
+  }
+
+  QString display = transform.display();
+  if (display.isEmpty() || !ListAvailableDisplays().contains(display)) {
+    qWarning() << "[Color] Cannot restore removed display" << display
+               << "- using default" << GetDefaultDisplay();
+    display = GetDefaultDisplay();
+  }
+
+  QString view = transform.view();
+  if (view.isEmpty() || !ListAvailableViews(display).contains(view)) {
+    qWarning() << "[Color] Cannot restore removed view" << view
+               << "for display" << display << "- using default" << GetDefaultView(display);
+    view = GetDefaultView(display);
+  }
+
+  QString look = transform.look();
+  if (!look.isEmpty() && !ListAvailableLooks().contains(look)) {
+    qWarning() << "[Color] Cannot restore removed look" << look << "- clearing look";
+    look.clear();
+  }
+
+  return ColorTransform(display, view, look);
+}
+
 void ColorManager::GetDefaultLumaCoefs(double *rgb) const
 {
   impl_->config->getDefaultLumaCoefs(rgb);

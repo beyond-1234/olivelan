@@ -165,6 +165,46 @@ OLIVE_ADD_TEST(InvalidColorSpaceRejected)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(RestoreTransformSafe)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  const ColorTransform unknown = manager->GetRestorableColorTransform(
+        ColorTransform(QStringLiteral("Definitely Not A Colour Space")));
+  if (unknown.output() != manager->GetDefaultInputColorSpace()) {
+    std::cout << " - removed colour space was not restored to a valid default";
+    return __LINE__;
+  }
+
+  const ColorTransform empty = manager->GetRestorableColorTransform(ColorTransform());
+  if (empty.output() != manager->GetDefaultInputColorSpace()) {
+    std::cout << " - empty transform was not restored to the default input space";
+    return __LINE__;
+  }
+
+  const ColorTransform alias = manager->GetRestorableColorTransform(
+        ColorTransform(QStringLiteral("scene_linear")));
+  if (alias.output() != QStringLiteral("Linear")) {
+    std::cout << " - restore did not resolve scene_linear alias";
+    return __LINE__;
+  }
+
+  const ColorTransform bad_display = manager->GetRestorableColorTransform(
+        ColorTransform(QStringLiteral("No Such Display"),
+                       QStringLiteral("No Such View"),
+                       QStringLiteral("No Such Look")));
+  if (bad_display.display() != manager->GetDefaultDisplay()
+      || bad_display.view() != manager->GetDefaultView(bad_display.display())
+      || !bad_display.look().isEmpty()) {
+    std::cout << " - invalid display/view/look was not repaired";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
 OLIVE_ADD_TEST(ColorspaceImplementationParity)
 {
   std::cout << " (OCIO build - colour spaces come from config.ocio)";
