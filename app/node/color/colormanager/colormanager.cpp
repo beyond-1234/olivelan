@@ -46,6 +46,38 @@ struct ColorManager::Impl
 
 namespace {
 OCIO::ConstConfigRcPtr default_config;
+
+struct LegacyColorSpaceAlias
+{
+  const char *legacy;
+  const char *current;
+};
+
+// Phase 15: names written by the removed built-in engine or by the legacy
+// serializers. These are aliases, not silent identity passthroughs.
+constexpr LegacyColorSpaceAlias kLegacyColorSpaceAliases[] = {
+  { "scene_linear", "Linear" },
+  { "Linear Raw", "Linear" },
+  { "sRGB", "sRGB OETF" },
+  { "compositing_log", "Filmic Log Encoding" },
+  { "default", "Rec.709 OETF" },
+  { "data", "Non-Colour Data" },
+};
+
+QString ResolveLegacyColorSpace(const QString &name, const QStringList &available)
+{
+  for (const LegacyColorSpaceAlias &alias : kLegacyColorSpaceAliases) {
+    if (name.compare(QString::fromUtf8(alias.legacy), Qt::CaseInsensitive) == 0) {
+      const QString current = QString::fromUtf8(alias.current);
+      if (available.contains(current)) {
+        qInfo() << "[Color] Migrating legacy colour space" << name << "to" << current;
+        return current;
+      }
+    }
+  }
+
+  return QString();
+}
 }
 
 ColorManager::ColorManager(Project *project) :
@@ -170,11 +202,23 @@ QString ColorManager::GetReferenceColorSpace() const
 
 QString ColorManager::GetCompliantColorSpace(const QString &s)
 {
-  if (ListAvailableColorspaces().contains(s)) {
+  const QStringList available = ListAvailableColorspaces();
+
+  if (available.contains(s)) {
     return s;
-  } else {
-    return GetDefaultInputColorSpace();
   }
+
+  const QString migrated = ResolveLegacyColorSpace(s, available);
+  if (!migrated.isEmpty()) {
+    return migrated;
+  }
+
+  // Do not silently turn an unsupported input into the project default. Log the
+  // exact name so the user can fix the project/config; the returned default is
+  // still a usable fallback for UI code paths that must remain interactive.
+  qWarning() << "[Color] Unsupported colour space" << s
+             << "- falling back to default" << GetDefaultInputColorSpace();
+  return GetDefaultInputColorSpace();
 }
 
 ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transform, bool force_display)
@@ -187,16 +231,23 @@ ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transf
 
     // Check if display still exists in config
     if (!ListAvailableDisplays().contains(display)) {
+      qWarning() << "[Color] Unsupported display" << display
+                 << "- falling back to default" << GetDefaultDisplay();
       display = GetDefaultDisplay();
     }
 
     // Check if view still exists in display
     if (!ListAvailableViews(display).contains(view)) {
+      qWarning() << "[Color] Unsupported view" << view << "for display" << display
+                 << "- falling back to default" << GetDefaultView(display);
       view = GetDefaultView(display);
     }
 
     // Check if looks still exists
     if (!ListAvailableLooks().contains(look)) {
+      if (!look.isEmpty()) {
+        qWarning() << "[Color] Unsupported look" << look << "- clearing look";
+      }
       look.clear();
     }
 
@@ -204,12 +255,7 @@ ColorTransform ColorManager::GetCompliantColorSpace(const ColorTransform &transf
 
   } else {
 
-    QString output = transform.output();
-
-    if (!ListAvailableColorspaces().contains(output)) {
-      output = GetDefaultInputColorSpace();
-    }
-
+    const QString output = GetCompliantColorSpace(transform.output());
     return ColorTransform(output);
 
   }
@@ -233,16 +279,13 @@ void ColorManager::UpdateConfigFromFilename()
 
     impl_->config = OCIO::Config::CreateFromFile(config_filename.toUtf8());
 
-    // Set new default colorspace appropriately
-    QString new_default = old_default_cs;
+    // Keep the old default if the new config still provides it; otherwise use
+    // the new config's default. The previous loop selected the first *non*
+    // matching colour space, which silently changed the project default.
     QStringList available_cs = ListAvailableColorspaces();
-    for (int i=0; i<available_cs.size(); i++) {
-      const QString &c = available_cs.at(i);
-      if (c.compare(old_default_cs, Qt::CaseInsensitive)) {
-        new_default = c;
-        break;
-      }
-    }
+    QString new_default = available_cs.contains(old_default_cs)
+        ? old_default_cs
+        : impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT);
     SetDefaultInputColorSpace(new_default);
 
     emit ConfigChanged(config_filename);

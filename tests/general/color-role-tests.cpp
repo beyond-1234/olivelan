@@ -101,6 +101,40 @@ OLIVE_ADD_TEST(ColorRoleMapping)
  * former built-in "advertised == implemented" probe no longer applies. Keep the
  * test registered so the runner layout stays stable.
  */
+/**
+ * Phase 15: legacy project loaders and the removed built-in engine used role
+ * names rather than canonical OCIO colour-space names. Those aliases must migrate
+ * explicitly, not silently become the project default.
+ */
+OLIVE_ADD_TEST(LegacyColorSpaceAliases)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  if (manager->GetCompliantColorSpace(QStringLiteral("scene_linear")) != QStringLiteral("Linear")) {
+    std::cout << " - scene_linear did not migrate to Linear";
+    return __LINE__;
+  }
+
+  if (manager->GetCompliantColorSpace(QStringLiteral("Linear Raw")) != QStringLiteral("Linear")) {
+    std::cout << " - Linear Raw did not migrate to Linear";
+    return __LINE__;
+  }
+
+  if (manager->GetCompliantColorSpace(QStringLiteral("sRGB")) != QStringLiteral("sRGB OETF")) {
+    std::cout << " - sRGB did not migrate to sRGB OETF";
+    return __LINE__;
+  }
+
+  if (manager->GetCompliantColorSpace(QStringLiteral("compositing_log")) != QStringLiteral("Filmic Log Encoding")) {
+    std::cout << " - compositing_log did not migrate to Filmic Log Encoding";
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
 OLIVE_ADD_TEST(ColorspaceImplementationParity)
 {
   std::cout << " (OCIO build - colour spaces come from config.ocio)";
