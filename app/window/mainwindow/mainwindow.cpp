@@ -44,6 +44,7 @@
 #include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/hal_stats.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
@@ -1339,6 +1340,7 @@ void MainWindow::TryStartAutoplayBenchmark()
 
   qInfo() << "[Autoplay] starting continuous playback for" << seconds << "seconds"
           << "sequence length" << node->GetLength().toDouble();
+  GetHalStats().Reset();
   QElapsedTimer wall_timer;
   wall_timer.start();
   viewer->Play();
@@ -1386,6 +1388,13 @@ void MainWindow::TryStartAutoplayBenchmark()
     qInfo() << "[Autoplay] finished continuous playback for" << seconds << "seconds;"
             << "playhead advanced" << advanced << "seconds"
             << "wall elapsed" << wall_elapsed << "seconds";
+    qInfo() << "[Autoplay] HAL stats hardware_frames"
+            << GetHalStats().hardware_frames.load(std::memory_order_relaxed)
+            << "cpu_readback_frames"
+            << GetHalStats().cpu_readback_frames.load(std::memory_order_relaxed)
+            << "import_failures"
+            << GetHalStats().import_failures.load(std::memory_order_relaxed);
+
     qInfo() << "[Autoplay] presented frames" << presented_frames
             << "expected frames" << expected_frames
             << "wall-clock expected frames" << wall_expected_frames

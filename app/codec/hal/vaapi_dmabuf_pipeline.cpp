@@ -1,4 +1,6 @@
 #include "vaapi_dmabuf_pipeline.h"
+
+#include "hal_stats.h"
 #include "gpu_environment_probe.h"
 
 extern "C" {
@@ -467,6 +469,11 @@ bool VaapiDmaBufPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPar
                                                               prime_desc.width, prime_desc.height,
                                                               bits, full_range,
                                                               crv, cbu, cgu, cgv);
+  if (tex) {
+    GetHalStats().RecordHardwareFrame();
+  } else {
+    GetHalStats().RecordImportFailure();
+  }
   static std::atomic<bool> s_zero_copy_announced{false};
   if (tex && !s_zero_copy_announced.load()) {
     bool expected = false;

@@ -1,5 +1,7 @@
 #include "cuda_nvdec_pipeline.h"
 
+#include "hal_stats.h"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
@@ -105,6 +107,7 @@ bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParam
   out_frame.pts = hw_frame->pts;
 
   frame_count_++;
+  GetHalStats().RecordHardwareFrame();
   return true;
 #endif
 }

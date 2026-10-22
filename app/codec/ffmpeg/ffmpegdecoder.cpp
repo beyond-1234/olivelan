@@ -49,6 +49,7 @@ extern "C" {
 
 #include "codec/planarfiledevice.h"
 #include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/hal_stats.h"
 #include "codec/hal/gpu_environment_probe.h"
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
@@ -387,6 +388,7 @@ TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 
     // Host fallback: the last line of defence for frames that skipped the direct path.
     AVFramePtr software_frame = CreateAVFramePtr();
+    GetHalStats().RecordCpuReadback();
     int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
     if (transfer_error < 0) {
       qCritical() << "[HAL-Fallback] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
@@ -1003,6 +1005,7 @@ AVFramePtr FFmpegDecoder::PreProcessFrame(AVFramePtr f, const RetrieveVideoParam
   if (pre_fmt == AV_PIX_FMT_CUDA || pre_fmt == AV_PIX_FMT_VIDEOTOOLBOX || pre_fmt == AV_PIX_FMT_VAAPI) {
     qWarning() << "[HAL] Hardware frame reached pre-processing; downloading to host memory";
     AVFramePtr software_frame = CreateAVFramePtr();
+    GetHalStats().RecordCpuReadback();
     int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
     if (transfer_error < 0) {
       qCritical() << "[HAL] Failed to transfer hardware frame in pre-processing:" << FFmpegError(transfer_error);

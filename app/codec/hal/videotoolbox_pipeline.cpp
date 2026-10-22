@@ -1,5 +1,7 @@
 #include "videotoolbox_pipeline.h"
 
+#include "hal_stats.h"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
@@ -242,6 +244,7 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
   static std::atomic<quint64> hardware_frame_count{0};
   const quint64 frame_number =
       hardware_frame_count.fetch_add(1, std::memory_order_relaxed) + 1;
+  GetHalStats().RecordHardwareFrame();
   if (frame_number == 1 || frame_number % 24 == 0) {
     qInfo() << "[VideoToolbox-HAL] hardware frames" << frame_number
             << "size" << hw_frame->width << "x" << hw_frame->height
