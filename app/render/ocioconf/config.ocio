@@ -33,6 +33,7 @@ roles:
 displays:
   sRGB:
     - !<View> {name: sRGB OETF, colorspace: sRGB OETF}
+    - !<View> {name: HDR to SDR, colorspace: HDR SDR}
     - !<View> {name: Non-Colour Data, colorspace: Non-Colour Data}
     - !<View> {name: Linear Raw, colorspace: Linear}
     - !<View> {name: Filmic Log Encoding Base, colorspace: Filmic Log Encoding}
@@ -343,6 +344,20 @@ colorspaces:
       children:
         - !<FileTransform> {src: HLG_OETF_to_Linear.spi1d, interpolation: linear}
         - !<MatrixTransform> {matrix: [1.66049633, -0.58765635, -0.07284083, 0, -0.12454704, 1.13289513, -0.00834832, 0, -0.01815369, -0.10059740, 1.11875110, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: HDR SDR
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      HDR-to-SDR display view. The curve is an OCIO-baked approximation of the
+      ACES 2.0 SDR-100nit-REC709 output transform, applied through a
+      FileTransform so the bundled config remains OCIO 2 profile compatible.
+    isdata: false
+    allocation: uniform
+    allocationvars: [0.0, 1.0]
+    from_reference: !<FileTransform> {src: HDR_Tone.spi1d, interpolation: linear}
 
   - !<ColorSpace>
     name: Rec.601 OETF (NTSC)

@@ -293,6 +293,29 @@ OLIVE_ADD_TEST(ColorHdrTransferFunctions)
     return __LINE__;
   }
 
+  // The HDR-to-SDR OCIO view must roll highlights into the SDR range instead
+  // of clipping the decoded PQ/HLG values above 1.0.
+  ColorProcessorPtr pq_display = ColorProcessor::Create(
+        manager, QStringLiteral("Rec.2020 PQ"),
+        ColorTransform(QStringLiteral("sRGB"), QStringLiteral("HDR to SDR"), QString()));
+  ColorProcessorPtr hlg_display = ColorProcessor::Create(
+        manager, QStringLiteral("Rec.2020 HLG"),
+        ColorTransform(QStringLiteral("sRGB"), QStringLiteral("HDR to SDR"), QString()));
+
+  if (!pq_display || !hlg_display) {
+    std::cout << " - HDR-to-SDR OCIO view could not be created";
+    return __LINE__;
+  }
+
+  const double pq_white = pq_display->ConvertColor(Color(1.0f, 1.0f, 1.0f)).red();
+  const double hlg_white = hlg_display->ConvertColor(Color(1.0f, 1.0f, 1.0f)).red();
+  if (pq_white < 0.90 || pq_white > 1.01
+      || hlg_white < 0.80 || hlg_white > 1.01) {
+    std::cout << " - HDR-to-SDR view did not roll highlights into range: PQ="
+              << pq_white << " HLG=" << hlg_white;
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 
