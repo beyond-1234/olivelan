@@ -27,10 +27,23 @@
 
 #include <QSurfaceFormat>
 
+#include <cmath>
+
+#include "common/ociobridge.h"
+#include "node/color/colormanager/colormanager.h"
 #include "node/factory.h"
 #include "node/node.h"
+#include "node/project.h"
+#include "render/colorprocessor.h"
 
 namespace olive {
+
+namespace {
+bool NearlyEqual(double a, double b, double epsilon)
+{
+  return std::fabs(a - b) <= epsilon;
+}
+}
 
 OLIVE_ADD_TEST(SurfaceFormatCompliance)
 {
@@ -82,6 +95,86 @@ OLIVE_ADD_TEST(GradingNodeAvailability)
 
   delete node;
   NodeFactory::Destroy();
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(PrimaryGradingMath)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  OCIO::GradingPrimaryTransformRcPtr gp = OCIO::GradingPrimaryTransform::Create(OCIO::GRADING_LIN);
+  gp->setDirection(OCIO::TRANSFORM_DIR_FORWARD);
+
+  OCIO::GradingPrimary values(OCIO::GRADING_LIN);
+  // +1 stop. OCIO's CPU GradingPrimary stores exposure in stops, while the
+  // node's GPU uniform path converts stops to a multiplier.
+  values.m_exposure = OCIO::GradingRGBM(1.0, 1.0, 1.0, 0.0);
+  gp->setValue(values);
+
+  ColorProcessorPtr proc = ColorProcessorOCIO::Create(
+        ColorManagerOCIO::GetConfig(manager)->getProcessor(gp));
+
+  if (!proc) {
+    std::cout << " - Primary grading processor could not be created";
+    return __LINE__;
+  }
+
+  const Color in(0.18f, 0.18f, 0.18f);
+  const Color out = proc->ConvertColor(in);
+
+  if (!NearlyEqual(out.red(), 0.36, 1e-4)
+      || !NearlyEqual(out.green(), 0.36, 1e-4)
+      || !NearlyEqual(out.blue(), 0.36, 1e-4)) {
+    std::cout << " - +1 stop exposure did not double the linear mid-grey: "
+              << out.red() << ", " << out.green() << ", " << out.blue();
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(ChromaKeyOcioShader)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+
+  ColorProcessorPtr proc = ColorProcessor::Create(
+        manager,
+        manager->GetReferenceColorSpace(),
+        ColorTransform(QStringLiteral("cie_xyz_d65_interchange")));
+
+  if (!proc) {
+    std::cout << " - ChromaKey colour transform could not be created";
+    return __LINE__;
+  }
+
+  auto ocio_proc = ColorProcessorOCIO::GetProcessor(proc.get());
+  if (!ocio_proc) {
+    std::cout << " - ChromaKey processor has no OCIO processor";
+    return __LINE__;
+  }
+
+  auto gpu_proc = ocio_proc->getDefaultGPUProcessor();
+  if (!gpu_proc) {
+    std::cout << " - ChromaKey processor has no GPU processor";
+    return __LINE__;
+  }
+
+  auto desc = OCIO::GpuShaderDesc::CreateShaderDesc();
+  desc->setLanguage(OCIO::GPU_LANGUAGE_GLSL_1_3);
+  desc->setFunctionName("SceneLinearToCIEXYZ_d65");
+  desc->setResourcePrefix("ocio_");
+  gpu_proc->extractGpuShaderInfo(desc);
+
+  const QString shader = QString::fromUtf8(desc->getShaderText());
+  if (!shader.contains(QStringLiteral("SceneLinearToCIEXYZ_d65"))) {
+    std::cout << " - ChromaKey OCIO shader does not define the requested function";
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 
