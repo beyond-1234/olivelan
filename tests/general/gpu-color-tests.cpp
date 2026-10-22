@@ -72,6 +72,20 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
   renderer.Init(&ctx);
   renderer.PostInit();
 
+  struct GlCleanup {
+    OpenGLRenderer *r;
+    QOpenGLContext *c;
+    ~GlCleanup() {
+      if (r) {
+        r->Destroy();
+        r->PostDestroy();
+      }
+      if (c) {
+        c->doneCurrent();
+      }
+    }
+  } cleanup{&renderer, &ctx};
+
   VideoParams params(1, 1, PixelFormat::F32, VideoParams::kRGBAChannelCount);
   const float input[4] = {0.18f, 0.18f, 0.18f, 1.0f};
   TexturePtr source = renderer.CreateTexture(params, input);

@@ -156,6 +156,12 @@ void ManagedDisplayWidget::ColorConfigChanged()
     return;
   }
 
+  if (!auto_hdr_previous_transform_.is_display() && auto_hdr_previous_transform_.output().isEmpty()) {
+    // Keep empty so it falls back to the new config's default on restoration
+  } else {
+    auto_hdr_previous_transform_ = color_manager_->GetCompliantColorSpace(auto_hdr_previous_transform_, false);
+  }
+
   if (auto_hdr_view_ && hdr_mode_active_) {
     // Re-apply the HDR view after a config change instead of dropping back to
     // the project's SDR default.
@@ -439,7 +445,13 @@ void ManagedDisplayWidget::SetHdrMode(bool hdr)
                                      color_transform_.look()));
   } else {
     hdr_mode_active_ = false;
-    SetColorTransform(auto_hdr_previous_transform_);
+    ColorTransform restore = auto_hdr_previous_transform_;
+    if (!restore.is_display() && restore.output().isEmpty()) {
+      restore = color_manager_->GetCompliantColorSpace(ColorTransform(), false);
+    } else {
+      restore = color_manager_->GetCompliantColorSpace(restore, false);
+    }
+    SetColorTransform(restore);
   }
 }
 
