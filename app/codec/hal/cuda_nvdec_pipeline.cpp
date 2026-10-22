@@ -93,6 +93,7 @@ bool CudaNvdecPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoParam
 
   TexturePtr tex = renderer_->CreateTextureFromCudaFrame(params, hw_frame);
   if (!tex) {
+    GetHalStats().RecordImportFailure();
     return false;
   }
 

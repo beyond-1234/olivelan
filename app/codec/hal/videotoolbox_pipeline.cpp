@@ -224,6 +224,7 @@ bool VideoToolboxPipeline::ProcessHardwareFrame(AVFrame* hw_frame, const VideoPa
       effective, iosurface, hw_frame->width, hw_frame->height, bits_per_pixel,
       full_range, crv, cbu, cgu, cgv);
   if (!tex) {
+    GetHalStats().RecordImportFailure();
     qWarning() << "[VideoToolbox-HAL] Failed to import IOSurface planes";
     return false;
   }
