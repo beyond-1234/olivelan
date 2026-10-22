@@ -29,6 +29,7 @@
 
 #include "common/ociobridge.h"
 #include "node/color/colormanager/colormanager.h"
+#include "node/keying/chromakey/chromakey.h"
 #include "node/project.h"
 #include "render/colorprocessor.h"
 #include "render/job/colortransformjob.h"
@@ -162,6 +163,57 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
   if (std::fabs(double(primary_output[0]) - 0.36) > 0.02) {
     std::cout << " - GPU Primary +1 stop did not produce the expected mid-grey: "
               << primary_output[0];
+    return __LINE__;
+  }
+
+  // ChromaKey: run the real OCIO-backed ChromaKey shader with a green key and
+  // red/green solid inputs, then read the mask-only output. This exercises the
+  // CIE-XYZ OCIO stub and the key shader on the GPU, not just shader text.
+  ColorProcessorPtr chroma_processor = ColorProcessor::Create(
+        project.color_manager(),
+        project.color_manager()->GetReferenceColorSpace(),
+        ColorTransform(QStringLiteral("cie_xyz_d65_interchange")));
+  OLIVE_ASSERT(chroma_processor);
+
+  ChromaKeyNode chroma;
+  auto render_mask = [&](const Color &input_color) -> float {
+    const float in[4] = {input_color.red(), input_color.green(), input_color.blue(), input_color.alpha()};
+    TexturePtr src = renderer.CreateTexture(params, in);
+    TexturePtr dst = renderer.CreateTexture(params);
+
+    ColorTransformJob job;
+    job.SetColorProcessor(chroma_processor);
+    job.SetInputTexture(src);
+    // The real ChromaKey node receives this through ColorTransformJob(value);
+    // the custom shader samples the named tex_in input directly.
+    job.Insert(ChromaKeyNode::kTextureInput,
+               NodeValue(NodeValue::kTexture, QVariant::fromValue(src)));
+    job.SetNeedsCustomShader(&chroma, QStringLiteral("main"));
+    job.SetFunctionName(QStringLiteral("SceneLinearToCIEXYZ_d65"));
+    job.Insert(ChromaKeyNode::kColorInput,
+               NodeValue(NodeValue::kColor, QVariant::fromValue(Color(0.0f, 1.0f, 0.0f, 1.0f))));
+    job.Insert(ChromaKeyNode::kMaskOnlyInput, NodeValue(NodeValue::kBoolean, true));
+    job.Insert(ChromaKeyNode::kInvertInput, NodeValue(NodeValue::kBoolean, false));
+    job.Insert(ChromaKeyNode::kLowerToleranceInput, NodeValue(NodeValue::kFloat, 5.0));
+    job.Insert(ChromaKeyNode::kUpperToleranceInput, NodeValue(NodeValue::kFloat, 25.0));
+    job.Insert(ChromaKeyNode::kShadowsInput, NodeValue(NodeValue::kFloat, 100.0));
+    job.Insert(ChromaKeyNode::kHighlightsInput, NodeValue(NodeValue::kFloat, 100.0));
+    job.Insert(QStringLiteral("garbage_in_enabled"), NodeValue(NodeValue::kBoolean, false));
+    job.Insert(QStringLiteral("core_in_enabled"), NodeValue(NodeValue::kBoolean, false));
+
+    renderer.BlitColorManaged(job, dst.get());
+    float out[4] = {0, 0, 0, 0};
+    renderer.DownloadFromTexture(dst->id(), params, out, sizeof(float) * 4);
+    return out[0];
+  };
+
+  const float green_mask = render_mask(Color(0.0f, 1.0f, 0.0f, 1.0f));
+  const float red_mask = render_mask(Color(1.0f, 0.0f, 0.0f, 1.0f));
+  const float soft_mask = render_mask(Color(0.2f, 0.8f, 0.2f, 1.0f));
+  if (green_mask > 0.05f || red_mask < 0.85f
+      || soft_mask <= 0.02f || soft_mask >= 0.98f) {
+    std::cout << " - ChromaKey GPU mask failed: green=" << green_mask
+              << " red=" << red_mask << " soft=" << soft_mask;
     return __LINE__;
   }
 
