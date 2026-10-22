@@ -21,6 +21,7 @@
 #include "testutil.h"
 
 #include <cmath>
+#include <vector>
 
 #include <QGuiApplication>
 #include <QOffscreenSurface>
@@ -228,6 +229,68 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
       || soft_mask <= 0.02f || soft_mask >= 0.98f) {
     std::cout << " - ChromaKey GPU mask failed: green=" << green_mask
               << " red=" << red_mask << " soft=" << soft_mask;
+    return __LINE__;
+  }
+
+  // Spatial edge: 16x1 green -> red ramp. The ChromaKey shader must produce a
+  // keyed left region, a foreground right region, and at least one soft pixel
+  // in between; no NaN/out-of-range values are allowed across the row.
+  const int edge_width = 16;
+  VideoParams edge_params(edge_width, 1, PixelFormat::F32,
+                          VideoParams::kRGBAChannelCount);
+  std::vector<float> edge_input(edge_width * 4);
+  for (int x = 0; x < edge_width; x++) {
+    float t = float(x) / float(edge_width - 1);
+    float r = (x < 6) ? 0.0f : (x > 9 ? 1.0f : t);
+    float g = (x < 6) ? 1.0f : (x > 9 ? 0.0f : 1.0f - t);
+    edge_input[x * 4 + 0] = r;
+    edge_input[x * 4 + 1] = g;
+    edge_input[x * 4 + 2] = 0.0f;
+    edge_input[x * 4 + 3] = 1.0f;
+  }
+
+  TexturePtr edge_src = renderer.CreateTexture(edge_params, edge_input.data());
+  TexturePtr edge_dst = renderer.CreateTexture(edge_params);
+  ColorTransformJob edge_job;
+  edge_job.SetColorProcessor(chroma_processor);
+  edge_job.SetInputTexture(edge_src);
+  edge_job.Insert(ChromaKeyNode::kTextureInput,
+                  NodeValue(NodeValue::kTexture, QVariant::fromValue(edge_src)));
+  edge_job.SetNeedsCustomShader(&chroma, QStringLiteral("main"));
+  edge_job.SetFunctionName(QStringLiteral("SceneLinearToCIEXYZ_d65"));
+  edge_job.Insert(ChromaKeyNode::kColorInput,
+                  NodeValue(NodeValue::kColor, QVariant::fromValue(Color(0.0f, 1.0f, 0.0f, 1.0f))));
+  edge_job.Insert(ChromaKeyNode::kMaskOnlyInput, NodeValue(NodeValue::kBoolean, true));
+  edge_job.Insert(ChromaKeyNode::kInvertInput, NodeValue(NodeValue::kBoolean, false));
+  edge_job.Insert(ChromaKeyNode::kLowerToleranceInput, NodeValue(NodeValue::kFloat, 5.0));
+  edge_job.Insert(ChromaKeyNode::kUpperToleranceInput, NodeValue(NodeValue::kFloat, 25.0));
+  edge_job.Insert(ChromaKeyNode::kShadowsInput, NodeValue(NodeValue::kFloat, 100.0));
+  edge_job.Insert(ChromaKeyNode::kHighlightsInput, NodeValue(NodeValue::kFloat, 100.0));
+  edge_job.Insert(QStringLiteral("garbage_in_enabled"), NodeValue(NodeValue::kBoolean, false));
+  edge_job.Insert(QStringLiteral("core_in_enabled"), NodeValue(NodeValue::kBoolean, false));
+  renderer.BlitColorManaged(edge_job, edge_dst.get());
+
+  std::vector<float> edge_output(edge_width * 4, 0.0f);
+  renderer.DownloadFromTexture(edge_dst->id(), edge_params, edge_output.data(), edge_width);
+
+  int soft_pixels = 0;
+  for (int x = 0; x < edge_width; x++) {
+    const float mask = edge_output[x * 4];
+    if (!std::isfinite(mask) || mask < -0.001f || mask > 1.001f) {
+      std::cout << " - ChromaKey spatial mask invalid at x=" << x << ": " << mask;
+      return __LINE__;
+    }
+    if (mask > 0.02f && mask < 0.98f) {
+      soft_pixels++;
+    }
+  }
+
+  if (edge_output[0] > 0.05f
+      || edge_output[(edge_width - 1) * 4] < 0.85f
+      || soft_pixels == 0) {
+    std::cout << " - ChromaKey spatial edge failed: left=" << edge_output[0]
+              << " right=" << edge_output[(edge_width - 1) * 4]
+              << " soft_pixels=" << soft_pixels;
     return __LINE__;
   }
 
