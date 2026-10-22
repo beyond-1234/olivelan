@@ -466,9 +466,12 @@ void ViewerDisplayWidget::OnPaint()
           texture_to_draw = deinterlace_texture_;
         }
 
-        // Auto-enable/disable the HDR view from the actual texture being
-        // displayed, not from the sequence's generic video params.
-        SetHdrMode(texture_to_draw->params().needs_hdr_mapping());
+        // Texture-level detection is only a fallback. Project-level detection
+        // in ManagedDisplayWidget makes the HDR view sticky across mixed
+        // HDR/SDR edit points.
+        if (texture_to_draw->params().needs_hdr_mapping()) {
+          SetHdrMode(true);
+        }
 
         ColorTransformJob ctj;
         ctj.SetColorProcessor(color_service());

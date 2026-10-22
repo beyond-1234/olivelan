@@ -45,6 +45,7 @@
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
 #include "codec/hal/hal_stats.h"
+#include "render/colorstats.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
@@ -1341,6 +1342,16 @@ void MainWindow::TryStartAutoplayBenchmark()
   qInfo() << "[Autoplay] starting continuous playback for" << seconds << "seconds"
           << "sequence length" << node->GetLength().toDouble();
   GetHalStats().Reset();
+  // Keep ColorStats since app/project load: this captures auto-HDR view
+  // selection and shader compilation that happen before playback starts.
+  qInfo() << "[Autoplay] color stats baseline transform_changes"
+          << GetColorStats().transform_changes.load(std::memory_order_relaxed)
+          << "hdr_view_switches"
+          << GetColorStats().hdr_view_switches.load(std::memory_order_relaxed)
+          << "shader_compiles"
+          << GetColorStats().shader_compiles.load(std::memory_order_relaxed)
+          << "shader_cache_hits"
+          << GetColorStats().shader_cache_hits.load(std::memory_order_relaxed);
   QElapsedTimer wall_timer;
   wall_timer.start();
   viewer->Play();
@@ -1394,6 +1405,15 @@ void MainWindow::TryStartAutoplayBenchmark()
             << GetHalStats().cpu_readback_frames.load(std::memory_order_relaxed)
             << "import_failures"
             << GetHalStats().import_failures.load(std::memory_order_relaxed);
+
+    qInfo() << "[Autoplay] color stats transform_changes"
+            << GetColorStats().transform_changes.load(std::memory_order_relaxed)
+            << "hdr_view_switches"
+            << GetColorStats().hdr_view_switches.load(std::memory_order_relaxed)
+            << "shader_compiles"
+            << GetColorStats().shader_compiles.load(std::memory_order_relaxed)
+            << "shader_cache_hits"
+            << GetColorStats().shader_cache_hits.load(std::memory_order_relaxed);
 
     qInfo() << "[Autoplay] presented frames" << presented_frames
             << "expected frames" << expected_frames

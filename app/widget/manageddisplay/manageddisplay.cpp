@@ -26,6 +26,7 @@
 #include <QMessageBox>
 
 #include "panel/panelmanager.h"
+#include "render/colorstats.h"
 #include "render/opengl/openglrenderer.h"
 #include "render/rendermanager.h"
 
@@ -159,6 +160,12 @@ void ManagedDisplayWidget::ColorConfigChanged()
   auto_hdr_previous_transform_ =
       color_manager_->GetRestorableColorTransform(auto_hdr_previous_transform_);
 
+  if (auto_hdr_view_) {
+    // Project-level HDR selection is sticky: mixed HDR/SDR timelines choose the
+    // HDR view once instead of rebuilding the processor at every edit point.
+    SetHdrMode(color_manager_->ProjectHasHdrFootage());
+  }
+
   if (auto_hdr_view_ && hdr_mode_active_) {
     // Re-apply the HDR view after a config change instead of dropping back to
     // the project's SDR default.
@@ -247,6 +254,7 @@ void ManagedDisplayWidget::OnDestroy()
 
 void ManagedDisplayWidget::SetColorTransform(const ColorTransform &transform)
 {
+  GetColorStats().transform_changes.fetch_add(1, std::memory_order_relaxed);
   color_transform_ = transform;
 
   SetupColorProcessor();
@@ -437,11 +445,14 @@ void ManagedDisplayWidget::SetHdrMode(bool hdr)
 
     auto_hdr_previous_transform_ = color_transform_;
     hdr_mode_active_ = true;
+    GetColorStats().hdr_view_switches.fetch_add(1, std::memory_order_relaxed);
     qInfo() << "[Color] Auto-selected HDR to SDR view for display" << display;
     SetColorTransform(ColorTransform(display, QStringLiteral("HDR to SDR"),
                                      color_transform_.look()));
   } else {
     hdr_mode_active_ = false;
+    GetColorStats().hdr_view_switches.fetch_add(1, std::memory_order_relaxed);
+    qInfo() << "[Color] Restored SDR color transform after HDR";
     SetColorTransform(color_manager_->GetRestorableColorTransform(auto_hdr_previous_transform_));
   }
 }

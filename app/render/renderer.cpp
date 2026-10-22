@@ -22,6 +22,7 @@
 
 #include "common/ociobridge.h"
 #include "render/colorprocessor.h"
+#include "render/colorstats.h"
 
 #include <QDateTime>
 #include <QThread>
@@ -180,6 +181,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
   QString proc_id = color_job.id();
 
   if (color_cache_.contains(proc_id)) {
+    GetColorStats().shader_cache_hits.fetch_add(1, std::memory_order_relaxed);
     color_ctx = color_cache_.value(proc_id);
     return true;
   } else {
@@ -221,6 +223,8 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     if (color_ctx.compiled_shader.isNull()) {
       return false;
     }
+
+    GetColorStats().shader_compiles.fetch_add(1, std::memory_order_relaxed);
 
     color_ctx.lut3d_textures.resize(shader_desc->getNum3DTextures());
     for (unsigned int i=0; i<shader_desc->getNum3DTextures(); i++) {

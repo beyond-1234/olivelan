@@ -323,6 +323,25 @@ ColorTransform ColorManager::GetRestorableColorTransform(const ColorTransform &t
   return ColorTransform(display, view, look);
 }
 
+bool ColorManager::ProjectHasHdrFootage() const
+{
+  if (!project()) {
+    return false;
+  }
+
+  foreach (Node *node, project()->nodes()) {
+    if (Footage *footage = dynamic_cast<Footage*>(node)) {
+      for (int i = 0; i < footage->GetVideoStreamCount(); i++) {
+        if (footage->GetVideoParams(i).needs_hdr_mapping()) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 void ColorManager::GetDefaultLumaCoefs(double *rgb) const
 {
   impl_->config->getDefaultLumaCoefs(rgb);
