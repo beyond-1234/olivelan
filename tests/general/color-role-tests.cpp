@@ -157,6 +157,11 @@ OLIVE_ADD_TEST(InvalidColorSpaceRejected)
     return __LINE__;
   }
 
+  if (manager->GetCompliantColorSpace(QString()) != manager->GetDefaultInputColorSpace()) {
+    std::cout << " - empty colour space did not resolve to the project default";
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 

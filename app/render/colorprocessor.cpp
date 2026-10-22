@@ -49,12 +49,14 @@ ColorProcessor::ColorProcessor() :
 ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const ColorTransform &transform, Direction direction) :
   impl_(std::make_unique<Impl>())
 {
-  const QString& output = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
+  const QString output = transform.is_display()
+      ? (transform.display().isEmpty() ? config->GetDefaultDisplay() : transform.display())
+      : (transform.output().isEmpty() ? config->GetDefaultInputColorSpace() : transform.output());
   const OCIO::ConstConfigRcPtr ocio_config = ColorManagerOCIO::GetConfig(config);
 
   if (transform.is_display()) {
 
-    const QString& view = (transform.view().isEmpty()) ? config->GetDefaultView(output) : transform.view();
+    const QString view = (transform.view().isEmpty()) ? config->GetDefaultView(output) : transform.view();
 
     auto display_transform = OCIO::DisplayViewTransform::Create();
 

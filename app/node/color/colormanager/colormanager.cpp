@@ -202,6 +202,12 @@ QString ColorManager::GetReferenceColorSpace() const
 
 QString ColorManager::GetCompliantColorSpace(const QString &s)
 {
+  // An empty transform means "use the project default input space". This is
+  // distinct from an unknown name and must not produce an error/warning.
+  if (s.isEmpty()) {
+    return GetDefaultInputColorSpace();
+  }
+
   const QStringList available = ListAvailableColorspaces();
 
   if (available.contains(s)) {
