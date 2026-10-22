@@ -189,7 +189,7 @@ find_package(OpenGL REQUIRED)
 list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 
 # Phase 15: OpenColorIO is a required product dependency. The former
-# OLIVE_ENABLE_OCIO OFF build and built-in colour engine are being removed.
+# OLIVE_ENABLE_OCIO OFF build and built-in colour engine have been removed.
 # Prefer the upstream CONFIG target (2.2+); keep the module fallback for
 # distributions that only ship headers/libraries. OCIO is a colour evaluation
 # dependency only; do not reintroduce OpenImageIO/OpenEXR here.
@@ -209,9 +209,6 @@ else()
   list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
 endif()
 
-# Temporary P15-A compatibility define. P15-B removes the conditional code and
-# then this definition. No build without OCIO is supported anymore.
-list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_OCIO)
 
 # Link Olive
 list(APPEND OLIVE_LIBRARIES olivecore)

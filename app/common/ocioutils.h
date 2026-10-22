@@ -46,7 +46,7 @@ public:
    * Patch 0038: these are the OpenColorIO role names, but declared as plain
    * strings so that project serialization and the colour-management UI can read
    * and write legacy .ove files without including the OpenColorIO headers. That
-   * is what allows the tree to build with OLIVE_ENABLE_OCIO=OFF later in Phase 8.
+   * keeps the serializers independent of OpenColorIO types.
    * They must stay in sync with the `roles:` block of
    * app/render/ocioconf/config.ocio.
    */

@@ -17,12 +17,10 @@ Dependency hierarchy:
 2. `ci-otio`, `ci-crashpad`, `ci-ffmpeg`
 3. `ci-olive`
 
-> **OpenColorIO is no longer part of the default build (patch 0043).** Olive now
-> defaults to `-DOLIVE_ENABLE_OCIO=OFF`, i.e. its built-in colour engine, so the
-> `ci-ocio` package image, `docker/scripts/build_ocio.sh` and the OCIO layer in
-> `ci-olive` have been removed. Building with `-DOLIVE_ENABLE_OCIO=ON` still works,
-> but then OpenColorIO (and Imath) must be provided by the build environment;
-> `ci-olive` still carries Imath for that case.
+> **OpenColorIO is a required build dependency (Phase 15).** The former
+> `OLIVE_ENABLE_OCIO=OFF` built-in engine path has been removed. The
+> `ci-ocio` package image and OCIO layer are still absent from this historical
+> Docker layout; the Linux build image provides OCIO 2.5.1 and Imath.
 
 ## Usage
 

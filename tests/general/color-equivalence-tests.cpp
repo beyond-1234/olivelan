@@ -34,7 +34,7 @@
  * Recording the golden
  * --------------------
  * The reference values are NOT derived from the implementation under test. They
- * are recorded from the OpenColorIO build: build with -DOLIVE_ENABLE_OCIO=ON, run
+ * are recorded from the OpenColorIO reference build: run
  * this test, and the ColorEquivalenceAclass test prints the table below (it asserts
  * nothing in that configuration). Those printed values were pasted into kGolden,
  * and the OFF build asserts against them. This is the same "record then compare"
@@ -317,7 +317,7 @@ Color InputForIndex(int i)
 }
 
 // Recorded from the OpenColorIO build by running ColorEquivalenceAclass with
-// OLIVE_ENABLE_OCIO defined (see the file header). Shape is
+// from the OCIO reference build (see the file header). Shape is
 // [pair][conversion][channel], in the kSpacePairs x (kLevels, kTriples) order.
 const float kGolden[kGoldenFloatCount] = {
   // pair 0: Linear -> sRGB OETF
@@ -450,35 +450,6 @@ OLIVE_ADD_TEST(ColorEquivalenceAclass)
 
   int index = 0;
 
-#ifdef OLIVE_ENABLE_OCIO
-  // Recording mode. This build IS the reference, so there is nothing to assert
-  // against; print the table so kGolden can be regenerated.
-  std::cout << " (recording OCIO golden - run the OLIVE_ENABLE_OCIO=OFF build to assert)"
-            << std::setprecision(10);
-
-  for (int p = 0; p < kSpacePairCount; p++) {
-    ColorProcessorPtr proc = ColorProcessor::Create(
-          manager,
-          QString::fromUtf8(kSpacePairs[p].from),
-          ColorTransform(QString::fromUtf8(kSpacePairs[p].to)));
-
-    for (int i = 0; i < kConversionsPerPair; i++) {
-      const Color in = InputForIndex(i);
-      const Color out = proc->ConvertColor(in);
-
-      std::cout << std::endl
-                << "GOLDEN[" << index << "] "
-                << out.red() << " "
-                << out.green() << " "
-                << out.blue();
-      index++;
-    }
-  }
-
-  std::cout << std::endl;
-
-  OLIVE_TEST_END;
-#else
   double de_sum = 0.0;
   int de_count = 0;
   double worst_de = 0.0;
@@ -558,7 +529,6 @@ OLIVE_ADD_TEST(ColorEquivalenceAclass)
   }
 
   OLIVE_TEST_END;
-#endif
 }
 
 OLIVE_ADD_TEST(ColorEquivalenceAlphaUntouched)

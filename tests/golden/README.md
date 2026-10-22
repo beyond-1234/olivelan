@@ -57,8 +57,7 @@ manager builds GLSL from the OCIO config) and must be captured **before** the
 OCIO pipeline is replaced in Phase 8. It therefore has to be recorded on a GPU
 session, not offline:
 
-1. Build with the colour pipeline intact (`OLIVE_ENABLE_OCIO=ON` once patch
-   0037/0038 land — today: unmodified build).
+1. Build the OCIO-only colour pipeline.
 2. Import the reference clip still + the reference `.cube` file.
 3. Render each case at a fixed timeline position and dump the viewer output as
    a lossless PNG/EXR under `tests/golden/color_equivalence/`.

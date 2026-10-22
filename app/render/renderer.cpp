@@ -21,6 +21,7 @@
 #include "renderer.h"
 
 #include "common/ociobridge.h"
+#include "render/builtincolorspaces.h"
 #include "render/colorprocessor.h"
 
 #include <QDateTime>
@@ -198,7 +199,6 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     color_ctx = color_cache_.value(proc_id);
     return true;
   } else {
-#ifdef OLIVE_ENABLE_OCIO
     // Create shader description
     QString ocio_func_name;
     if (color_job.GetFunctionName().isEmpty()) {
@@ -231,47 +231,6 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       code = FileFunctions::ReadFileAsString(QStringLiteral(":shaders/colormanage.frag"));
       code.set_frag_code(code.frag_code().arg(shader_desc->getShaderText()));
     }
-#else
-    // Patch 0039 (Phase 8): built-in colour engine (OLIVE_ENABLE_OCIO=OFF).
-    //
-    // Patch 0047: the OCIODisplay() body is now *derived* from the processor's
-    // transfer-function enumerators (GenerateBuiltinGlslShader) instead of the fixed
-    // scene-linear -> sRGB stub, so every advertised colour space and any attached
-    // .cube LUT reaches the GPU correctly. SceneLinearToCIEXYZ_d65() is kept here
-    // because ChromaKeyNode calls it directly.
-    BuiltinTransferFunction src_tf = kTransferLinear;
-    BuiltinTransferFunction dst_tf = kTransferSrgb;
-    bool has_lut = false;
-
-    if (ColorProcessor *proc = color_job.GetColorProcessor().get()) {
-      src_tf = proc->GetInputTransferFunction();
-      dst_tf = proc->GetOutputTransferFunction();
-      if (std::shared_ptr<CubeLUT> lut = proc->GetCubeLUT()) {
-        has_lut = lut->IsValid() && lut->Is3D();
-      }
-    }
-
-    // F-4 fix: `peak_nits` is resolved above from the source VideoParams (see
-    // ResolveMasteringPeakNits); it is no longer hardcoded to 0.0 here.
-    //
-    // The CIEXYZ helper is appended from colorprocessor.cpp (GenerateBuiltinGlslAuxFunctions)
-    // rather than inlined here, so the regression test can assert on the exact text that reaches
-    // the GPU. A GLSL reserved word used as an identifier is otherwise only caught at runtime -
-    // patch 0061 shipped a parameter literally named `in` and the viewer went black.
-    const QString builtin_shader_text = GenerateBuiltinGlslShader(src_tf, dst_tf, has_lut, peak_nits)
-        + GenerateBuiltinGlslAuxFunctions();
-
-    ShaderCode code;
-    if (const Node *shader_src = color_job.CustomShaderSource()) {
-      // Use shader code from associated node
-      code = shader_src->GetShaderCode({color_job.CustomShaderID(), builtin_shader_text});
-    } else {
-      // Generate shader code using our built-in stub
-      code = FileFunctions::ReadFileAsString(QStringLiteral(":shaders/colormanage.frag"));
-      code.set_frag_code(code.frag_code().arg(builtin_shader_text));
-    }
-#endif
-
     // Try to compile shader
     color_ctx.compiled_shader = CreateNativeShader(code);
 
@@ -279,7 +238,6 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       return false;
     }
 
-#ifdef OLIVE_ENABLE_OCIO
     color_ctx.lut3d_textures.resize(shader_desc->getNum3DTextures());
     for (unsigned int i=0; i<shader_desc->getNum3DTextures(); i++) {
       const char* tex_name = nullptr;
@@ -348,29 +306,8 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       color_ctx.lut1d_textures[i].name = sampler_name;
       color_ctx.lut1d_textures[i].interpolation = (interpolation == OCIO::INTERP_NEAREST) ? Texture::kNearest : Texture::kLinear;
     }
-#endif // OLIVE_ENABLE_OCIO
 
-#ifndef OLIVE_ENABLE_OCIO
-    // Patch 0047 (Phase 8): upload an attached .cube LUT into the renderer's existing
-    // 3D-texture slot. The loop in BlitColorManaged() that binds lut3d_textures into
-    // the ShaderJob lives OUTSIDE the OCIO #ifdef, so filling this vector is all the
-    // wiring needed for the sampler3D in the generated GLSL to reach the texture.
-    if (ColorProcessor *proc = color_job.GetColorProcessor().get()) {
-      if (std::shared_ptr<CubeLUT> lut = proc->GetCubeLUT()) {
-        if (lut->IsValid() && lut->Is3D()) {
-          const int edge = lut->texture_edge_length();
 
-          color_ctx.lut3d_textures.resize(1);
-          color_ctx.lut3d_textures[0].texture =
-              CreateTexture(VideoParams(edge, edge, edge, PixelFormat::F32,
-                                        VideoParams::kRGBChannelCount),
-                            lut->data().constData());
-          color_ctx.lut3d_textures[0].name = QStringLiteral("ove_cube_lut");
-          color_ctx.lut3d_textures[0].interpolation = Texture::kLinear;
-        }
-      }
-    }
-#endif // !OLIVE_ENABLE_OCIO
 
     color_cache_.insert(proc_id, color_ctx);
 

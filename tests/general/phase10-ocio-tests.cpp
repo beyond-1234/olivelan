@@ -19,10 +19,8 @@
 ***/
 
 /**
- * Phase 10 gate: the Primary grading node must only be advertised when the
- * OpenColorIO backend is compiled in. Under OLIVE_ENABLE_OCIO=OFF it still
- * loads from existing projects, but must not appear in the create menu as a
- * node that silently forwards its input.
+ * Phase 15 gate: the Primary grading node must always be advertised now that
+ * OpenColorIO is the only colour pipeline.
  */
 
 #include "testutil.h"
@@ -75,21 +73,12 @@ OLIVE_ADD_TEST(GradingNodeAvailability)
 
   const bool hidden = (node->GetFlags() & Node::kDontShowInCreateMenu) != 0;
 
-#ifdef OLIVE_ENABLE_OCIO
   if (hidden) {
     delete node;
     NodeFactory::Destroy();
     std::cout << " - OCIO build hides the Primary grading node";
     return __LINE__;
   }
-#else
-  if (!hidden) {
-    delete node;
-    NodeFactory::Destroy();
-    std::cout << " - built-in build advertises a no-op Primary grading node";
-    return __LINE__;
-  }
-#endif
 
   delete node;
   NodeFactory::Destroy();

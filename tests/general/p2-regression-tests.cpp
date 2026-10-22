@@ -190,10 +190,8 @@ OLIVE_ADD_TEST(ProjectViewModelDurationRole)
     application = std::make_unique<QCoreApplication>(argc, argv);
   }
 
-#ifdef OLIVE_ENABLE_OCIO
-  // Project's ColorManager expects an OCIO config to exist in this build (see color-role-tests).
+  // Project's ColorManager always expects an OCIO config in this build.
   ColorManager::SetUpDefaultConfig();
-#endif
 
   Project project;
   project.Initialize();
