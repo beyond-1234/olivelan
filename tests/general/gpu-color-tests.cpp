@@ -99,6 +99,35 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
     return __LINE__;
   }
 
+  // HDR view: decode PQ 1.0 (10000-nit code) and run the OCIO HDR-to-SDR
+  // view on the GPU; compare with the OCIO CPU reference.
+  const float hdr_input[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  TexturePtr hdr_source = renderer.CreateTexture(params, hdr_input);
+  TexturePtr hdr_destination = renderer.CreateTexture(params);
+  ColorProcessorPtr hdr_processor = ColorProcessor::Create(
+        project.color_manager(),
+        QStringLiteral("Rec.2020 PQ"),
+        ColorTransform(QStringLiteral("sRGB"), QStringLiteral("HDR to SDR"), QString()));
+
+  OLIVE_ASSERT(hdr_processor);
+  ColorTransformJob hdr_job;
+  hdr_job.SetColorProcessor(hdr_processor);
+  hdr_job.SetInputTexture(hdr_source);
+  renderer.BlitColorManaged(hdr_job, hdr_destination.get());
+
+  float hdr_output[4] = {0, 0, 0, 0};
+  renderer.DownloadFromTexture(hdr_destination->id(), params, hdr_output, sizeof(float) * 4);
+  const Color hdr_cpu = hdr_processor->ConvertColor(Color(1.0f, 1.0f, 1.0f, 1.0f));
+  if (std::fabs(double(hdr_output[0]) - hdr_cpu.red()) > 0.02) {
+    std::cout << " - GPU HDR-to-SDR output " << hdr_output[0]
+              << " differs from CPU reference " << hdr_cpu.red();
+    return __LINE__;
+  }
+  if (hdr_output[0] > 1.01f) {
+    std::cout << " - GPU HDR-to-SDR output is still clipping: " << hdr_output[0];
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 
