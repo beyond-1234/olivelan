@@ -36,7 +36,9 @@ namespace olive {
 ManagedDisplayWidget::ManagedDisplayWidget(QWidget *parent) :
   QWidget(parent),
   color_manager_(nullptr),
-  color_service_(nullptr)
+  color_service_(nullptr),
+  auto_hdr_view_(true),
+  hdr_mode_active_(false)
 {
   QHBoxLayout* layout = new QHBoxLayout(this);
   layout->setSpacing(0);
@@ -106,6 +108,8 @@ void ManagedDisplayWidget::ConnectColorManager(ColorManager *color_manager)
     connect(color_manager_, &ColorManager::ReferenceSpaceChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
   }
 
+  auto_hdr_view_ = true;
+  hdr_mode_active_ = false;
   ColorConfigChanged();
   emit ColorManagerChanged(color_manager_);
 }
@@ -152,6 +156,18 @@ void ManagedDisplayWidget::ColorConfigChanged()
     return;
   }
 
+  if (auto_hdr_view_ && hdr_mode_active_) {
+    // Re-apply the HDR view after a config change instead of dropping back to
+    // the project's SDR default.
+    const QString display = color_transform_.is_display()
+        ? color_transform_.display() : color_manager_->GetDefaultDisplay();
+    if (color_manager_->ListAvailableViews(display).contains(QStringLiteral("HDR to SDR"))) {
+      SetColorTransform(ColorTransform(display, QStringLiteral("HDR to SDR"),
+                                       color_transform_.look()));
+      return;
+    }
+  }
+
   SetColorTransform(color_manager_->GetCompliantColorSpace(color_transform_, false));
 }
 
@@ -180,6 +196,7 @@ void ManagedDisplayWidget::ShowDefaultContextMenu()
 
 void ManagedDisplayWidget::MenuDisplaySelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(action->data().toString(),
@@ -191,6 +208,7 @@ void ManagedDisplayWidget::MenuDisplaySelect(QAction *action)
 
 void ManagedDisplayWidget::MenuViewSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(old_transform.display(),
@@ -202,6 +220,7 @@ void ManagedDisplayWidget::MenuViewSelect(QAction *action)
 
 void ManagedDisplayWidget::MenuLookSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(old_transform.display(),
@@ -213,6 +232,7 @@ void ManagedDisplayWidget::MenuLookSelect(QAction *action)
 
 void ManagedDisplayWidget::MenuColorspaceSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   SetColorTransform(color_manager()->GetCompliantColorSpace(ColorTransform(action->data().toString())));
 }
 
@@ -396,6 +416,31 @@ Menu* ManagedDisplayWidget::GetLookMenu(QMenu* parent, bool auto_connect)
   }
 
   return ocio_look_menu;
+}
+
+void ManagedDisplayWidget::SetHdrMode(bool hdr)
+{
+  if (!color_manager_ || !auto_hdr_view_ || hdr == hdr_mode_active_) {
+    return;
+  }
+
+  if (hdr) {
+    const QString display = color_transform_.is_display()
+        ? color_transform_.display() : color_manager_->GetDefaultDisplay();
+    const QStringList views = color_manager_->ListAvailableViews(display);
+    if (!views.contains(QStringLiteral("HDR to SDR"))) {
+      return;
+    }
+
+    auto_hdr_previous_transform_ = color_transform_;
+    hdr_mode_active_ = true;
+    qInfo() << "[Color] Auto-selected HDR to SDR view for display" << display;
+    SetColorTransform(ColorTransform(display, QStringLiteral("HDR to SDR"),
+                                     color_transform_.look()));
+  } else {
+    hdr_mode_active_ = false;
+    SetColorTransform(auto_hdr_previous_transform_);
+  }
 }
 
 void ManagedDisplayWidget::SetupColorProcessor()

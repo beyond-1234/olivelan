@@ -156,6 +156,15 @@ public slots:
    */
   void ConnectColorManager(ColorManager* color_manager);
 
+  /**
+   * @brief Auto-select the HDR-to-SDR display view for a HDR source.
+   *
+   * This is only applied while the user has not manually selected a display,
+   * view or colour space. A subsequent SDR source keeps the user's current
+   * choice; the caller may explicitly pass false to restore the saved transform.
+   */
+  void SetHdrMode(bool hdr);
+
 signals:
   /**
    * @brief Emitted when the color processor changes
@@ -279,6 +288,9 @@ private:
    * @brief Internal color transform storage
    */
   ColorTransform color_transform_;
+  ColorTransform auto_hdr_previous_transform_;
+  bool auto_hdr_view_;
+  bool hdr_mode_active_;
 
 private slots:
   /**
