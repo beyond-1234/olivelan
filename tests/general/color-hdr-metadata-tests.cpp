@@ -58,7 +58,6 @@
 #include "core.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/project.h"
-#include "render/builtincolorspaces.h"
 #include "render/colorprocessor.h"
 #include "render/colortransform.h"
 #include "render/videoparams.h"
@@ -268,30 +267,9 @@ OLIVE_ADD_TEST(ColorHdrTransferFunctions)
 
 OLIVE_ADD_TEST(ColorHdrRollOffPeakResolution)
 {
-  // F-4 (HAL/Phase6-8 review): the mastering-display peak baked into the generated
-  // BT.2408 roll-off is resolved from the source VideoParams via ResolveMasteringPeakNits,
-  // not hardcoded to 0. Pin the three cases and the fact that the value reaches the GLSL.
-  using olive::ResolveMasteringPeakNits;
-
-  // SDR content: no mapping, so the roll-off must short-circuit (peak 0).
-  if (!NearlyEqual(ResolveMasteringPeakNits(false, 4000.0), 0.0, 0.0)) {
-    std::cout << " - SDR content resolved to a non-zero roll-off peak";
-    return __LINE__;
-  }
-
-  // HDR content whose container carried a mastering peak: use it verbatim.
-  if (!NearlyEqual(ResolveMasteringPeakNits(true, 4000.0), 4000.0, 0.0)) {
-    std::cout << " - HDR content did not use its container mastering peak";
-    return __LINE__;
-  }
-
-  // HDR content with no metadata (0): fall back to the standard default so the knee is
-  // not silently disabled.
-  if (!NearlyEqual(ResolveMasteringPeakNits(true, 0.0), olive::kDefaultMasteringPeakNits, 0.0)) {
-    std::cout << " - HDR content without metadata did not fall back to kDefaultMasteringPeakNits";
-    return __LINE__;
-  }
-
+  // The built-in BT.2408 roll-off helper was removed with the built-in engine.
+  // HDR display rendering now comes from the OCIO display/view transform.
+  std::cout << " (HDR roll-off is owned by the OCIO display transform)";
   OLIVE_TEST_END;
 }
 
