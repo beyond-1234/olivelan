@@ -42,10 +42,12 @@ public:
 protected slots:
   virtual void ConfigChanged() = 0;
 
+public:
+  ColorProcessorPtr processor() const { return processor_; }
+
 protected:
   ColorManager *manager() const { return manager_; }
 
-  ColorProcessorPtr processor() const { return processor_; }
   void set_processor(ColorProcessorPtr p) { processor_ = p; }
 
 private:

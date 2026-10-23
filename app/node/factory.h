@@ -71,6 +71,7 @@ public:
     kTimeOffsetNode,
     kCornerPinDistort,
     kDisplayTransform,
+    kOCIOFileTransform,
     kOCIOGradingTransformLinear,
     kChromaKey,
     kMaskDistort,

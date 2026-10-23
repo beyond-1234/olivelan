@@ -33,6 +33,7 @@
 
 #include "common/ociobridge.h"
 #include "node/color/colormanager/colormanager.h"
+#include "node/color/ociofiletransform/ociofiletransform.h"
 #include "node/factory.h"
 #include "node/node.h"
 #include "node/project.h"
@@ -378,6 +379,99 @@ OLIVE_ADD_TEST(ExternalOcioConfigLoading)
   QStringList default_spaces = cm->ListAvailableColorspaces();
   OLIVE_ASSERT(default_spaces.contains(QStringLiteral("sRGB OETF")));
   OLIVE_ASSERT(!default_spaces.contains(QStringLiteral("CustomTestSpace")));
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(OCIOFileTransformNodeTesting)
+{
+  NodeFactory::Initialize();
+
+  Project p;
+  ColorManager* cm = p.color_manager();
+  OLIVE_ASSERT(cm != nullptr);
+
+  // 1. Factory creation by ID
+  Node* created = NodeFactory::CreateFromID(QStringLiteral("org.olivevideoeditor.Olive.ociofiletransform"));
+  OLIVE_ASSERT(created != nullptr);
+  auto* lut_node = dynamic_cast<OCIOFileTransformNode*>(created);
+  OLIVE_ASSERT(lut_node != nullptr);
+  lut_node->AddedToGraphEvent(&p);
+
+  QTemporaryDir temp_dir;
+  OLIVE_ASSERT(temp_dir.isValid());
+
+  // 2. Test valid .cube LUT (3D invert red channel)
+  QString cube_path = temp_dir.filePath(QStringLiteral("invert_red.cube"));
+  {
+    QFile f(cube_path);
+    OLIVE_ASSERT(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream out(&f);
+    out << "TITLE \"Invert Red\"\n"
+        << "LUT_3D_SIZE 2\n"
+        << "1 0 0\n" // in: 0 0 0 -> out: 1 0 0
+        << "0 0 0\n" // in: 1 0 0 -> out: 0 0 0
+        << "1 1 0\n" // in: 0 1 0 -> out: 1 1 0
+        << "0 1 0\n" // in: 1 1 0 -> out: 0 1 0
+        << "1 0 1\n" // in: 0 0 1 -> out: 1 0 1
+        << "0 0 1\n" // in: 1 0 1 -> out: 0 0 1
+        << "1 1 1\n" // in: 0 1 1 -> out: 1 1 1
+        << "0 1 1\n"; // in: 1 1 1 -> out: 0 1 1
+  }
+
+  lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, cube_path);
+  lut_node->SetStandardValue(OCIOFileTransformNode::kDirectionInput, static_cast<int>(ColorProcessor::kNormal));
+  lut_node->SetStandardValue(OCIOFileTransformNode::kInterpolationInput, static_cast<int>(OCIOFileTransformNode::kInterpLinear));
+
+  // Verify processor creation and color transformation
+  ColorProcessorPtr proc = lut_node->processor();
+  OLIVE_ASSERT(proc != nullptr);
+
+  Color c_in(0.0, 1.0, 0.5, 1.0);
+  Color c_out = proc->ConvertColor(c_in);
+  if (std::abs(c_out.red() - 1.0) > 0.01 || std::abs(c_out.green() - 1.0) > 0.01 || std::abs(c_out.blue() - 0.5) > 0.01) {
+    std::cout << " - .cube LUT forward transform failed: " << c_out.red() << " " << c_out.green() << " " << c_out.blue();
+    return __LINE__;
+  }
+
+  // 3. Test .spi1d LUT
+  QString spi1d_path = QStringLiteral(OLIVE_TEST_SOURCE_DIR "/app/render/ocioconf/luts/rec709_to_linear.spi1d");
+  OLIVE_ASSERT(QFile::exists(spi1d_path));
+  lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, spi1d_path);
+  ColorProcessorPtr spi1d_proc = lut_node->processor();
+  OLIVE_ASSERT(spi1d_proc != nullptr);
+  Color c_rec(0.5, 0.5, 0.5, 1.0);
+  Color c_lin = spi1d_proc->ConvertColor(c_rec);
+  OLIVE_ASSERT(c_lin.red() < 0.5);
+
+  // 4. Test .spi3d LUT
+  QString spi3d_path = QStringLiteral(OLIVE_TEST_SOURCE_DIR "/app/render/ocioconf/luts/desat65cube.spi3d");
+  OLIVE_ASSERT(QFile::exists(spi3d_path));
+  lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, spi3d_path);
+  ColorProcessorPtr spi3d_proc = lut_node->processor();
+  OLIVE_ASSERT(spi3d_proc != nullptr);
+  Color c_sat(1.0, 0.0, 0.0, 1.0);
+  Color c_desat = spi3d_proc->ConvertColor(c_sat);
+  OLIVE_ASSERT(c_desat.green() > 0.0);
+
+  // 5. Test missing file path
+  lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, QStringLiteral("/nonexistent/file.cube"));
+  OLIVE_ASSERT(lut_node->processor() == nullptr);
+
+  // 6. Test corrupt file
+  QString corrupt_path = temp_dir.filePath(QStringLiteral("corrupt.cube"));
+  {
+    QFile f(corrupt_path);
+    OLIVE_ASSERT(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream out(&f);
+    out << "NOT_A_VALID_LUT_FORMAT 9999\n";
+  }
+  lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, corrupt_path);
+  OLIVE_ASSERT(lut_node->processor() == nullptr);
+
+  lut_node->RemovedFromGraphEvent(&p);
+  delete lut_node;
+  NodeFactory::Destroy();
 
   OLIVE_TEST_END;
 }
