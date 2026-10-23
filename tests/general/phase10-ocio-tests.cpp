@@ -26,6 +26,8 @@
 #include "testutil.h"
 
 #include <QSurfaceFormat>
+#include <QTemporaryDir>
+#include <QTextStream>
 
 #include <cmath>
 
@@ -275,6 +277,107 @@ OLIVE_ADD_TEST(CameraLogCurvesToSceneLinear)
       }
     }
   }
+
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(ExternalOcioConfigLoading)
+{
+  Project p;
+  ColorManager* cm = p.color_manager();
+  OLIVE_ASSERT(cm != nullptr);
+  OLIVE_ASSERT(!cm->IsCustomConfig());
+  OLIVE_ASSERT(!cm->HasError());
+  OLIVE_ASSERT(cm->GetConfigFilename().isEmpty());
+
+  QTemporaryDir temp_dir;
+  OLIVE_ASSERT(temp_dir.isValid());
+
+  // 1. Valid custom config
+  QString valid_ocio_path = temp_dir.filePath(QStringLiteral("custom_test.ocio"));
+  {
+    QFile f(valid_ocio_path);
+    OLIVE_ASSERT(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream out(&f);
+    out << "ocio_profile_version: 2.1\n"
+        << "environment: {}\n"
+        << "search_path: \"\"\n"
+        << "roles:\n"
+        << "  default: RawRef\n"
+        << "  scene_linear: RawRef\n"
+        << "displays:\n"
+        << "  sRGB:\n"
+        << "    - !<View> {name: RawRef, colorspace: RawRef}\n"
+        << "active_displays: [sRGB]\n"
+        << "active_views: [RawRef]\n"
+        << "colorspaces:\n"
+        << "  - !<ColorSpace>\n"
+        << "    name: RawRef\n"
+        << "    family: Raw\n"
+        << "    bitdepth: 32f\n"
+        << "    isdata: false\n"
+        << "  - !<ColorSpace>\n"
+        << "    name: CustomTestSpace\n"
+        << "    family: Custom\n"
+        << "    bitdepth: 32f\n"
+        << "    isdata: false\n"
+        << "    to_reference: !<MatrixTransform> {matrix: [2, 0, 0, 0,  0, 2, 0, 0,  0, 0, 2, 0,  0, 0, 0, 1]}\n";
+  }
+
+  cm->SetConfigFilename(valid_ocio_path);
+  bool ok = cm->UpdateConfigFromFilename();
+  OLIVE_ASSERT(ok);
+  OLIVE_ASSERT(cm->IsCustomConfig());
+  OLIVE_ASSERT(!cm->HasError());
+  OLIVE_ASSERT(cm->GetConfigFilename() == valid_ocio_path);
+  QStringList cs_list = cm->ListAvailableColorspaces();
+  OLIVE_ASSERT(cs_list.contains(QStringLiteral("CustomTestSpace")));
+  OLIVE_ASSERT(cs_list.contains(QStringLiteral("RawRef")));
+
+  // Verify ColorProcessor converts via the custom matrix transform
+  ColorProcessorPtr proc = ColorProcessor::Create(cm, QStringLiteral("CustomTestSpace"), QStringLiteral("RawRef"));
+  OLIVE_ASSERT(proc != nullptr);
+  Color in_col(0.5, 0.25, 0.1, 1.0);
+  Color out_col = proc->ConvertColor(in_col);
+  if (std::abs(out_col.red() - 1.0) > 0.001 || std::abs(out_col.green() - 0.5) > 0.001) {
+    std::cout << " - Custom OCIO matrix transform did not scale values correctly: " << out_col.red();
+    return __LINE__;
+  }
+
+  // 2. Non-existent file path: must fail explicitly and preserve current valid config
+  QString non_existent = temp_dir.filePath(QStringLiteral("does_not_exist.ocio"));
+  cm->SetConfigFilename(non_existent);
+  bool fail_missing = cm->UpdateConfigFromFilename();
+  OLIVE_ASSERT(!fail_missing);
+  OLIVE_ASSERT(cm->HasError());
+  OLIVE_ASSERT(cm->GetLastError().contains(QStringLiteral("does not exist")));
+  OLIVE_ASSERT(cm->ListAvailableColorspaces().contains(QStringLiteral("CustomTestSpace")));
+
+  // 3. Corrupt/invalid file: must reject via validate() and preserve config
+  QString corrupt_ocio_path = temp_dir.filePath(QStringLiteral("corrupt.ocio"));
+  {
+    QFile f(corrupt_ocio_path);
+    OLIVE_ASSERT(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream out(&f);
+    out << "ocio_profile_version: 2.1\n"
+        << "invalid_garbage_yaml: [][[]]}}}\n";
+  }
+  cm->SetConfigFilename(corrupt_ocio_path);
+  bool fail_corrupt = cm->UpdateConfigFromFilename();
+  OLIVE_ASSERT(!fail_corrupt);
+  OLIVE_ASSERT(cm->HasError());
+  OLIVE_ASSERT(cm->ListAvailableColorspaces().contains(QStringLiteral("CustomTestSpace")));
+
+  // 4. Clear filename -> reverts cleanly to built-in default config
+  cm->SetConfigFilename(QString());
+  bool revert_ok = cm->UpdateConfigFromFilename();
+  OLIVE_ASSERT(revert_ok);
+  OLIVE_ASSERT(!cm->IsCustomConfig());
+  OLIVE_ASSERT(!cm->HasError());
+  OLIVE_ASSERT(cm->GetConfigFilename().isEmpty());
+  QStringList default_spaces = cm->ListAvailableColorspaces();
+  OLIVE_ASSERT(default_spaces.contains(QStringLiteral("sRGB OETF")));
+  OLIVE_ASSERT(!default_spaces.contains(QStringLiteral("CustomTestSpace")));
 
   OLIVE_TEST_END;
 }

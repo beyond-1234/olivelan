@@ -42,6 +42,8 @@ namespace olive {
 struct ColorManager::Impl
 {
   OCIO::ConstConfigRcPtr config;
+  QString last_error;
+  bool is_custom_config{false};
 };
 
 namespace {
@@ -92,8 +94,25 @@ void ColorManager::Init()
 {
   // Set config to our built-in default
   impl_->config = ColorManagerOCIO::GetDefaultConfig();
-  SetDefaultInputColorSpace(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT));
+  impl_->last_error.clear();
+  impl_->is_custom_config = false;
+  SetDefaultInputColorSpace(impl_->config ? QString::fromUtf8(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT)) : QString());
   project()->SetColorReferenceSpace(OCIOUtils::kReferenceSpaceSceneLinear);
+}
+
+QString ColorManager::GetLastError() const
+{
+  return impl_->last_error;
+}
+
+bool ColorManager::HasError() const
+{
+  return !impl_->last_error.isEmpty();
+}
+
+bool ColorManager::IsCustomConfig() const
+{
+  return impl_->is_custom_config;
 }
 
 QString ColorManager::GetConfigFilename() const
@@ -333,25 +352,79 @@ Project *ColorManager::project() const
   return static_cast<Project*>(parent());
 }
 
-void ColorManager::UpdateConfigFromFilename()
+bool ColorManager::UpdateConfigFromFilename()
 {
-  try {
-    QString config_filename = GetConfigFilename();
-    QString old_default_cs = GetDefaultInputColorSpace();
+  const QString config_filename = GetConfigFilename().trimmed();
+  const QString old_default_cs = GetDefaultInputColorSpace();
 
-    impl_->config = OCIO::Config::CreateFromFile(config_filename.toUtf8());
+  if (config_filename.isEmpty()) {
+    impl_->config = ColorManagerOCIO::GetDefaultConfig();
+    impl_->last_error.clear();
+    impl_->is_custom_config = false;
 
-    // Keep the old default if the new config still provides it; otherwise use
-    // the new config's default. The previous loop selected the first *non*
-    // matching colour space, which silently changed the project default.
     QStringList available_cs = ListAvailableColorspaces();
     QString new_default = available_cs.contains(old_default_cs)
         ? old_default_cs
-        : impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT);
+        : (impl_->config ? QString::fromUtf8(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT)) : QString());
+    if (new_default.isEmpty() && !available_cs.isEmpty()) {
+      new_default = available_cs.first();
+    }
+    SetDefaultInputColorSpace(new_default);
+
+    emit ConfigChanged(QString());
+    return true;
+  }
+
+  // Resolve relative path against project directory if project filename is known
+  QString resolved_path = config_filename;
+  if (QFileInfo(resolved_path).isRelative() && project() && !project()->filename().isEmpty()) {
+    const QString candidate = QFileInfo(project()->filename()).dir().filePath(resolved_path);
+    if (QFileInfo::exists(candidate)) {
+      resolved_path = candidate;
+    }
+  }
+
+  if (!QFileInfo::exists(resolved_path)) {
+    impl_->last_error = tr("OpenColorIO configuration file does not exist: %1").arg(config_filename);
+    qWarning() << "[ColorManager]" << impl_->last_error;
+    if (!impl_->config) {
+      impl_->config = ColorManagerOCIO::GetDefaultConfig();
+    }
+    emit ConfigLoadFailed(config_filename, impl_->last_error);
+    return false;
+  }
+
+  try {
+    OCIO::ConstConfigRcPtr new_config = ColorManagerOCIO::CreateConfigFromFile(resolved_path);
+    if (!new_config) {
+      throw OCIO::Exception("Failed to instantiate OpenColorIO configuration object.");
+    }
+    new_config->validate();
+
+    impl_->config = new_config;
+    impl_->last_error.clear();
+    impl_->is_custom_config = true;
+
+    QStringList available_cs = ListAvailableColorspaces();
+    QString new_default = available_cs.contains(old_default_cs)
+        ? old_default_cs
+        : QString::fromUtf8(impl_->config->getCanonicalName(OCIO::ROLE_DEFAULT));
+    if (new_default.isEmpty() && !available_cs.isEmpty()) {
+      new_default = available_cs.first();
+    }
     SetDefaultInputColorSpace(new_default);
 
     emit ConfigChanged(config_filename);
-  } catch (OCIO::Exception&) {}
+    return true;
+  } catch (const OCIO::Exception& e) {
+    impl_->last_error = QString::fromUtf8(e.what());
+    qWarning() << "[ColorManager] Failed to load OpenColorIO config" << config_filename << ":" << impl_->last_error;
+    if (!impl_->config) {
+      impl_->config = ColorManagerOCIO::GetDefaultConfig();
+    }
+    emit ConfigLoadFailed(config_filename, impl_->last_error);
+    return false;
+  }
 }
 
 // Patch 0037: OCIO bridge implementations (see common/ociobridge.h).

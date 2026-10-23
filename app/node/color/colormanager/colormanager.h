@@ -80,10 +80,18 @@ public:
 
   Project *project() const;
 
-  void UpdateConfigFromFilename();
+  bool UpdateConfigFromFilename();
+
+  QString GetLastError() const;
+
+  bool HasError() const;
+
+  bool IsCustomConfig() const;
 
 signals:
   void ConfigChanged(const QString &s);
+
+  void ConfigLoadFailed(const QString &filename, const QString &error);
 
   void ReferenceSpaceChanged(const QString &s);
 

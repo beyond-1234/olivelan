@@ -183,8 +183,9 @@ void ProjectPropertiesDialog::accept()
 
   // This should ripple changes throughout the graph/cache that the color config has changed, and
   // therefore should be done after the cache path is changed
-  if (working_project_->color_manager()->GetConfigFilename() != ocio_filename_->text()) {
-    working_project_->color_manager()->SetConfigFilename(ocio_filename_->text());
+  const QString new_ocio_file = ocio_filename_->text().trimmed();
+  if (working_project_->color_manager()->GetConfigFilename() != new_ocio_file) {
+    working_project_->color_manager()->SetConfigFilename(new_ocio_file);
   }
   if (working_project_->color_manager()->GetDefaultInputColorSpace() != default_input_colorspace_->currentText()) {
     working_project_->color_manager()->SetDefaultInputColorSpace(default_input_colorspace_->currentText());
@@ -214,7 +215,11 @@ bool ProjectPropertiesDialog::VerifyPathAndWarnIfBad(const QString &path)
 
 void ProjectPropertiesDialog::BrowseForOCIOConfig()
 {
-  QString fn = QFileDialog::getOpenFileName(this, tr("Browse for OpenColorIO configuration"));
+  QString fn = QFileDialog::getOpenFileName(
+      this,
+      tr("Browse for OpenColorIO configuration"),
+      QString(),
+      tr("OpenColorIO Configurations (*.ocio);;All Files (*)"));
   if (!fn.isEmpty()) {
     ocio_filename_->setText(fn);
   }
@@ -226,15 +231,31 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
 
   try {
     OCIO::ConstConfigRcPtr c;
+    const QString fn = ocio_filename_->text().trimmed();
 
-    if (ocio_filename_->text().isEmpty()) {
+    if (fn.isEmpty()) {
       c = ColorManagerOCIO::GetDefaultConfig();
     } else {
-      c = ColorManagerOCIO::CreateConfigFromFile(ocio_filename_->text());
+      QString resolved = fn;
+      if (QFileInfo(resolved).isRelative() && working_project_ && !working_project_->filename().isEmpty()) {
+        const QString candidate = QFileInfo(working_project_->filename()).dir().filePath(resolved);
+        if (QFileInfo::exists(candidate)) {
+          resolved = candidate;
+        }
+      }
+      if (!QFileInfo::exists(resolved)) {
+        throw OCIO::Exception(QString("File does not exist: %1").arg(fn).toUtf8().constData());
+      }
+      c = ColorManagerOCIO::CreateConfigFromFile(resolved);
+      if (!c) {
+        throw OCIO::Exception("Failed to read configuration");
+      }
+      c->validate();
     }
 
     ocio_filename_->setStyleSheet(QString());
     ocio_config_is_valid_ = true;
+    ocio_config_error_.clear();
 
     // List input color spaces
     QStringList input_cs = ColorManagerOCIO::ListAvailableColorspaces(c);
@@ -246,10 +267,10 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
         default_input_colorspace_->setCurrentIndex(default_input_colorspace_->count()-1);
       }
     }
-  } catch (OCIO::Exception& e) {
+  } catch (const OCIO::Exception& e) {
     ocio_config_is_valid_ = false;
     ocio_filename_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
-    ocio_config_error_ = e.what();
+    ocio_config_error_ = QString::fromUtf8(e.what());
   }
 }
 
