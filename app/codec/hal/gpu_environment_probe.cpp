@@ -288,6 +288,7 @@ void GpuEnvironmentProbe::DetectGpuTopology()
           if (vendor_hex == "0x10de") { // NVIDIA
             if (primary_vendor_ == GpuVendor::Unknown) {
               primary_vendor_ = GpuVendor::Nvidia;
+              primary_gpu_name_ = "NVIDIA GPU";
             }
           } else if (vendor_hex == "0x1002") { // AMD
             if (primary_vendor_ == GpuVendor::Unknown) {

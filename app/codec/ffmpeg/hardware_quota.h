@@ -12,6 +12,8 @@
 #include <cuda_runtime_api.h>
 #endif
 
+#include "codec/hal/gpu_environment_probe.h"
+
 #include <QDebug>
 #include <QString>
 
@@ -42,8 +44,10 @@ struct HardwareQuotaConfig {
   int max_frame_width = 4096;
   int max_frame_height = 4096;
 #else
-  std::string gpu_name = "NVIDIA GeForce RTX 4060 Laptop GPU";
-  size_t vram_total_mb = 8192;
+  // Neutral baseline profile used when hardware dynamic probing is unavailable.
+  // Never hardcode a specific GPU model (e.g. RTX 4060) that misleads diagnostics.
+  std::string gpu_name = "Generic Baseline GPU Profile";
+  size_t vram_total_mb = 4096;
   int nvdec_engine_count = 1;
 
   // Maximum concurrent NVDEC hardware decode sessions physically active in driver memory.
@@ -116,6 +120,35 @@ public:
       }
     }
 #endif
+    // When CUDA is unavailable or not compiled in, populate identity from GpuEnvironmentProbe
+    // rather than claiming an imaginary GPU model.
+    const auto& probe = GpuEnvironmentProbe::Instance();
+    const std::string& detected_name = probe.GetPrimaryGpuName();
+    if (!detected_name.empty() && detected_name != "Unknown GPU") {
+      config.gpu_name = detected_name;
+    } else {
+      switch (probe.GetPrimaryVendor()) {
+        case GpuVendor::Nvidia:
+          config.gpu_name = "NVIDIA GPU (No CUDA runtime)";
+          break;
+        case GpuVendor::Amd:
+          config.gpu_name = "AMD GPU";
+          break;
+        case GpuVendor::Intel:
+          config.gpu_name = "Intel Graphics";
+          break;
+        case GpuVendor::Apple:
+          config.gpu_name = "Apple Silicon GPU";
+          break;
+        default:
+          config.gpu_name = "Generic Baseline GPU Profile";
+          break;
+      }
+    }
+    if (probe.GetTotalVramMb() > 0) {
+      config.vram_total_mb = probe.GetTotalVramMb();
+    }
+
     qWarning() << "[HardwareQuota] Dynamic detection unavailable; using baseline profile:"
                << QString::fromStdString(config.gpu_name) << "| VRAM:" << config.vram_total_mb << "MiB";
   }
