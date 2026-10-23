@@ -87,6 +87,38 @@ void Project::Clear()
   }
 }
 
+bool Project::HasHdrFootage() const
+{
+  if (!hdr_footage_cache_valid_) {
+    hdr_footage_cache_ = false;
+
+    for (Node *node : node_children_) {
+      if (Footage *footage = dynamic_cast<Footage*>(node)) {
+        for (int i = 0; i < footage->GetVideoStreamCount(); i++) {
+          if (footage->GetVideoParams(i).needs_hdr_mapping()) {
+            hdr_footage_cache_ = true;
+            break;
+          }
+        }
+      }
+
+      if (hdr_footage_cache_) {
+        break;
+      }
+    }
+
+    hdr_footage_cache_valid_ = true;
+  }
+
+  return hdr_footage_cache_;
+}
+
+void Project::InvalidateHdrFootage()
+{
+  hdr_footage_cache_valid_ = false;
+  emit HdrFootageChanged();
+}
+
 SerializedData Project::Load(QXmlStreamReader *reader)
 {
   SerializedData data;
@@ -228,6 +260,12 @@ void Project::childEvent(QChildEvent *event)
         connect(group, &NodeGroup::OutputPassthroughChanged, this, &Project::GroupChangedOutputPassthrough, Qt::DirectConnection);
       }
 
+      if (Footage *footage = dynamic_cast<Footage*>(node)) {
+        connect(footage, &ViewerOutput::VideoParamsChanged,
+                this, &Project::InvalidateHdrFootage);
+        InvalidateHdrFootage();
+      }
+
       emit NodeAdded(node);
       emit node->AddedToGraph(this);
       node->AddedToGraphEvent(this);
@@ -260,6 +298,12 @@ void Project::childEvent(QChildEvent *event)
         disconnect(group, &NodeGroup::InputPassthroughAdded, this, &Project::GroupAddedInputPassthrough);
         disconnect(group, &NodeGroup::InputPassthroughRemoved, this, &Project::GroupRemovedInputPassthrough);
         disconnect(group, &NodeGroup::OutputPassthroughChanged, this, &Project::GroupChangedOutputPassthrough);
+      }
+
+      if (Footage *footage = dynamic_cast<Footage*>(node)) {
+        disconnect(footage, &ViewerOutput::VideoParamsChanged,
+                   this, &Project::InvalidateHdrFootage);
+        InvalidateHdrFootage();
       }
 
       emit NodeRemoved(node);

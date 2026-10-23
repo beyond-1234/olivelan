@@ -76,14 +76,6 @@ public:
    */
   ColorTransform GetRestorableColorTransform(const ColorTransform& transform);
 
-  /**
-   * @brief True when any Footage stream in this project carries PQ/HLG metadata.
-   *
-   * Used by the display to choose the HDR view once per project/sequence rather
-   * than switching at every HDR/SDR edit point.
-   */
-  bool ProjectHasHdrFootage() const;
-
   void GetDefaultLumaCoefs(double *rgb) const;
 
   Project *project() const;

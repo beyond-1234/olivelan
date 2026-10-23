@@ -25,6 +25,7 @@
 #include <QHBoxLayout>
 #include <QMessageBox>
 
+#include "node/project.h"
 #include "panel/panelmanager.h"
 #include "render/colorstats.h"
 #include "render/opengl/openglrenderer.h"
@@ -97,6 +98,12 @@ void ManagedDisplayWidget::ConnectColorManager(ColorManager *color_manager)
     return;
   }
 
+  Project* old_project = color_manager_ ? color_manager_->project() : nullptr;
+  if (old_project) {
+    disconnect(old_project, &Project::HdrFootageChanged,
+               this, &ManagedDisplayWidget::ProjectHdrFootageChanged);
+  }
+
   if (color_manager_ != nullptr) {
     disconnect(color_manager_, &ColorManager::ConfigChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
     disconnect(color_manager_, &ColorManager::ReferenceSpaceChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
@@ -107,6 +114,11 @@ void ManagedDisplayWidget::ConnectColorManager(ColorManager *color_manager)
   if (color_manager_ != nullptr) {
     connect(color_manager_, &ColorManager::ConfigChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
     connect(color_manager_, &ColorManager::ReferenceSpaceChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
+
+    if (Project* project = color_manager_->project()) {
+      connect(project, &Project::HdrFootageChanged,
+              this, &ManagedDisplayWidget::ProjectHdrFootageChanged);
+    }
   }
 
   auto_hdr_view_ = true;
@@ -163,7 +175,7 @@ void ManagedDisplayWidget::ColorConfigChanged()
   if (auto_hdr_view_) {
     // Project-level HDR selection is sticky: mixed HDR/SDR timelines choose the
     // HDR view once instead of rebuilding the processor at every edit point.
-    SetHdrMode(color_manager_->ProjectHasHdrFootage());
+    SetHdrMode(color_manager_->project() && color_manager_->project()->HasHdrFootage());
   }
 
   if (auto_hdr_view_ && hdr_mode_active_) {
@@ -191,6 +203,13 @@ void ManagedDisplayWidget::ShowDefaultContextMenu()
   Menu m(this);
 
   if (color_manager_) {
+    QAction* auto_hdr_action = m.addAction(tr("Auto HDR (Follow Project)"));
+    auto_hdr_action->setCheckable(true);
+    auto_hdr_action->setChecked(auto_hdr_view_);
+    connect(auto_hdr_action, &QAction::triggered,
+            this, &ManagedDisplayWidget::SetAutoHdrView);
+
+    m.addSeparator();
     m.addMenu(GetColorSpaceMenu(&m));
     m.addSeparator();
     m.addMenu(GetDisplayMenu(&m));
@@ -244,6 +263,37 @@ void ManagedDisplayWidget::MenuColorspaceSelect(QAction *action)
 {
   auto_hdr_view_ = false;
   SetColorTransform(color_manager()->GetCompliantColorSpace(ColorTransform(action->data().toString())));
+}
+
+void ManagedDisplayWidget::SetAutoHdrView(bool enabled)
+{
+  auto_hdr_view_ = enabled;
+
+  if (!enabled || !color_manager_ || !color_manager_->project()) {
+    return;
+  }
+
+  const bool project_has_hdr = color_manager_->project()->HasHdrFootage();
+
+  if (project_has_hdr) {
+    // If a manual transform was chosen while HDR was active, leave HDR mode and re-enter it so
+    // the saved SDR transform is restored first. This keeps the Auto round-trip lossless.
+    if (hdr_mode_active_) {
+      SetHdrMode(false);
+    }
+    SetHdrMode(true);
+  } else if (hdr_mode_active_) {
+    SetHdrMode(false);
+  }
+}
+
+void ManagedDisplayWidget::ProjectHdrFootageChanged()
+{
+  if (!color_manager_ || !auto_hdr_view_ || !color_manager_->project()) {
+    return;
+  }
+
+  SetHdrMode(color_manager_->project()->HasHdrFootage());
 }
 
 void ManagedDisplayWidget::OnDestroy()

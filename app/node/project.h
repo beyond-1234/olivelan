@@ -70,6 +70,15 @@ public:
     return node_children_;
   }
 
+  /**
+   * @brief Whether any Footage in this project carries HDR video metadata.
+   *
+   * This belongs to the project asset model, not ColorManager: it scans project nodes,
+   * and the result is cached until a footage node is added/removed or its video params
+   * change.
+   */
+  bool HasHdrFootage() const;
+
   void Initialize();
 
   SerializedData Load(QXmlStreamReader *reader);
@@ -176,6 +185,13 @@ signals:
    */
   void NodeRemoved(Node* node);
 
+  /**
+   * @brief Emitted when a Footage is added/removed or its video metadata changes.
+   *
+   * Consumers such as the viewer can re-evaluate Auto HDR without polling the whole graph.
+   */
+  void HdrFootageChanged();
+
   void InputConnected(Node *output, const NodeInput& input);
 
   void InputDisconnected(Node *output, const NodeInput& input);
@@ -211,6 +227,11 @@ private:
   ColorManager *color_manager_;
 
   QVector<Node*> node_children_;
+
+  mutable bool hdr_footage_cache_valid_ = false;
+  mutable bool hdr_footage_cache_ = false;
+
+  void InvalidateHdrFootage();
 
   QMap<QString, QString> settings_;
 

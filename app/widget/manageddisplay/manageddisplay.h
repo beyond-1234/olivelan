@@ -323,6 +323,16 @@ private slots:
    */
   void MenuColorspaceSelect(QAction* action);
 
+  /**
+   * @brief Re-enable automatic HDR view selection after a manual color choice.
+   */
+  void SetAutoHdrView(bool enabled);
+
+  /**
+   * @brief Re-evaluate project-level HDR when footage is added/removed or metadata changes.
+   */
+  void ProjectHdrFootageChanged();
+
 };
 
 }
