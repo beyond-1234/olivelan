@@ -89,9 +89,53 @@ RenderManager::~RenderManager()
 RenderThread *RenderManager::CreateThread(Renderer *renderer)
 {
   auto t = new RenderThread(renderer, decoder_cache_, shader_cache_, this);
+
+  // The render thread reports from its worker thread. Queue the result onto RenderManager's
+  // thread (the GUI thread) and cache it, because video_thread_ starts before MainWindow exists.
+  connect(t, &RenderThread::RendererReady, this, &RenderManager::HandleRendererReady,
+          Qt::QueuedConnection);
+  connect(t, &RenderThread::RendererInitializationFailed,
+          this, &RenderManager::HandleRendererInitializationFailed, Qt::QueuedConnection);
+
   render_threads_.push_back(t);
   t->start(QThread::IdlePriority);
   return t;
+}
+
+RenderManager::RendererStatus RenderManager::GetRendererStatus() const
+{
+  QMutexLocker locker(&renderer_status_mutex_);
+  return renderer_status_;
+}
+
+QString RenderManager::GetRendererError() const
+{
+  QMutexLocker locker(&renderer_status_mutex_);
+  return renderer_error_;
+}
+
+void RenderManager::SetRendererStatus(RendererStatus status, const QString& reason)
+{
+  {
+    QMutexLocker locker(&renderer_status_mutex_);
+    if (renderer_status_ == status && renderer_error_ == reason) {
+      return;
+    }
+    renderer_status_ = status;
+    renderer_error_ = reason;
+  }
+
+  emit RendererStatusChanged(status, reason);
+}
+
+void RenderManager::HandleRendererReady()
+{
+  SetRendererStatus(RendererStatus::Ready);
+}
+
+void RenderManager::HandleRendererInitializationFailed(const QString& reason)
+{
+  SetRendererStatus(RendererStatus::Failed, reason);
 }
 
 RenderTicketPtr RenderManager::RenderFrame(const RenderVideoParams &params)
@@ -236,11 +280,23 @@ void RenderThread::quit()
 
 void RenderThread::run()
 {
-  if (context_ && !context_->PostInit()) {
-    qCritical() << "[Render] Renderer initialization failed; refusing to process GL jobs";
-    QMutexLocker locker(&mutex_);
-    cancelled_ = true;
-    return;
+  if (context_) {
+    if (!context_->PostInit()) {
+      QString reason = context_->GetLastError().trimmed();
+      if (reason.isEmpty()) {
+        reason = tr("The OpenGL renderer failed to initialize without reporting a reason.");
+      }
+
+      qCritical().noquote() << "[Render]" << reason
+                            << "- refusing to process GL jobs; the viewer will remain unavailable.";
+      emit RendererInitializationFailed(reason);
+
+      QMutexLocker locker(&mutex_);
+      cancelled_ = true;
+      return;
+    }
+
+    emit RendererReady();
   }
 
   QMutexLocker locker(&mutex_);

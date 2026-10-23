@@ -49,6 +49,8 @@
 
 namespace olive {
 
+class MainStatusBar;
+
 /**
  * @brief Olive's main window responsible for docking widgets and the main menu bar.
  */
@@ -168,6 +170,8 @@ private:
 
   QByteArray premaximized_state_;
 
+  MainStatusBar* status_bar_;
+
   // Standard panels
   ProjectPanel *project_panel_;
   NodePanel* node_panel_;
@@ -219,6 +223,14 @@ private slots:
   void FolderPanelCloseRequested();
 
   void StatusBarDoubleClicked();
+
+  /**
+   * @brief Mirror RenderManager's renderer lifecycle into the status bar.
+   *
+   * Querying after connecting is intentional: a failed RenderThread may have reported
+   * before MainWindow existed, and the signal edge would otherwise be lost.
+   */
+  void UpdateRendererStatus();
 
   void NodePanelGroupOpenedOrClosed();
 

@@ -20,16 +20,30 @@
 
 #include "mainstatusbar.h"
 
+#include <QColor>
 #include <QCoreApplication>
+#include <QLabel>
+#include <QPalette>
 
 namespace olive {
 
 MainStatusBar::MainStatusBar(QWidget *parent) :
   QStatusBar(parent),
   manager_(nullptr),
+  renderer_failure_(nullptr),
   connected_task_(nullptr)
 {
   setSizeGripEnabled(false);
+
+  renderer_failure_ = new QLabel(this);
+  renderer_failure_->setObjectName(QStringLiteral("rendererFailureStatus"));
+  renderer_failure_->setVisible(false);
+  renderer_failure_->setTextFormat(Qt::PlainText);
+  renderer_failure_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  QPalette failure_palette = renderer_failure_->palette();
+  failure_palette.setColor(QPalette::WindowText, QColor(220, 80, 80));
+  renderer_failure_->setPalette(failure_palette);
+  addPermanentWidget(renderer_failure_);
 
   bar_ = new QProgressBar();
   addPermanentWidget(bar_);
@@ -41,6 +55,27 @@ MainStatusBar::MainStatusBar(QWidget *parent) :
   showMessage(tr("Welcome to %1 %2").arg(QCoreApplication::applicationName(),
                                          QCoreApplication::applicationVersion()),
               10000);
+}
+
+void MainStatusBar::SetRendererFailure(const QString& reason)
+{
+  if (!renderer_failure_) {
+    return;
+  }
+
+  renderer_failure_->setText(tr("OpenGL renderer unavailable"));
+  renderer_failure_->setToolTip(
+      reason.isEmpty() ? tr("The renderer failed to initialize.") : reason);
+  renderer_failure_->setVisible(true);
+}
+
+void MainStatusBar::ClearRendererFailure()
+{
+  if (renderer_failure_) {
+    renderer_failure_->clear();
+    renderer_failure_->setToolTip(QString());
+    renderer_failure_->setVisible(false);
+  }
 }
 
 void MainStatusBar::ConnectTaskManager(TaskManager *manager)

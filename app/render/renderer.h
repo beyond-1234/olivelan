@@ -51,6 +51,15 @@ public:
    */
   bool IsValid() const { return valid_; }
 
+  /**
+   * @brief Human-readable reason for the most recent initialization failure.
+   *
+   * Empty when initialization has not failed. The render thread copies this into the
+   * RenderManager status before stopping, so the UI can explain the failure instead of
+   * showing only a blank viewer.
+   */
+  QString GetLastError() const { return last_error_; }
+
   TexturePtr CreateTexture(const VideoParams& params, const void *data = nullptr, int linesize = 0);
 
   virtual void DestroyTexture(Texture *texture);
@@ -108,6 +117,14 @@ public:
   virtual int GetGpuShaderLanguage() const = 0;
 
 protected:
+  /**
+   * @brief Store a failure reason for the RenderManager/UI status.
+   *
+   * Subclasses call this before returning false from Init()/PostInit(). It is intentionally
+   * protected so callers cannot manufacture a failure state without a real backend error.
+   */
+  void SetLastError(const QString& error) { last_error_ = error; }
+
   virtual void Blit(QVariant shader,
                     olive::ShaderJob job,
                     olive::Texture* destination,
@@ -122,6 +139,8 @@ protected:
 
 protected:
   bool valid_ = false;
+
+  QString last_error_;
 
 private:
   struct ColorContext {

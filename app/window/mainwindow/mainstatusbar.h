@@ -26,6 +26,8 @@
 
 #include "task/taskmanager.h"
 
+class QLabel;
+
 namespace olive {
 
 /**
@@ -38,6 +40,18 @@ public:
   MainStatusBar(QWidget* parent = nullptr);
 
   void ConnectTaskManager(TaskManager* manager);
+
+  /**
+   * @brief Show the sticky render-thread failure state.
+   *
+   * Unlike showMessage(), this is a permanent widget: the viewer can be blank for the rest
+   * of the session, so a 15-second transient message would disappear and leave no clue.
+   * The full reason is available as the tooltip; the visible text stays short enough for
+   * the status bar.
+   */
+  void SetRendererFailure(const QString& reason);
+
+  void ClearRendererFailure();
 
 signals:
   void DoubleClicked();
@@ -56,6 +70,8 @@ private:
   TaskManager* manager_;
 
   QProgressBar* bar_;
+
+  QLabel* renderer_failure_;
 
   Task* connected_task_;
 

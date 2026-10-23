@@ -137,16 +137,29 @@ bool OpenGLRenderer::Init()
   GL_PREAMBLE;
 
   if (context_) {
-    qCritical() << "Can't initialize already initialized OpenGLRenderer";
+    const QString error = tr("The OpenGL renderer was already initialized.");
+    qCritical() << error;
+    SetLastError(error);
     return false;
   }
 
   surface_.create();
+  if (!surface_.isValid()) {
+    const QString error = tr("Failed to create the offscreen surface required for rendering.");
+    qCritical() << error;
+    SetLastError(error);
+    return false;
+  }
 
   context_ = new QOpenGLContext(this);
   context_->setShareContext(QOpenGLContext::globalShareContext());
   if (!context_->create()) {
-    qCritical() << "Failed to create OpenGL context";
+    const QString error = tr("Failed to create an OpenGL context. The graphics driver may be "
+                             "missing or unable to provide the requested OpenGL 3.2 profile.");
+    qCritical() << error;
+    SetLastError(error);
+    delete context_;
+    context_ = nullptr;
     return false;
   }
 
@@ -166,19 +179,25 @@ void OpenGLRenderer::PostDestroy()
 bool OpenGLRenderer::PostInit()
 {
   if (!context_ || !context_->isValid()) {
-    qCritical() << "Cannot initialize renderer without a valid OpenGL context";
+    const QString error = tr("Cannot initialize the renderer without a valid OpenGL context.");
+    qCritical() << error;
+    SetLastError(error);
     return false;
   }
 
   // Make context current on that surface
   if (context_->parent() == this && !context_->makeCurrent(&surface_)) {
-    qCritical() << "Failed to makeCurrent() on offscreen surface in thread" << thread();
+    const QString error = tr("Failed to make the OpenGL context current on the render thread.");
+    qCritical() << error << "Thread:" << thread();
+    SetLastError(error);
     return false;
   }
 
   functions_ = context_->functions();
   if (!functions_) {
-    qCritical() << "OpenGL context exposes no function table";
+    const QString error = tr("The OpenGL context exposes no function table.");
+    qCritical() << error;
+    SetLastError(error);
     return false;
   }
 

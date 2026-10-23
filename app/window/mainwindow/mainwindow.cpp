@@ -46,6 +46,7 @@
 #include "codec/hal/hardware_pipeline_factory.h"
 #include "codec/hal/hal_stats.h"
 #include "render/colorstats.h"
+#include "render/rendermanager.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
@@ -57,6 +58,7 @@ namespace olive {
 
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
+  status_bar_(nullptr),
   initial_layout_applied_(false),
   theme_dock_sizes_applied_(false),
   project_(nullptr)
@@ -85,10 +87,17 @@ MainWindow::MainWindow(QWidget *parent) :
   LoadCustomShortcuts();
 
   // Create and set status bar
-  MainStatusBar* status_bar = new MainStatusBar(this);
-  status_bar->ConnectTaskManager(TaskManager::instance());
-  connect(status_bar, &MainStatusBar::DoubleClicked, this, &MainWindow::StatusBarDoubleClicked);
-  setStatusBar(status_bar);
+  status_bar_ = new MainStatusBar(this);
+  status_bar_->ConnectTaskManager(TaskManager::instance());
+  connect(status_bar_, &MainStatusBar::DoubleClicked, this, &MainWindow::StatusBarDoubleClicked);
+  setStatusBar(status_bar_);
+
+  // RenderThread starts before MainWindow exists, so connect and then query the cached state.
+  if (RenderManager::instance()) {
+    connect(RenderManager::instance(), &RenderManager::RendererStatusChanged,
+            this, &MainWindow::UpdateRendererStatus);
+    UpdateRendererStatus();
+  }
 
   // Patch 0097: a forced backend that cannot initialize used to fall back with only qWarning().
   // Surface it in the window so the user knows why the requested tier is not active.
@@ -641,6 +650,24 @@ void MainWindow::StatusBarDoubleClicked()
 {
   task_man_panel_->show();
   task_man_panel_->raise();
+}
+
+void MainWindow::UpdateRendererStatus()
+{
+  if (!status_bar_ || !RenderManager::instance()) {
+    return;
+  }
+
+  const RenderManager::RendererStatus status = RenderManager::instance()->GetRendererStatus();
+  switch (status) {
+  case RenderManager::RendererStatus::Failed:
+    status_bar_->SetRendererFailure(RenderManager::instance()->GetRendererError());
+    break;
+  case RenderManager::RendererStatus::Ready:
+  case RenderManager::RendererStatus::Initializing:
+    status_bar_->ClearRendererFailure();
+    break;
+  }
 }
 
 void MainWindow::NodePanelGroupOpenedOrClosed()
