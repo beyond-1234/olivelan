@@ -50,6 +50,13 @@ HALStatusDialog::HALStatusDialog(QWidget* parent) :
       tr("Decode path status for this session. Reasons come from the live GPU probe; "
          "Tier 2 is verified per stream and Tier 3 is always the final fallback."),
       this));
+  auto* device_note = new QLabel(
+      tr("Device information is a startup snapshot. After hot-plugging a GPU or switching "
+         "the display session, restart Olive to re-detect devices; VA-API import status "
+         "continues to update at runtime."),
+      this);
+  device_note->setWordWrap(true);
+  layout->addWidget(device_note);
 
   auto* tiers = new QTreeWidget(this);
   tiers->setColumnCount(3);
