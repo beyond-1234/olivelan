@@ -1431,12 +1431,14 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     }
   }
 
-  // Set multithreading setting: throttle secondary software-fallback tracks adaptively
-  // and skip non-reference frames (B-frames) to keep CPU overhead low and prevent UI/audio stalls.
+  // Set multithreading setting: match Tier 3 budget and avoid statically skipping B-frames on primary streams
   if (hw_pipeline_ && hw_pipeline_->GetType() == HardwareBackendType::SoftwareFallback && is_video_stream) {
-    int fallback_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency() / 4), 2, 6);
+    int fallback_threads = codec_ctx_->thread_count;
+    if (fallback_threads <= 0) {
+      fallback_threads = 2;
+    }
     error_code = av_dict_set(&opts_, "threads", QByteArray::number(fallback_threads).constData(), 0);
-    codec_ctx_->skip_frame = AVDISCARD_NONREF;
+    // Note: codec_ctx_->skip_frame is managed dynamically by hw_pipeline_->UpdatePriority(is_primary).
   } else {
     error_code = av_dict_set(&opts_, "threads", "auto", 0);
   }

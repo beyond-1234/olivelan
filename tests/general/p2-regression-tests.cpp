@@ -65,6 +65,7 @@ extern "C" {
 }
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/reinforced_software_pipeline.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/project.h"
 #include "node/project/folder/folder.h"
@@ -836,6 +837,51 @@ OLIVE_ADD_TEST(RendererFailureDrainsTickets)
   }
 
   delete renderer;
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(Tier3GlobalThreadBudget)
+{
+  Tier3ThreadBudget::ResetForTests();
+
+  // 1. Primary 4K stream acquires expected budget
+  int primary_4k = Tier3ThreadBudget::Acquire(3840, 2160, true);
+  if (primary_4k < 2) {
+    std::cout << " - primary 4K stream received fewer than 2 threads: " << primary_4k;
+    return __LINE__;
+  }
+
+  // 2. Secondary/thumbnail stream is clamped
+  int secondary_thumb = Tier3ThreadBudget::Acquire(1280, 720, false);
+  if (secondary_thumb != 1) {
+    std::cout << " - secondary 720p thumbnail was not clamped to 1 thread: " << secondary_thumb;
+    return __LINE__;
+  }
+
+  // 3. Saturate the budget with multiple instances
+  std::vector<int> acquired;
+  for (int i = 0; i < 30; ++i) {
+    acquired.push_back(Tier3ThreadBudget::Acquire(3840, 2160, false));
+  }
+
+  // Even after saturation, secondary streams must be throttled to 1 thread
+  if (acquired.back() != 1) {
+    std::cout << " - saturated secondary stream did not throttle to 1 thread: " << acquired.back();
+    return __LINE__;
+  }
+
+  // 4. Release allocations
+  for (int t : acquired) {
+    Tier3ThreadBudget::Release(t);
+  }
+  Tier3ThreadBudget::Release(secondary_thumb);
+  Tier3ThreadBudget::Release(primary_4k);
+
+  if (Tier3ThreadBudget::CurrentAllocated() != 0) {
+    std::cout << " - thread budget leaked allocations: " << Tier3ThreadBudget::CurrentAllocated();
+    return __LINE__;
+  }
+
   OLIVE_TEST_END;
 }
 

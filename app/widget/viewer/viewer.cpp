@@ -1121,8 +1121,10 @@ void ViewerWidget::PlayInternal(int speed, bool in_to_out_only)
     AudioManager::instance()->SetOutputNotifyInterval(audio_processor_.to().time_to_bytes(kAudioPlaybackInterval));
     connect(AudioManager::instance(), &AudioManager::OutputNotify, this, &ViewerWidget::QueueNextAudioBuffer);
 
-    static const int prequeue_count = 2;
-    prequeuing_audio_ = prequeue_count; // Queue two buffers ahead of time
+    // Queue 4 buffers ahead of time (1.0 second safety watermark) so that Tier 3 CPU decode
+    // spikes or heavy 4K HDR timeline seeking cannot empty the ring buffer during playback start.
+    static const int prequeue_count = 4;
+    prequeuing_audio_ = prequeue_count;
     audio_playback_queue_time_ = GetConnectedNode()->GetPlayhead();
     for (int i=0; i<prequeue_count; i++) {
       QueueNextAudioBuffer();
