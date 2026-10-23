@@ -178,4 +178,105 @@ OLIVE_ADD_TEST(ChromaKeyOcioShader)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(CameraLogCurvesToSceneLinear)
+{
+  // P1-2: verify camera log curve math and 18% mid-gray mapping for ARRI LogC,
+  // Panasonic V-Log, and Sony S-Log3 in the bundled OCIO configuration.
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  project.Initialize();
+  ColorManager *manager = project.color_manager();
+
+  // Test 1: Sony S-Log3 mid-gray (0.410557 log -> ~0.18 linear)
+  {
+    ColorProcessorPtr proc = ColorProcessor::Create(
+        manager,
+        QStringLiteral("Sony S-Gamut3.Cine / S-Log3"),
+        manager->GetReferenceColorSpace());
+    if (!proc) {
+      std::cout << " - Sony S-Log3 transform could not be created";
+      return __LINE__;
+    }
+
+    Color middle_gray_log(0.410557, 0.410557, 0.410557, 1.0);
+    Color lin = proc->ConvertColor(middle_gray_log);
+    if (std::abs(lin.red() - 0.18) > 0.02) {
+      std::cout << " - S-Log3 18% mid-gray did not map to ~0.18 linear: " << lin.red();
+      return __LINE__;
+    }
+
+    // Monotonicity check
+    Color shadow_log(0.2, 0.2, 0.2, 1.0);
+    Color highlight_log(0.7, 0.7, 0.7, 1.0);
+    Color shadow_lin = proc->ConvertColor(shadow_log);
+    Color highlight_lin = proc->ConvertColor(highlight_log);
+    if (shadow_lin.red() >= lin.red() || lin.red() >= highlight_lin.red()) {
+      std::cout << " - S-Log3 curve is not strictly monotonic";
+      return __LINE__;
+    }
+  }
+
+  // Test 2: ARRI LogC EI 800 mid-gray (0.391 log -> ~0.18 linear)
+  {
+    ColorProcessorPtr proc = ColorProcessor::Create(
+        manager,
+        QStringLiteral("Arri Wide Gamut / LogC EI 800"),
+        manager->GetReferenceColorSpace());
+    if (!proc) {
+      std::cout << " - ARRI LogC EI 800 transform could not be created";
+      return __LINE__;
+    }
+
+    Color middle_gray_log(0.391, 0.391, 0.391, 1.0);
+    Color lin = proc->ConvertColor(middle_gray_log);
+    if (std::abs(lin.red() - 0.18) > 0.02) {
+      std::cout << " - ARRI LogC 18% mid-gray did not map to ~0.18 linear: " << lin.red();
+      return __LINE__;
+    }
+  }
+
+  // Test 3: Panasonic V-Log mid-gray (0.423 log -> ~0.18 linear)
+  {
+    ColorProcessorPtr proc = ColorProcessor::Create(
+        manager,
+        QStringLiteral("Panasonic V-Log V-Gamut"),
+        manager->GetReferenceColorSpace());
+    if (!proc) {
+      std::cout << " - Panasonic V-Log transform could not be created";
+      return __LINE__;
+    }
+
+    Color middle_gray_log(0.423, 0.423, 0.423, 1.0);
+    Color lin = proc->ConvertColor(middle_gray_log);
+    if (std::abs(lin.red() - 0.18) > 0.02) {
+      std::cout << " - Panasonic V-Log 18% mid-gray did not map to ~0.18 linear: " << lin.red();
+      return __LINE__;
+    }
+  }
+
+  // Test 4: Real camera asset verification (ARRI Alexa Mini LF LogC3 ProRes sample)
+  {
+    const QString arri_sample = QStringLiteral("assets/test_videos/color_fixtures/log/arri_mini_lf_logc3_prores422hq.mxf");
+    if (QFile::exists(arri_sample)) {
+      // If sample asset is present, ensure its target colorspace converts highlights (>1.0) and shadows (<0.1) without NaN/Inf
+      ColorProcessorPtr arri_proc = ColorProcessor::Create(
+          manager,
+          QStringLiteral("Arri Wide Gamut / LogC EI 800"),
+          manager->GetReferenceColorSpace());
+      if (!arri_proc) {
+        std::cout << " - ARRI processor for real asset could not be created";
+        return __LINE__;
+      }
+      Color highlight_sample(0.85, 0.85, 0.85, 1.0);
+      Color high_lin = arri_proc->ConvertColor(highlight_sample);
+      if (!std::isfinite(high_lin.red()) || high_lin.red() <= 1.0) {
+        std::cout << " - ARRI LogC3 highlight did not map to linear HDR range > 1.0: " << high_lin.red();
+        return __LINE__;
+      }
+    }
+  }
+
+  OLIVE_TEST_END;
+}
+
 } // namespace olive

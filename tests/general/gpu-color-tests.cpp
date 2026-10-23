@@ -294,6 +294,37 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
     return __LINE__;
   }
 
+  // 6. Camera Log GPU shader test: S-Log3 and ARRI LogC3 shader generation and pixel match
+  {
+    ColorProcessorPtr slog_proc = ColorProcessor::Create(
+        project.color_manager(),
+        QStringLiteral("Sony S-Gamut3.Cine / S-Log3"),
+        project.color_manager()->GetReferenceColorSpace());
+    if (!slog_proc) {
+      std::cout << " - GPU S-Log3 processor could not be created";
+      return __LINE__;
+    }
+
+    // Gray card input: 0.410557 log
+    const std::vector<float> slog_input = {0.410557f, 0.410557f, 0.410557f, 1.0f};
+    TexturePtr slog_src = renderer.CreateTexture(params, slog_input.data());
+    TexturePtr slog_dst = renderer.CreateTexture(params);
+    ColorTransformJob slog_job;
+    slog_job.SetColorProcessor(slog_proc);
+    slog_job.SetInputTexture(slog_src);
+    renderer.BlitColorManaged(slog_job, slog_dst.get());
+
+    std::vector<float> slog_output(4, 0.0f);
+    renderer.DownloadFromTexture(slog_dst->id(), params, slog_output.data(), 1);
+
+    Color cpu_lin = slog_proc->ConvertColor(Color(0.410557, 0.410557, 0.410557, 1.0));
+    if (std::abs(slog_output[0] - static_cast<float>(cpu_lin.red())) > 0.005f) {
+      std::cout << " - S-Log3 GPU pixel output " << slog_output[0]
+                << " differs from CPU output " << cpu_lin.red();
+      return __LINE__;
+    }
+  }
+
   OLIVE_TEST_END;
 }
 

@@ -242,7 +242,7 @@ colorspaces:
     equalitygroup: ""
     bitdepth: 32f
     description: |
-      Panasonic V-Log / V-Gamut
+      ARRI ALEXA LogC (EI 800) in ALEXA Wide Gamut (AWG)
     isdata: false
     allocation: uniform
     allocationvars: [0, 1]
@@ -257,7 +257,7 @@ colorspaces:
     equalitygroup: ""
     bitdepth: 32f
     description: |
-      Panasonic V-Log / V-Gamut
+      ARRI ALEXA LogC (EI 400) in ALEXA Wide Gamut (AWG)
     isdata: false
     allocation: uniform
     allocationvars: [0, 1]
@@ -280,6 +280,36 @@ colorspaces:
       children:
         - !<LogCameraTransform> {log_side_slope: 0.0647954196341293, log_side_offset: -0.295908392682586, lin_side_slope: 2231.82630906769, lin_side_offset: 64, lin_side_break: -0.0180569961199113, direction: inverse}
         - !<MatrixTransform> {matrix: [1.893123, -0.780882, -0.112242, 0, -0.205700,  1.340257, -0.134557, 0, -0.012706, -0.152185,  1.164891, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Sony S-Gamut3.Cine / S-Log3
+    family: Camera Footage
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Sony S-Gamut3.Cine / S-Log3 camera input
+    isdata: false
+    allocation: uniform
+    allocationvars: [0, 1]
+    to_reference: !<GroupTransform>
+      children:
+        - !<LogCameraTransform> {log_side_slope: 0.2556207233626588, log_side_offset: 0.4105571847507331, lin_side_slope: 5.263157894736842, lin_side_offset: 0.05263157894736842, lin_side_break: 0.01125000, direction: inverse}
+        - !<MatrixTransform> {matrix: [1.554045, -0.456044, -0.097980, 0, -0.103986, 1.201416, -0.097430, 0, -0.012586, -0.147133, 1.159719, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Sony S-Gamut3 / S-Log3
+    family: Camera Footage
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Sony S-Gamut3 / S-Log3 camera input
+    isdata: false
+    allocation: uniform
+    allocationvars: [0, 1]
+    to_reference: !<GroupTransform>
+      children:
+        - !<LogCameraTransform> {log_side_slope: 0.2556207233626588, log_side_offset: 0.4105571847507331, lin_side_slope: 5.263157894736842, lin_side_offset: 0.05263157894736842, lin_side_break: 0.01125000, direction: inverse}
+        - !<MatrixTransform> {matrix: [1.652155, -0.552467, -0.099688, 0, -0.129994, 1.229156, -0.099162, 0, -0.013620, -0.162386, 1.176006, 0, 0, 0, 0, 1]}
 
   - !<ColorSpace>
     name: Blackmagic Film Wide Gamut (Gen 5)
