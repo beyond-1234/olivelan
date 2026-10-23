@@ -5,6 +5,7 @@
 #include <memory>
 #include <QString>
 #include <QSet>
+#include "hal_session_state.h"
 #include "video_hardware_pipeline.h"
 
 namespace olive {
@@ -52,7 +53,7 @@ public:
    * thread; the GUI installs one that queues the text onto the main window's status bar. Keeping
    * this out of the factory avoids a Qt widget dependency in the codec layer.
    */
-  using FallbackHandler = std::function<void(const QString&)>;
+  using FallbackHandler = HalFallbackHandler;
   static void SetFallbackHandler(FallbackHandler handler);
 
   /**

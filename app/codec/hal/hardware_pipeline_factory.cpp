@@ -11,44 +11,11 @@
 #include <QDebug>
 #include <QSet>
 
-#include <mutex>
 #include <utility>
 
 namespace olive {
 
 namespace {
-
-// Patch 0091 (P2-2): both process-wide forced-backend fields live under one mutex. CreatePipeline()
-// runs on decoder threads, so the previous bare function-static QStrings were a data race the
-// moment two streams started together.
-struct ForcedBackendState {
-  std::mutex mutex;
-  QString backend;
-  // Failure keys are (backend, codec, pix_fmt, width x height), not just the backend: a backend
-  // can fail for one stream (unsupported profile, VA-API quota at 4K) while working for another.
-  // Caching per session made the first failure disable the backend for every later stream.
-  QSet<QString> failed_keys;
-  // Patch 0097: one notice per distinct reason. A forced backend can fail on every stream; a
-  // status-bar message per frame would be noise, and a modal per frame would be unusable.
-  QSet<QString> notified_fallbacks;
-  HardwarePipelineFactory::FallbackHandler fallback_handler;
-  int last_selected_tier = 0;
-  QString last_selected_backend;
-};
-
-ForcedBackendState& State()
-{
-  static ForcedBackendState state;
-  return state;
-}
-
-void RecordSelectedTier(int tier, const QString& backend)
-{
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  state.last_selected_tier = tier;
-  state.last_selected_backend = backend;
-}
 
 int TierForForcedBackend(const QString& backend)
 {
@@ -64,25 +31,6 @@ int TierForForcedBackend(const QString& backend)
   return 0;
 }
 
-void NotifyFallback(const QString& message)
-{
-  HardwarePipelineFactory::FallbackHandler handler;
-  {
-    auto& state = State();
-    std::lock_guard<std::mutex> lock(state.mutex);
-    if (state.notified_fallbacks.contains(message)) {
-      return;
-    }
-    state.notified_fallbacks.insert(message);
-    handler = state.fallback_handler;
-  }
-
-  // Call outside the lock: a GUI handler may queue work that comes back through this factory.
-  if (handler) {
-    handler(message);
-  }
-}
-
 std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     const QString& name, AVCodecContext* codec_ctx, int width, int height, OpenGLRenderer* renderer)
 {
@@ -91,21 +39,21 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     return std::make_unique<CudaNvdecPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'cuda' not compiled in (OLIVE_ENABLE_CUDA_NVDEC off); ignoring.";
-    NotifyFallback(QStringLiteral("forced backend \"cuda\" is not compiled in; using automatic routing"));
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"cuda\" is not compiled in; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("videotoolbox")) {
 #if defined(__APPLE__)
     return std::make_unique<VideoToolboxPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'videotoolbox' only exists on macOS; ignoring.";
-    NotifyFallback(QStringLiteral("forced backend \"videotoolbox\" is unavailable on this platform; using automatic routing"));
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"videotoolbox\" is unavailable on this platform; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("vaapi")) {
 #if defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
     return std::make_unique<VaapiDmaBufPipeline>(renderer);
 #else
     qWarning() << "[HAL Factory] Forced backend 'vaapi' not compiled in (needs Linux + OLIVE_ENABLE_VAAPI_DMABUF); ignoring.";
-    NotifyFallback(QStringLiteral("forced backend \"vaapi\" is not compiled in; using automatic routing"));
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"vaapi\" is not compiled in; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("d3d11")) {
     // Patch 0049 (Phase 8): the D3D11 interop pipeline is a placeholder and is not
@@ -113,12 +61,12 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     // (reinforced CPU decode). The pipeline class is kept as the starting point for
     // future development.
     qWarning() << "[HAL Factory] Forced backend 'd3d11' is a placeholder, not implemented; ignoring (Windows uses Tier 3 fallback).";
-    NotifyFallback(QStringLiteral("forced backend \"d3d11\" is not implemented; using automatic routing"));
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"d3d11\" is not implemented; using automatic routing"));
   } else if (name == QStringLiteral("software")) {
     return std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   } else {
     qWarning() << "[HAL Factory] Unknown forced backend" << name << "; ignoring.";
-    NotifyFallback(QStringLiteral("unknown forced backend \"%1\"; using automatic routing").arg(name));
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("unknown forced backend \"%1\"; using automatic routing").arg(name));
   }
   return nullptr;
 }
@@ -127,39 +75,27 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
 
 void HardwarePipelineFactory::SetForcedBackend(const QString& name)
 {
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  state.backend = name.toLower().trimmed();
-  // Explicit (re)selection re-arms the attempt even for a backend that failed earlier.
-  state.failed_keys.clear();
+  HalSessionState::Instance().SetForcedBackend(name);
 }
 
 QString HardwarePipelineFactory::GetForcedBackend()
 {
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  return state.backend;
+  return HalSessionState::Instance().ForcedBackend();
 }
 
 int HardwarePipelineFactory::GetLastSelectedTier()
 {
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  return state.last_selected_tier;
+  return HalSessionState::Instance().LastSelectedTier();
 }
 
 QString HardwarePipelineFactory::GetLastSelectedBackend()
 {
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  return state.last_selected_backend;
+  return HalSessionState::Instance().LastSelectedBackend();
 }
 
 void HardwarePipelineFactory::SetFallbackHandler(FallbackHandler handler)
 {
-  auto& state = State();
-  std::lock_guard<std::mutex> lock(state.mutex);
-  state.fallback_handler = std::move(handler);
+  HalSessionState::Instance().SetFallbackHandler(std::move(handler));
 }
 
 QString HardwarePipelineFactory::ForcedFailureKey(const QString& backend, AVCodecContext* codec_ctx)
@@ -202,16 +138,12 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   //    -hal-backend / -hal-dialog / OLIVE_HAL_BACKEND. Deliberately bypasses the
   //    ShouldUseHardwareDecode pre-filter ("user knows best" semantics), but a failed
   //    physical ProbeAndInitialize still falls back to the normal tiered routing.
-  QString forced;
+  auto& session = HalSessionState::Instance();
+  const QString forced = session.ForcedBackend();
   bool forced_already_failed = false;
-  {
-    auto& state = State();
-    std::lock_guard<std::mutex> lock(state.mutex);
-    forced = state.backend;
-    if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
-      forced_already_failed = IsForcedBackendAlreadyFailed(forced, state.failed_keys,
-                                                           fallback_ctx, codec_ctx);
-    }
+  if (!forced.isEmpty() && forced != QStringLiteral("auto")) {
+    forced_already_failed = IsForcedBackendAlreadyFailed(forced, session.FailedKeys(),
+                                                         fallback_ctx, codec_ctx);
   }
 
   if (!forced.isEmpty() && forced != QStringLiteral("auto") && !forced_already_failed) {
@@ -226,19 +158,11 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     if (forced_pipeline) {
       if (forced_pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
         qInfo() << "[HAL Factory] Forced backend selected:" << forced_pipeline->GetBackendName();
-        RecordSelectedTier(TierForForcedBackend(forced), forced_pipeline->GetBackendName());
+        HalSessionState::Instance().RecordSelection(TierForForcedBackend(forced), forced_pipeline->GetBackendName());
         return forced_pipeline;
       }
 
-      {
-        auto& state = State();
-        std::lock_guard<std::mutex> lock(state.mutex);
-        // Only record the failure if the user has not selected a different backend while this
-        // initialization was running.
-        if (state.backend == forced) {
-          state.failed_keys.insert(ForcedFailureKey(forced, codec_ctx));
-        }
-      }
+      session.RecordFailure(ForcedFailureKey(forced, codec_ctx), forced);
 
       if (fallback_ctx) {
         fallback_ctx->failed_backends.insert(forced);
@@ -247,7 +171,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
       qWarning() << "[HAL Factory] Forced backend" << forced
                  << "failed physical initialization for this codec/format; other streams will"
                  << "still try it. Falling back to auto routing for this stream.";
-      NotifyFallback(QStringLiteral("forced backend \"%1\" failed to initialize; this stream uses automatic routing").arg(forced));
+      HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"%1\" failed to initialize; this stream uses automatic routing").arg(forced));
     }
   }
 
@@ -257,7 +181,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
             << "or format is routed directly to Tier 3 CPU decoding (bypassing HW quota).";
     auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
     sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
-    RecordSelectedTier(3, sw_pipeline->GetBackendName());
+    HalSessionState::Instance().RecordSelection(3, sw_pipeline->GetBackendName());
     return sw_pipeline;
   }
 
@@ -280,7 +204,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<CudaNvdecPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 1:" << pipeline->GetBackendName();
-      RecordSelectedTier(1, pipeline->GetBackendName());
+      HalSessionState::Instance().RecordSelection(1, pipeline->GetBackendName());
       return pipeline;
     }
     qWarning() << "[HAL Factory] Tier 1 CudaNvdec initialization failed, evaluating fallback...";
@@ -293,7 +217,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<VideoToolboxPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 2 macOS:" << pipeline->GetBackendName();
-      RecordSelectedTier(2, pipeline->GetBackendName());
+      HalSessionState::Instance().RecordSelection(2, pipeline->GetBackendName());
       return pipeline;
     }
   }
@@ -302,7 +226,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<VaapiDmaBufPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 2 Linux:" << pipeline->GetBackendName();
-      RecordSelectedTier(2, pipeline->GetBackendName());
+      HalSessionState::Instance().RecordSelection(2, pipeline->GetBackendName());
       return pipeline;
     }
   }
@@ -318,7 +242,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   qInfo() << "[HAL Factory] Routing to Tier 3: Reinforced CPU Decode + Native YUV Shader Upload (Zero-Dependency).";
   auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
-  RecordSelectedTier(3, sw_pipeline->GetBackendName());
+  HalSessionState::Instance().RecordSelection(3, sw_pipeline->GetBackendName());
   return sw_pipeline;
 }
 
