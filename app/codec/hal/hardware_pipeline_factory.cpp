@@ -32,12 +32,36 @@ struct ForcedBackendState {
   // status-bar message per frame would be noise, and a modal per frame would be unusable.
   QSet<QString> notified_fallbacks;
   HardwarePipelineFactory::FallbackHandler fallback_handler;
+  int last_selected_tier = 0;
+  QString last_selected_backend;
 };
 
 ForcedBackendState& State()
 {
   static ForcedBackendState state;
   return state;
+}
+
+void RecordSelectedTier(int tier, const QString& backend)
+{
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  state.last_selected_tier = tier;
+  state.last_selected_backend = backend;
+}
+
+int TierForForcedBackend(const QString& backend)
+{
+  if (backend == QStringLiteral("cuda")) {
+    return 1;
+  }
+  if (backend == QStringLiteral("videotoolbox") || backend == QStringLiteral("vaapi")) {
+    return 2;
+  }
+  if (backend == QStringLiteral("software")) {
+    return 3;
+  }
+  return 0;
 }
 
 void NotifyFallback(const QString& message)
@@ -117,6 +141,20 @@ QString HardwarePipelineFactory::GetForcedBackend()
   return state.backend;
 }
 
+int HardwarePipelineFactory::GetLastSelectedTier()
+{
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  return state.last_selected_tier;
+}
+
+QString HardwarePipelineFactory::GetLastSelectedBackend()
+{
+  auto& state = State();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  return state.last_selected_backend;
+}
+
 void HardwarePipelineFactory::SetFallbackHandler(FallbackHandler handler)
 {
   auto& state = State();
@@ -188,6 +226,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     if (forced_pipeline) {
       if (forced_pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
         qInfo() << "[HAL Factory] Forced backend selected:" << forced_pipeline->GetBackendName();
+        RecordSelectedTier(TierForForcedBackend(forced), forced_pipeline->GetBackendName());
         return forced_pipeline;
       }
 
@@ -218,6 +257,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
             << "or format is routed directly to Tier 3 CPU decoding (bypassing HW quota).";
     auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
     sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
+    RecordSelectedTier(3, sw_pipeline->GetBackendName());
     return sw_pipeline;
   }
 
@@ -240,6 +280,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<CudaNvdecPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 1:" << pipeline->GetBackendName();
+      RecordSelectedTier(1, pipeline->GetBackendName());
       return pipeline;
     }
     qWarning() << "[HAL Factory] Tier 1 CudaNvdec initialization failed, evaluating fallback...";
@@ -252,6 +293,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<VideoToolboxPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 2 macOS:" << pipeline->GetBackendName();
+      RecordSelectedTier(2, pipeline->GetBackendName());
       return pipeline;
     }
   }
@@ -260,6 +302,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     auto pipeline = std::make_unique<VaapiDmaBufPipeline>(renderer);
     if (pipeline->ProbeAndInitialize(codec_ctx, width, height)) {
       qInfo() << "[HAL Factory] Selected Tier 2 Linux:" << pipeline->GetBackendName();
+      RecordSelectedTier(2, pipeline->GetBackendName());
       return pipeline;
     }
   }
@@ -275,6 +318,7 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
   qInfo() << "[HAL Factory] Routing to Tier 3: Reinforced CPU Decode + Native YUV Shader Upload (Zero-Dependency).";
   auto sw_pipeline = std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   sw_pipeline->ProbeAndInitialize(codec_ctx, width, height);
+  RecordSelectedTier(3, sw_pipeline->GetBackendName());
   return sw_pipeline;
 }
 

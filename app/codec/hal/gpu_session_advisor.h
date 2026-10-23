@@ -23,6 +23,7 @@
 
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 #include "gpu_environment_probe.h"
 
@@ -124,6 +125,7 @@ public:
     bool hybrid{false};
     bool nvidia_present{false};
     bool tier1_possible{false};
+    bool cuda_gl_interop_blocked{false};
     bool tier2_possible{false};
     Tier2Backend tier2_backend{Tier2Backend::None};
     VaapiImportStatus tier2_import_status{VaapiImportStatus::Unknown};
@@ -135,6 +137,24 @@ public:
   };
 
   static Assessment Assess();
+
+  /**
+   * @brief One decode tier and the reason for its state, for the HAL status panel.
+   *
+   * `available` is a capability answer, not a promise that every stream will use the tier:
+   * Tier 2 VA-API import is per-stream and Tier 3 is always the final fallback. `state`
+   * is the short user-facing label, while `reason` explains the evidence behind it.
+   */
+  struct TierStatus {
+    int tier{0};
+    QString backend;
+    bool available{false};
+    QString state;
+    QString reason;
+  };
+
+  /// @brief Tier 1/2/3 status with reasons, derived from one probe snapshot.
+  static QVector<TierStatus> DescribeTiers(const Assessment& assessment);
 
   /// @brief The detected facts, one per line, for the UI.
   static QString DescribeSituation(const Assessment& assessment);

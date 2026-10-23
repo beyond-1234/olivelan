@@ -157,6 +157,73 @@ OLIVE_ADD_TEST(HalCapabilityHonesty)
     }
   }
 
+  // 6. HAL status panel: every tier must ship a non-empty reason, and Tier 3 must be the
+  //    unconditional fallback. A bare "Unavailable" label is not actionable and was the
+  //    original complaint behind the status panel.
+  {
+    GpuSessionAdvisor::Assessment none;
+    none.nvidia_present = false;
+    none.tier1_possible = false;
+    none.tier2_backend = GpuSessionAdvisor::Tier2Backend::None;
+    none.tier2_possible = false;
+
+    const QVector<GpuSessionAdvisor::TierStatus> tiers =
+        GpuSessionAdvisor::DescribeTiers(none);
+    if (tiers.size() != 3) {
+      std::cout << " - HAL status panel did not produce exactly three tiers";
+      return __LINE__;
+    }
+    if (tiers.at(0).available) {
+      std::cout << " - Tier 1 was reported available without an NVIDIA GPU";
+      return __LINE__;
+    }
+    if (tiers.at(2).tier != 3 || !tiers.at(2).available) {
+      std::cout << " - Tier 3 is not the unconditional fallback in the HAL status panel";
+      return __LINE__;
+    }
+    for (const auto& tier : tiers) {
+      if (tier.state.isEmpty() || tier.reason.isEmpty()) {
+        std::cout << " - Tier " << tier.tier << " has an empty state or reason";
+        return __LINE__;
+      }
+    }
+  }
+
+  // 7. CUDA-GL interop must be explained, not just marked unavailable. This is the
+  //    hybrid-Wayland case where Tier 1 is structurally impossible.
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  {
+    GpuSessionAdvisor::Assessment blocked;
+    blocked.nvidia_present = true;
+    blocked.nvdec_available = true;
+    blocked.cuda_gl_interop_blocked = true;
+    blocked.tier1_possible = false;
+    blocked.display_gpu = QStringLiteral("Mesa Intel");
+
+    const QVector<GpuSessionAdvisor::TierStatus> tiers =
+        GpuSessionAdvisor::DescribeTiers(blocked);
+    if (tiers.at(0).available || !tiers.at(0).reason.contains(QStringLiteral("OpenGL"))) {
+      std::cout << " - Tier 1 did not explain the CUDA-GL same-GPU requirement";
+      return __LINE__;
+    }
+  }
+#endif
+
+  // 8. The live snapshot used by the panel must also be internally complete.
+  {
+    const auto live_tiers = GpuSessionAdvisor::DescribeTiers(GpuSessionAdvisor::Assess());
+    if (live_tiers.size() != 3 || !live_tiers.at(2).available) {
+      std::cout << " - live HAL tier snapshot is incomplete";
+      return __LINE__;
+    }
+    for (const auto& tier : live_tiers) {
+      if (tier.reason.isEmpty()) {
+        std::cout << " - live Tier " << tier.tier << " has no reason";
+        return __LINE__;
+      }
+    }
+  }
+
   OLIVE_TEST_END;
 }
 

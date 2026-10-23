@@ -313,8 +313,9 @@ GpuSessionAdvisor::Assessment GpuSessionAdvisor::Assess()
   assessment.nvidia_present = HasNvidiaDevice();
   // Tier 1 needs NVDEC *and* the GL context on the same NVIDIA GPU - the second half is what a
   // hybrid Wayland session cannot provide.
+  assessment.cuda_gl_interop_blocked = probe.IsCudaGlInteropBlocked();
   assessment.tier1_possible =
-      assessment.nvidia_present && probe.HasNvdecSupport() && !probe.IsCudaGlInteropBlocked();
+      assessment.nvidia_present && probe.HasNvdecSupport() && !assessment.cuda_gl_interop_blocked;
 
   // Tier 2 is platform-native, not always VA-API. Check VideoToolbox first so macOS reports the
   // backend that HardwarePipelineFactory actually auto-selects there.
@@ -393,6 +394,102 @@ QString GpuSessionAdvisor::DescribeSituation(const Assessment& assessment)
   lines << Tr("Tier 2: %1").arg(tier2_description);
 
   return lines.join(QStringLiteral("\n"));
+}
+
+QVector<GpuSessionAdvisor::TierStatus> GpuSessionAdvisor::DescribeTiers(
+    const Assessment& assessment)
+{
+  QVector<TierStatus> tiers;
+
+  TierStatus tier1;
+  tier1.tier = 1;
+  tier1.backend = QStringLiteral("CUDA-NVDEC");
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (!assessment.nvidia_present) {
+    tier1.state = Tr("Unavailable");
+    tier1.reason = Tr("No NVIDIA GPU was detected.");
+  } else if (!assessment.nvdec_available) {
+    tier1.state = Tr("Unavailable");
+    tier1.reason = Tr("An NVIDIA GPU is present, but NVDEC support was not detected.");
+  } else if (assessment.cuda_gl_interop_blocked) {
+    tier1.state = Tr("Unavailable");
+    tier1.reason = Tr("The OpenGL context is on %1, not on the NVIDIA GPU. CUDA-GL interop "
+                      "requires both on the same GPU.")
+                       .arg(assessment.display_gpu);
+  } else {
+    tier1.available = true;
+    tier1.state = Tr("Available");
+    tier1.reason = Tr("NVDEC and the OpenGL context are on the same NVIDIA GPU.");
+  }
+#else
+  tier1.state = Tr("Unavailable");
+  tier1.reason = Tr("CUDA-NVDEC is not compiled into this build.");
+#endif
+  tiers.push_back(tier1);
+
+  TierStatus tier2;
+  tier2.tier = 2;
+#if defined(__APPLE__)
+  tier2.backend = QStringLiteral("VideoToolbox");
+  if (assessment.tier2_backend == Tier2Backend::VideoToolbox) {
+    tier2.available = true;
+    tier2.state = Tr("Available");
+    tier2.reason = Tr("VideoToolbox hardware decode with IOSurface import is available.");
+  } else {
+    tier2.state = Tr("Unavailable");
+    tier2.reason = Tr("VideoToolbox is not available in this build or on this Mac.");
+  }
+#elif defined(__linux__) && defined(OLIVE_ENABLE_VAAPI_DMABUF)
+  tier2.backend = QStringLiteral("VA-API DMA-BUF");
+  if (!assessment.tier2_possible) {
+    tier2.state = Tr("Unavailable");
+    tier2.reason = Tr("No usable VA-API DMA-BUF device was created for this display session.");
+  } else {
+    switch (assessment.tier2_import_status) {
+    case VaapiImportStatus::Unknown:
+      tier2.available = true;
+      tier2.state = Tr("Unverified");
+      tier2.reason = Tr("The VA-API device is present; EGL import will be verified on the first "
+                        "decoded frame.");
+      break;
+    case VaapiImportStatus::Verified:
+      tier2.available = true;
+      tier2.state = Tr("Available");
+      tier2.reason = Tr("VA-API DMA-BUF EGL import has been verified for this session.");
+      break;
+    case VaapiImportStatus::Mixed:
+      tier2.available = true;
+      tier2.state = Tr("Partial");
+      tier2.reason = Tr("Some streams imported through DMA-BUF; others fell back to CPU readback.");
+      break;
+    case VaapiImportStatus::Failed:
+      tier2.available = true;
+      tier2.state = Tr("Degraded");
+      tier2.reason = Tr("A real VA-API DMA-BUF import failed; affected streams use CPU readback.");
+      break;
+    }
+  }
+#elif defined(_WIN32)
+  tier2.backend = QStringLiteral("D3D11 Interop");
+  tier2.state = Tr("Unavailable");
+  tier2.reason = Tr("D3D11 interop is a planned placeholder and is not implemented; Windows uses "
+                    "Tier 3.");
+#else
+  tier2.backend = Tr("Platform native");
+  tier2.state = Tr("Unavailable");
+  tier2.reason = Tr("No Tier 2 hardware backend is available for this platform.");
+#endif
+  tiers.push_back(tier2);
+
+  TierStatus tier3;
+  tier3.tier = 3;
+  tier3.backend = QStringLiteral("Reinforced CPU Decode + Native YUV Upload");
+  tier3.available = true;
+  tier3.state = Tr("Available");
+  tier3.reason = Tr("CPU decode with PBO upload is always available as the final fallback.");
+  tiers.push_back(tier3);
+
+  return tiers;
 }
 
 QString GpuSessionAdvisor::DescribeEffectivePath(const Assessment& assessment)

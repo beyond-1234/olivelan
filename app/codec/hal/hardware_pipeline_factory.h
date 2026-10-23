@@ -37,6 +37,15 @@ public:
   static QString GetForcedBackend();
 
   /**
+   * @brief Last tier/backend selected for an actual frame, for the HAL status panel.
+   *
+   * Selection is per-stream, so this is the most recent observation, not a session-wide
+   * guarantee. Tier 0 means no frame has selected a backend yet.
+   */
+  static int GetLastSelectedTier();
+  static QString GetLastSelectedBackend();
+
+  /**
    * @brief Patch 0097: receive a visible, de-duplicated notice when a forced backend falls back.
    *
    * ProbeAndInitialize() runs on decoder threads. The handler may therefore be called from any

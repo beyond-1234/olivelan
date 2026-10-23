@@ -18,5 +18,7 @@ set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
   dialog/hal/halbackenddialog.h
   dialog/hal/halbackenddialog.cpp
+  dialog/hal/halstatusdialog.h
+  dialog/hal/halstatusdialog.cpp
   PARENT_SCOPE
 )
