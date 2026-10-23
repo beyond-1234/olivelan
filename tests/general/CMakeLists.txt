@@ -17,7 +17,6 @@
 olive_add_test(General common-tests common-tests.cpp)
 olive_add_test(General color-role-tests color-role-tests.cpp)
 olive_add_test(General color-hdr-metadata-tests color-hdr-metadata-tests.cpp)
-olive_add_test(General cubelut-tests cubelut-tests.cpp)
 olive_add_test(General color-equivalence-tests color-equivalence-tests.cpp)
 olive_add_test(General legacy-serializer-tests legacy-serializer-tests.cpp)
 olive_add_test(General hal-honesty-tests hal-honesty-tests.cpp)

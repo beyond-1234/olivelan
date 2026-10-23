@@ -28,8 +28,6 @@ set(OLIVE_SOURCES
   render/colorprocessor.cpp
   render/colorprocessor.h
   render/colorprocessorcache.h
-  render/cubelut.cpp
-  render/cubelut.h
   render/diskmanager.cpp
   render/diskmanager.h
   render/framehashcache.cpp
