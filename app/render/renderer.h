@@ -44,6 +44,13 @@ public:
 
   virtual bool Init() = 0;
 
+  /**
+   * @brief True once the backend has a usable native context/functions.
+   *
+   * Consumers must not issue GL calls while this is false.
+   */
+  bool IsValid() const { return valid_; }
+
   TexturePtr CreateTexture(const VideoParams& params, const void *data = nullptr, int linesize = 0);
 
   virtual void DestroyTexture(Texture *texture);
@@ -82,7 +89,7 @@ public:
 
   virtual void PostDestroy() = 0;
 
-  virtual void PostInit() = 0;
+  virtual bool PostInit() = 0;
 
   virtual void ClearDestination(olive::Texture *texture = nullptr, double r = 0.0, double g = 0.0, double b = 0.0, double a = 1.0) = 0;
 
@@ -112,6 +119,9 @@ protected:
   virtual void DestroyNativeTexture(QVariant texture) = 0;
 
   virtual void DestroyInternal() = 0;
+
+protected:
+  bool valid_ = false;
 
 private:
   struct ColorContext {

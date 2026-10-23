@@ -395,6 +395,10 @@ bool ViewerDisplayWidget::eventFilter(QObject *o, QEvent *e)
 
 void ViewerDisplayWidget::OnPaint()
 {
+  if (!renderer()->IsValid()) {
+    return;
+  }
+
   const bool checkerboard = DesignTokenRegistry::instance()->GetInt(
       QStringLiteral("viewer.checkerboard"), 0);
 

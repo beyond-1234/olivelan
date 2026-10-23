@@ -236,8 +236,11 @@ void RenderThread::quit()
 
 void RenderThread::run()
 {
-  if (context_) {
-    context_->PostInit();
+  if (context_ && !context_->PostInit()) {
+    qCritical() << "[Render] Renderer initialization failed; refusing to process GL jobs";
+    QMutexLocker locker(&mutex_);
+    cancelled_ = true;
+    return;
   }
 
   QMutexLocker locker(&mutex_);

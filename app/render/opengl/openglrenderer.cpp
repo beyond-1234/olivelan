@@ -163,28 +163,37 @@ void OpenGLRenderer::PostDestroy()
   }
 }
 
-void OpenGLRenderer::PostInit()
+bool OpenGLRenderer::PostInit()
 {
-  GL_PREAMBLE;
+  if (!context_ || !context_->isValid()) {
+    qCritical() << "Cannot initialize renderer without a valid OpenGL context";
+    return false;
+  }
 
   // Make context current on that surface
   if (context_->parent() == this && !context_->makeCurrent(&surface_)) {
     qCritical() << "Failed to makeCurrent() on offscreen surface in thread" << thread();
-    return;
+    return false;
   }
 
   functions_ = context_->functions();
+  if (!functions_) {
+    qCritical() << "OpenGL context exposes no function table";
+    return false;
+  }
 
   // Store OpenGL functions instance
   functions_->glBlendFunc(GL_ONE, GL_ZERO);
 
   // Set up framebuffer used for various things
   functions_->glGenFramebuffers(1, &framebuffer_);
+  valid_ = true;
+  return true;
 }
 
 void OpenGLRenderer::DestroyInternal()
 {
-  if (context_) {
+  if (context_ && functions_) {
     GL_PREAMBLE;
 
 #if defined(OLIVE_ENABLE_CUDA_NVDEC)

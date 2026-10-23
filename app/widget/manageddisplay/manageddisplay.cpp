@@ -267,7 +267,9 @@ void ManagedDisplayWidget::OnInit()
   if (RenderManager::instance()->backend() == RenderManager::kOpenGL) {
     QOpenGLContext* context = static_cast<ManagedDisplayWidgetOpenGL*>(inner_widget_)->context();
     static_cast<OpenGLRenderer*>(attached_renderer_)->Init(context);
-    static_cast<OpenGLRenderer*>(attached_renderer_)->PostInit();
+    if (!static_cast<OpenGLRenderer*>(attached_renderer_)->PostInit()) {
+      qCritical() << "[Display] OpenGL renderer is not usable";
+    }
   }
 }
 

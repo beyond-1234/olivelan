@@ -57,7 +57,7 @@ public:
 
   virtual void PostDestroy() override;
 
-  virtual void PostInit() override;
+  virtual bool PostInit() override;
 
   virtual void ClearDestination(olive::Texture *texture = nullptr, double r = 0.0, double g = 0.0, double b = 0.0, double a = 0.0) override;
 

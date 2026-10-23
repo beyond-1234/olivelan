@@ -136,6 +136,8 @@ QVariant Renderer::GetDefaultShader()
 
 void Renderer::Destroy()
 {
+  valid_ = false;
+
   if (!default_shader_.isNull()) {
     DestroyNativeShader(default_shader_);
     default_shader_.clear();
@@ -167,6 +169,10 @@ TexturePtr Renderer::CreateTextureFromNativeHandle(const QVariant &v, const Vide
 
 bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::ColorContext *ctx)
 {
+  if (!valid_) {
+    return false;
+  }
+
   QMutexLocker locker(&color_cache_mutex_);
 
   ColorContext& color_ctx = *ctx;
@@ -319,6 +325,10 @@ void Renderer::ClearOldTextures()
 
 void Renderer::BlitColorManaged(const ColorTransformJob &color_job, Texture *destination, const VideoParams &params)
 {
+  if (!valid_) {
+    return;
+  }
+
   ColorContext color_ctx;
   if (!GetColorContext(color_job, &color_ctx)) {
     return;

@@ -50,6 +50,7 @@ extern "C" {
 #include "config/config.h"
 #include "dialog/hal/halbackenddialog.h"
 #include "node/project/serializer/serializer.h"
+#include "render/graphicsfallback.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -341,6 +342,28 @@ int main(int argc, char *argv[])
     // Patch 0078 (Phase 9): record the platform that was actually selected, so the session choice
     // can be asserted from a log rather than guessed.
     qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
+
+    // Graphics capability is independent of Core/Project/Node state. Probe it
+    // before any MainWindow or render thread exists.
+    const olive::GraphicsFallback::Result graphics_result =
+        olive::GraphicsFallback::EnsureUsableOpenGL();
+    if (graphics_result == olive::GraphicsFallback::Result::Relaunching) {
+      return 0;
+    }
+    if (graphics_result == olive::GraphicsFallback::Result::Unavailable) {
+      const QString message = QCoreApplication::translate(
+          "main",
+          "Olive could not create an OpenGL context. The viewer cannot start.\n\n"
+          "%1\n\n"
+          "Try an X11/XWayland session or install/update the GPU driver. "
+          "The diagnostics log contains more details.")
+          .arg(olive::GraphicsFallback::LastError());
+      qCritical().noquote() << message;
+      QMessageBox::critical(nullptr,
+                            QCoreApplication::translate("main", "OpenGL unavailable"),
+                            message);
+      return 1;
+    }
 
     // Initialize the default UI font stack. Inter is registered so theme
     // manifests can opt into it, but it is not forced globally: the embedded
