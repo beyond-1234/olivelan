@@ -70,11 +70,47 @@ extern "C" {
 #include "node/project/folder/folder.h"
 #include "node/project/footage/footage.h"
 #include "olive/core/render/audioparams.h"
+#include "render/rendermanager.h"
+#include "render/renderticket.h"
 #include "render/videoparams.h"
 #include "widget/projectexplorer/projectthumbnailcache.h"
 #include "widget/projectexplorer/projectviewmodel.h"
 
 namespace olive {
+
+/**
+ * @brief Minimal Renderer whose PostInit() always fails.
+ *
+ * Used by RendererFailureDrainsTickets to verify the failure path without requiring a real
+ * OpenGL context. The fake implements only the pure virtual seam; no GL call is made.
+ */
+class FailingRenderer : public Renderer {
+public:
+  bool Init() override { return true; }
+  void PostDestroy() override {}
+  bool PostInit() override
+  {
+    SetLastError(QStringLiteral("injected renderer failure"));
+    return false;
+  }
+  void ClearDestination(Texture*, double, double, double, double) override {}
+  QVariant CreateNativeShader(ShaderCode) override { return {}; }
+  void DestroyNativeShader(QVariant) override {}
+  void UploadToTexture(const QVariant&, const VideoParams&, const void*, int) override {}
+  void DownloadFromTexture(const QVariant&, const VideoParams&, void*, int) override {}
+  void Flush() override {}
+  Color GetPixelFromTexture(Texture*, const QPointF&) override { return {}; }
+  int GetGpuShaderLanguage() const override { return 0; }
+
+protected:
+  void Blit(QVariant, ShaderJob, Texture*, VideoParams, bool) override {}
+  QVariant CreateNativeTexture(int, int, int, PixelFormat, int, const void*, int) override
+  {
+    return {};
+  }
+  void DestroyNativeTexture(QVariant) override {}
+  void DestroyInternal() override {}
+};
 
 /**
  * @brief Test seam for ProjectThumbnailCache's private state machine.
@@ -279,6 +315,25 @@ OLIVE_ADD_TEST(ProjectViewModelDurationRole)
 
   if (!model.data(index, ProjectViewModel::kDurationRole).toString().isEmpty()) {
     std::cout << " - zero duration reported a duration";
+    return __LINE__;
+  }
+
+  // Project owns the HDR metadata decision (not ColorManager). Verify that a metadata change
+  // invalidates the cache and updates HasHdrFootage() immediately.
+  video.set_video_type(VideoParams::kVideoTypeVideo);
+  video.set_duration(250);
+  video.set_enabled(true);
+  video.set_color_trc(VideoParams::kTransferSmpte2084);
+  footage->SetVideoParams(video);
+  if (!project.HasHdrFootage()) {
+    std::cout << " - HDR footage was not detected after PQ metadata was set";
+    return __LINE__;
+  }
+
+  video.set_color_trc(VideoParams::kTransferBt709);
+  footage->SetVideoParams(video);
+  if (project.HasHdrFootage()) {
+    std::cout << " - HDR cache was not invalidated after the stream became SDR";
     return __LINE__;
   }
 
@@ -744,6 +799,43 @@ OLIVE_ADD_TEST(StreamFallbackContextPrecedence)
   }
 
   avcodec_free_context(&codec);
+  OLIVE_TEST_END;
+}
+
+OLIVE_ADD_TEST(RendererFailureDrainsTickets)
+{
+  // R-5: a failed render thread must not leave tickets permanently unresolved. Both a ticket
+  // queued before the failure and one submitted afterwards must finish exactly once.
+  DecoderCache decoder_cache;
+  ShaderCache shader_cache;
+  auto* renderer = new FailingRenderer();
+  RenderThread thread(renderer, &decoder_cache, &shader_cache);
+
+  RenderTicketPtr before = std::make_shared<RenderTicket>();
+  thread.AddTicket(before);
+  thread.start();
+  thread.wait();
+
+  if (!thread.IsFailed()) {
+    std::cout << " - render thread did not expose its failed state";
+    delete renderer;
+    return __LINE__;
+  }
+  if (before->GetFinishCount() != 1) {
+    std::cout << " - ticket queued before renderer failure was not finished exactly once";
+    delete renderer;
+    return __LINE__;
+  }
+
+  RenderTicketPtr after = std::make_shared<RenderTicket>();
+  thread.AddTicket(after);
+  if (after->GetFinishCount() != 1) {
+    std::cout << " - ticket submitted after renderer failure was not completed";
+    delete renderer;
+    return __LINE__;
+  }
+
+  delete renderer;
   OLIVE_TEST_END;
 }
 

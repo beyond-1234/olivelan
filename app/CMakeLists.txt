@@ -30,6 +30,7 @@ set_source_files_properties(${CMAKE_SOURCE_DIR}/third_party/lz4/lz4.c
 
 # Add subdirectories, which will populate the above variables
 add_subdirectory(audio)
+add_subdirectory(bootstrap)
 add_subdirectory(cli)
 add_subdirectory(codec)
 add_subdirectory(common)

@@ -18,13 +18,14 @@
 
 ***/
 
-#include "render/graphicsfallback.h"
+#include "bootstrap/graphicsfallback.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
+#include <QMutex>
 #include <QProcess>
 #include <QProcessEnvironment>
 
@@ -38,6 +39,13 @@ namespace olive {
 namespace {
 
 QString g_last_error;
+QMutex g_error_mutex;
+
+void SetLastError(const QString& error)
+{
+  QMutexLocker locker(&g_error_mutex);
+  g_last_error = error;
+}
 
 QString FallbackProgram()
 {
@@ -56,19 +64,19 @@ bool GraphicsFallback::CanCreateOpenGLContext()
   QOffscreenSurface surface;
   surface.create();
   if (!surface.isValid()) {
-    g_last_error = QStringLiteral("Failed to create an offscreen surface");
+    SetLastError(QStringLiteral("Failed to create an offscreen surface"));
     return false;
   }
 
   QOpenGLContext context;
   context.setFormat(surface.format());
   if (!context.create()) {
-    g_last_error = QStringLiteral("Failed to create an OpenGL context");
+    SetLastError(QStringLiteral("Failed to create an OpenGL context"));
     return false;
   }
 
   if (!context.makeCurrent(&surface)) {
-    g_last_error = QStringLiteral("Failed to make the OpenGL context current");
+    SetLastError(QStringLiteral("Failed to make the OpenGL context current"));
     return false;
   }
 
@@ -79,6 +87,7 @@ bool GraphicsFallback::CanCreateOpenGLContext()
 
 QString GraphicsFallback::LastError()
 {
+  QMutexLocker locker(&g_error_mutex);
   return g_last_error;
 }
 
@@ -88,7 +97,7 @@ GraphicsFallback::Result GraphicsFallback::Relaunch(const QString &fallback_mode
 {
   const QString program = FallbackProgram();
   if (program.isEmpty() || !QFileInfo(program).isExecutable()) {
-    g_last_error = QStringLiteral("Cannot relaunch: application executable is unavailable");
+    SetLastError(QStringLiteral("Cannot relaunch: application executable is unavailable"));
     return Result::Unavailable;
   }
 
@@ -131,11 +140,11 @@ GraphicsFallback::Result GraphicsFallback::Relaunch(const QString &fallback_mode
   argv.push_back(nullptr);
 
   execv(program_utf8.constData(), argv.data());
-  g_last_error = QStringLiteral("execv failed while applying graphics fallback");
+  SetLastError(QStringLiteral("execv failed while applying graphics fallback"));
   return Result::Unavailable;
 #else
   if (!QProcess::startDetached(program, arguments)) {
-    g_last_error = QStringLiteral("Failed to relaunch the application");
+    SetLastError(QStringLiteral("Failed to relaunch the application"));
     return Result::Unavailable;
   }
 
@@ -170,7 +179,7 @@ GraphicsFallback::Result GraphicsFallback::EnsureUsableOpenGL()
                     true);
   }
 
-  g_last_error = QStringLiteral("OpenGL remains unavailable after XWayland and software fallback");
+  SetLastError(QStringLiteral("OpenGL remains unavailable after XWayland and software fallback"));
   return Result::Unavailable;
 }
 

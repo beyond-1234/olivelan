@@ -47,6 +47,14 @@ public:
 
   bool RemoveTicket(RenderTicketPtr ticket);
 
+  /**
+   * @brief True once PostInit() failed and this thread stopped accepting work.
+   *
+   * RenderManager checks this synchronously (unlike the queued GUI status signal), so
+   * RenderFrame() cannot enqueue a ticket after the worker has already stopped.
+   */
+  bool IsFailed() const;
+
   void quit();
 
 signals:
@@ -67,13 +75,15 @@ protected:
   virtual void run() override;
 
 private:
-  QMutex mutex_;
+  mutable QMutex mutex_;
 
   QWaitCondition wait_;
 
   std::list<RenderTicketPtr> queue_;
 
   bool cancelled_;
+
+  bool failed_;
 
   Renderer *context_;
 

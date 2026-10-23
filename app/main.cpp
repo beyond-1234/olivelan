@@ -50,7 +50,7 @@ extern "C" {
 #include "config/config.h"
 #include "dialog/hal/halbackenddialog.h"
 #include "node/project/serializer/serializer.h"
-#include "render/graphicsfallback.h"
+#include "bootstrap/graphicsfallback.h"
 #include "version.h"
 
 #ifdef _WIN32
