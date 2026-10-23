@@ -28,6 +28,11 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 
+#if defined(Q_OS_UNIX)
+#include <unistd.h>
+#include <vector>
+#endif
+
 namespace olive {
 
 namespace {
@@ -102,15 +107,40 @@ GraphicsFallback::Result GraphicsFallback::Relaunch(const QString &fallback_mode
   }
 
   const QStringList arguments = QCoreApplication::arguments().mid(1);
+  qInfo() << "[Graphics] Relaunching with fallback" << fallback_mode
+          << "platform" << (platform.isEmpty() ? QStringLiteral("<current>") : platform)
+          << "software_gl" << software_gl;
+
+#if defined(Q_OS_UNIX)
+  // Preserve the terminal/stdout/stderr and PID-visible process. A detached
+  // QProcess would make the new fallback process lose the user's terminal
+  // logs, which makes field diagnostics impossible.
+  const QByteArray program_utf8 = program.toLocal8Bit();
+  std::vector<QByteArray> argv_storage;
+  argv_storage.reserve(arguments.size() + 1);
+  argv_storage.push_back(program_utf8);
+  for (const QString &argument : arguments) {
+    argv_storage.push_back(argument.toLocal8Bit());
+  }
+
+  std::vector<char*> argv;
+  argv.reserve(argv_storage.size() + 1);
+  for (QByteArray &argument : argv_storage) {
+    argv.push_back(argument.data());
+  }
+  argv.push_back(nullptr);
+
+  execv(program_utf8.constData(), argv.data());
+  g_last_error = QStringLiteral("execv failed while applying graphics fallback");
+  return Result::Unavailable;
+#else
   if (!QProcess::startDetached(program, arguments)) {
     g_last_error = QStringLiteral("Failed to relaunch the application");
     return Result::Unavailable;
   }
 
-  qInfo() << "[Graphics] Relaunching with fallback" << fallback_mode
-          << "platform" << (platform.isEmpty() ? QStringLiteral("<current>") : platform)
-          << "software_gl" << software_gl;
   return Result::Relaunching;
+#endif
 }
 
 GraphicsFallback::Result GraphicsFallback::EnsureUsableOpenGL()

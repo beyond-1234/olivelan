@@ -205,11 +205,6 @@ int main(int argc, char *argv[])
                        QCoreApplication::translate("main",
                           "Show the HAL backend selection dialog with probe results on startup"));
 
-  auto safe_mode_option =
-      parser.AddOption({QStringLiteral("safe-mode"), QStringLiteral("-safe-mode")},
-                       QCoreApplication::translate("main",
-                          "Use XWayland and software OpenGL with Tier 3 CPU decoding"));
-
 #ifdef _WIN32
   auto console_option =
       parser.AddOption({QStringLiteral("c"), QStringLiteral("-console")},
@@ -247,20 +242,6 @@ int main(int argc, char *argv[])
                                           QStringLiteral("seconds"), true);
 
   parser.Process(args);
-
-  // Safe mode is a startup-layer policy, independent of Core/Project/Node.
-  // Apply the environment before the HAL backend/handlers are initialized and
-  // before QApplication binds its platform.
-  if (safe_mode_option->IsSet()) {
-    qputenv("OLIVE_GL_FALLBACK", "software");
-    qputenv("LIBGL_ALWAYS_SOFTWARE", "1");
-    qputenv("MESA_LOADER_DRIVER_OVERRIDE", "llvmpipe");
-    qputenv("OLIVE_HAL_BACKEND", "software");
-    if (!qEnvironmentVariableIsEmpty("DISPLAY")) {
-      qputenv("QT_QPA_PLATFORM", "xcb");
-    }
-    qInfo() << "[Graphics] Safe mode requested: software OpenGL + Tier 3";
-  }
 
   if (help_option->IsSet()) {
     // Show help
