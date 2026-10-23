@@ -476,4 +476,84 @@ OLIVE_ADD_TEST(OCIOFileTransformNodeTesting)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(AcesColorSpaceCompliance)
+{
+  ColorManager::SetUpDefaultConfig();
+  Project project;
+  ColorManager *manager = project.color_manager();
+  OLIVE_ASSERT(manager != nullptr);
+
+  QStringList available = manager->ListAvailableColorspaces();
+
+  // 1. Assert ACEScg and ACES2065-1 are present in bundled config
+  if (!available.contains(QStringLiteral("ACEScg"))) {
+    std::cout << " - ACEScg missing from available colorspaces";
+    return __LINE__;
+  }
+  if (!available.contains(QStringLiteral("ACES2065-1"))) {
+    std::cout << " - ACES2065-1 missing from available colorspaces";
+    return __LINE__;
+  }
+
+  // 2. ACEScg to Scene Linear (Rec.709) conversion test
+  ColorProcessorPtr acescg_to_lin = ColorProcessor::Create(
+      manager,
+      QStringLiteral("ACEScg"),
+      QStringLiteral("Linear"));
+  if (!acescg_to_lin) {
+    std::cout << " - ACEScg to Linear processor could not be created";
+    return __LINE__;
+  }
+
+  // Neutral white preservation: (1, 1, 1) -> (1, 1, 1)
+  Color white_aces(1.0, 1.0, 1.0, 1.0);
+  Color white_lin = acescg_to_lin->ConvertColor(white_aces);
+  if (std::abs(white_lin.red() - 1.0) > 0.01 || std::abs(white_lin.green() - 1.0) > 0.01 || std::abs(white_lin.blue() - 1.0) > 0.01) {
+    std::cout << " - ACEScg white point failed to map to Linear (1, 1, 1): " << white_lin.red() << " " << white_lin.green() << " " << white_lin.blue();
+    return __LINE__;
+  }
+
+  // Pure AP1 red primary: (1, 0, 0) in ACEScg -> AP1 gamut exceeds Rec.709, red maps to ~1.705
+  Color red_aces(1.0, 0.0, 0.0, 1.0);
+  Color red_lin = acescg_to_lin->ConvertColor(red_aces);
+  if (std::abs(red_lin.red() - 1.705) > 0.02 || red_lin.green() >= 0.0 || red_lin.blue() >= 0.0) {
+    std::cout << " - ACEScg AP1 red primary transform math mismatch: " << red_lin.red() << " " << red_lin.green() << " " << red_lin.blue();
+    return __LINE__;
+  }
+
+  // 3. ACES2065-1 to ACEScg conversion test
+  ColorProcessorPtr ap0_to_ap1 = ColorProcessor::Create(
+      manager,
+      QStringLiteral("ACES2065-1"),
+      QStringLiteral("ACEScg"));
+  if (!ap0_to_ap1) {
+    std::cout << " - ACES2065-1 to ACEScg processor could not be created";
+    return __LINE__;
+  }
+  Color white_ap0(1.0, 1.0, 1.0, 1.0);
+  Color white_ap1 = ap0_to_ap1->ConvertColor(white_ap0);
+  if (std::abs(white_ap1.red() - 1.0) > 0.01) {
+    std::cout << " - AP0 to AP1 white point mismatch: " << white_ap1.red();
+    return __LINE__;
+  }
+
+  // 4. ACEScg to Display (sRGB OETF)
+  ColorTransform disp_transform(QStringLiteral("sRGB"), QStringLiteral("sRGB OETF"), QString());
+  ColorProcessorPtr acescg_to_disp = ColorProcessor::Create(
+      manager,
+      QStringLiteral("ACEScg"),
+      disp_transform);
+  if (!acescg_to_disp) {
+    std::cout << " - ACEScg to sRGB Display processor could not be created";
+    return __LINE__;
+  }
+  Color disp_col = acescg_to_disp->ConvertColor(Color(0.18, 0.18, 0.18, 1.0));
+  if (disp_col.red() <= 0.18) {
+    std::cout << " - ACEScg mid-gray did not apply display gamma/OETF correctly: " << disp_col.red();
+    return __LINE__;
+  }
+
+  OLIVE_TEST_END;
+}
+
 } // namespace olive

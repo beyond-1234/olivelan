@@ -64,6 +64,10 @@ constexpr LegacyColorSpaceAlias kLegacyColorSpaceAliases[] = {
   { "compositing_log", "Filmic Log Encoding" },
   { "default", "Rec.709 OETF" },
   { "data", "Non-Colour Data" },
+  { "ACES - ACEScg", "ACEScg" },
+  { "ACES - ACES2065-1", "ACES2065-1" },
+  { "ACEScg Linear", "ACEScg" },
+  { "ACES2065-1 Linear", "ACES2065-1" },
 };
 
 QString ResolveLegacyColorSpace(const QString &name, const QStringList &available)

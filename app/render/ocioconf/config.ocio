@@ -29,6 +29,8 @@ roles:
   texture_paint: sRGB OETF
   matte_paint: Filmic Log Encoding
   cie_xyz_d65_interchange: CIE-XYZ D65
+  aces_interchange: ACES2065-1
+  rendering: ACEScg
 
 displays:
   sRGB:
@@ -429,6 +431,30 @@ colorspaces:
     isdata: true
     allocation: uniform
     allocationvars: [0, 1]
+
+  - !<ColorSpace>
+    name: ACEScg
+    family: ACES
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Academy Color Encoding System (ACEScg) with AP1 primaries and D60 white point, scene-linear.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<MatrixTransform> {matrix: [1.70505089, -0.62420202, -0.08084887, 0, -0.12970051, 1.13846808, -0.00876757, 0, -0.02416639, -0.12461416, 1.14878055, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: ACES2065-1
+    family: ACES
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Academy Color Encoding System (ACES2065-1 / SMPTE ST 2065-1) with AP0 primaries and D60 white point, scene-linear.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<MatrixTransform> {matrix: [2.52168619, -1.13413098, -0.38755521, 0, -0.27647991, 1.37271909, -0.09623918, 0, -0.01537806, -0.15297534, 1.16835340, 0, 0, 0, 0, 1]}
 
 looks:
   - !<Look>
