@@ -471,6 +471,12 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
   // Handle format context error
   if (error_code == 0) {
 
+    // Matroska with PGS subtitles often lacks header dimensions on the subtitle tracks,
+    // firing repetitive "unspecified size" warnings under the default 5 MB probesize.
+    if (fmt_ctx->iformat && strcmp(fmt_ctx->iformat->name, "matroska,webm") == 0) {
+      fmt_ctx->probesize = std::max<int64_t>(fmt_ctx->probesize, 50 * 1024 * 1024);
+    }
+
     // Retrieve metadata about the media
     avformat_find_stream_info(fmt_ctx, nullptr);
 
@@ -1309,6 +1315,11 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   if (error_code != 0) {
     qCritical() << "Failed to open input:" << filename << FFmpegError(error_code);
     return false;
+  }
+
+  // Matroska with PGS subtitles often lacks header dimensions on the subtitle tracks.
+  if (fmt_ctx_->iformat && strcmp(fmt_ctx_->iformat->name, "matroska,webm") == 0) {
+    fmt_ctx_->probesize = std::max<int64_t>(fmt_ctx_->probesize, 50 * 1024 * 1024);
   }
 
   // Get stream information from format

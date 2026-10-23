@@ -1013,7 +1013,10 @@ void ViewerWidget::UpdateTextureFromNode()
   }
 
   if (IsPlaying()) {
-    qWarning() << "UpdateTextureFromNode called while playing";
+    // VideoParamsChanged can arrive from import/relink while playback is still running.
+    // Defer the texture refresh to PauseInternal(), which always calls this function again;
+    // this is a normal deferred update, not an error worth warning about.
+    qDebug() << "Deferring texture refresh until playback pauses";
     return;
   }
 
