@@ -56,12 +56,8 @@ std::unique_ptr<IVideoHardwarePipeline> CreateForcedPipeline(
     HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"vaapi\" is not compiled in; using automatic routing"));
 #endif
   } else if (name == QStringLiteral("d3d11")) {
-    // Patch 0049 (Phase 8): the D3D11 interop pipeline is a placeholder and is not
-    // created on ANY platform - Windows included. Windows falls back to Tier 3
-    // (reinforced CPU decode). The pipeline class is kept as the starting point for
-    // future development.
-    qWarning() << "[HAL Factory] Forced backend 'd3d11' is a placeholder, not implemented; ignoring (Windows uses Tier 3 fallback).";
-    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"d3d11\" is not implemented; using automatic routing"));
+    qWarning() << "[HAL Factory] Forced backend 'd3d11' is abandoned (Windows distribution discontinued); using automatic routing.";
+    HalSessionState::Instance().NotifyFallback(QStringLiteral("forced backend \"d3d11\" is abandoned; using automatic routing"));
   } else if (name == QStringLiteral("software")) {
     return std::make_unique<ReinforcedSoftwarePipeline>(renderer);
   } else {
@@ -231,9 +227,8 @@ std::unique_ptr<IVideoHardwarePipeline> HardwarePipelineFactory::CreatePipeline(
     }
   }
 #endif
-  // Patch 0049 (Phase 8): no Windows Tier 2 branch. The D3D11 interop pipeline is a
-  // placeholder (see SupportsD3D11()), so Windows auto-routing falls straight through
-  // to Tier 3 below.
+  // Windows platform distribution has been completely abandoned. Auto-routing
+  // falls straight through to Tier 3 reinforced CPU decode.
 
   // 3. Tier 3: Olive Native Reinforced CPU Decode & Upload Pipeline (Zero-Dependency Ultimate Safety Net)
   // When HW pipelines are saturated or unsupported (e.g. over-budget),

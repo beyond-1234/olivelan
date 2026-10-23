@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
       parser.AddOption({QStringLiteral("hal-backend"), QStringLiteral("-hal-backend")},
                        QCoreApplication::translate("main",
                           "Force a HAL decode backend for this session "
-                          "(auto|cuda|videotoolbox|vaapi|d3d11|software)"),
+                          "(auto|cuda|videotoolbox|vaapi|software)"),
                        true,
                        QCoreApplication::translate("main", "backend"));
 

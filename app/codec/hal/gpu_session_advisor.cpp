@@ -472,8 +472,7 @@ QVector<GpuSessionAdvisor::TierStatus> GpuSessionAdvisor::DescribeTiers(
 #elif defined(_WIN32)
   tier2.backend = QStringLiteral("D3D11 Interop");
   tier2.state = Tr("Unavailable");
-  tier2.reason = Tr("D3D11 interop is a planned placeholder and is not implemented; Windows uses "
-                    "Tier 3.");
+  tier2.reason = Tr("Windows platform distribution is abandoned; D3D11 is unsupported.");
 #else
   tier2.backend = Tr("Platform native");
   tier2.state = Tr("Unavailable");

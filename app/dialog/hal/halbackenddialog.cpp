@@ -260,7 +260,6 @@ void HALBackendDialog::PopulateProbeInfo()
     }
   }
   add_item(backends, QStringLiteral("VA-API DMA-BUF (Tier 2, Linux)"), vaapi_status);
-  add_item(backends, QStringLiteral("D3D11 Interop (Tier 2, Windows)"), probe.SupportsD3D11() ? tr("Available") : tr("Unavailable"));
   add_item(backends, QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), tr("Available"));
 
   auto* cap = new QTreeWidgetItem(probe_tree_, {tr("Decode capability matrix")});
@@ -346,13 +345,6 @@ void HALBackendDialog::PopulateBackendCombo()
     add_backend(QStringLiteral("VA-API DMA-BUF (Tier 2)"), QStringLiteral("vaapi"), available,
                 reason, detail);
   }
-#endif
-  // Patch 0049 (Phase 8): D3D11 interop is a placeholder - shown on Windows as a
-  // greyed-out "Planned" entry so the roadmap is visible, but never selectable and
-  // never routed to (SupportsD3D11() answers false everywhere).
-#if defined(_WIN32)
-  add_backend(QStringLiteral("D3D11 Interop (Tier 2)"), QStringLiteral("d3d11"),
-              probe.SupportsD3D11(), tr("Planned - not implemented; Tier 3 is used instead"));
 #endif
   add_backend(QStringLiteral("Reinforced CPU Decode + Native YUV Upload (Tier 3)"), QStringLiteral("software"), true);
 }
