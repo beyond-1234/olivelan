@@ -28,7 +28,6 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-#include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
 
@@ -40,7 +39,9 @@ HALStatusDialog::HALStatusDialog(QWidget* parent) :
   setWindowTitle(tr("HAL Status"));
   setMinimumSize(760, 380);
 
-  GpuEnvironmentProbe::Instance().Refresh();
+  // Do not Refresh() here: this panel can be opened during playback, while decoder threads are
+  // reading the probe. The probe is populated at startup and its runtime fields (VA-API import
+  // status) update atomically; re-running device detection from the GUI would race those readers.
   const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
 
   auto* layout = new QVBoxLayout(this);
