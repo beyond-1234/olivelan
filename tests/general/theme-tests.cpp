@@ -314,22 +314,18 @@ OLIVE_ADD_TEST(ThemeImportPackages)
 
   // Built-in manifests expose the same declarative capabilities as external
   // themes. Consumers must not need to compare theme ids.
-  const ThemeInfo capcut = manager->GetThemeInfo(QStringLiteral("olive-capcut"));
-  OLIVE_ASSERT(capcut.is_builtin);
-  OLIVE_ASSERT(capcut.capabilities.workspace_layout
-               == ThemeCapabilities::WorkspaceLayout::kThreeColumn);
-  OLIVE_ASSERT(!capcut.capabilities.show_tool_panel);
-  OLIVE_ASSERT(!capcut.capabilities.show_node_panel);
-  OLIVE_ASSERT(!capcut.capabilities.show_footage_viewer);
-  OLIVE_ASSERT(capcut.capabilities.empty_inspector_when_unselected);
-  OLIVE_ASSERT(capcut.capabilities.project_view == QStringLiteral("icon"));
-  OLIVE_ASSERT(capcut.capabilities.project_icon_size == 160);
-  OLIVE_ASSERT(capcut.capabilities.project_icon_height_ratio == 0.82);
-  OLIVE_ASSERT(capcut.capabilities.ui_font_families.contains(QStringLiteral("Inter")));
-
   const ThemeInfo metro = manager->GetThemeInfo(QStringLiteral("olive-metro"));
   OLIVE_ASSERT(metro.is_builtin);
-  OLIVE_ASSERT(!metro.capabilities.inherit_palette_tokens);
+  OLIVE_ASSERT(metro.capabilities.workspace_layout
+               == ThemeCapabilities::WorkspaceLayout::kThreeColumn);
+  OLIVE_ASSERT(!metro.capabilities.show_tool_panel);
+  OLIVE_ASSERT(!metro.capabilities.show_node_panel);
+  OLIVE_ASSERT(!metro.capabilities.show_footage_viewer);
+  OLIVE_ASSERT(metro.capabilities.empty_inspector_when_unselected);
+  OLIVE_ASSERT(metro.capabilities.project_view == QStringLiteral("icon"));
+  OLIVE_ASSERT(metro.capabilities.project_icon_size == 160);
+  OLIVE_ASSERT(metro.capabilities.project_icon_height_ratio == 0.82);
+  OLIVE_ASSERT(metro.capabilities.ui_font_families.contains(QStringLiteral("Inter")));
 
   // External packages can opt into workspace/font behavior without shipping
   // executable code; unsupported or missing fields keep the standard layout.

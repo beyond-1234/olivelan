@@ -30,12 +30,11 @@
 
 #include "config/config.h"
 #include "ui/icons/icons.h"
-#include "ui/style/capcutstyleconfig.h"
 #include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
-const char* StyleManager::kDefaultStyle = capcut::kThemeName;
+const char* StyleManager::kDefaultStyle = metro::kThemeName;
 QString StyleManager::current_style_;
 QMap<QString, QString> StyleManager::available_themes_;
 
@@ -130,12 +129,10 @@ void StyleManager::Init()
 {
   qApp->setStyle(QStyleFactory::create("Fusion"));
 
-  available_themes_.insert(QString::fromLatin1(capcut::kThemeName),
-                           QString::fromLatin1(capcut::kThemeDisplayName));
-  available_themes_.insert(QStringLiteral("olive-dark"), QStringLiteral("Olive Dark"));
-  available_themes_.insert(QStringLiteral("olive-light"), QStringLiteral("Olive Light"));
   available_themes_.insert(QString::fromLatin1(metro::kThemeName),
                            QString::fromLatin1(metro::kThemeDisplayName));
+  available_themes_.insert(QStringLiteral("olive-dark"), QStringLiteral("Olive Dark"));
+  available_themes_.insert(QStringLiteral("olive-light"), QStringLiteral("Olive Light"));
 
   QString config_style = OLIVE_CONFIG("Style").toString();
 

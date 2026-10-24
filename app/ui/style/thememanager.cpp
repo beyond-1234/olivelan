@@ -22,7 +22,6 @@
 #include "designtokenregistry.h"
 #include "qssmacropreprocessor.h"
 #include "style.h"
-#include "capcutstyleconfig.h"
 #include "metrostyleconfig.h"
 #include "ui/icons/icons.h"
 
@@ -441,7 +440,6 @@ void ThemeManager::ScanThemeDirectories()
     themes_.append(info);
   };
 
-  add_builtin(capcut::kThemeName, capcut::kThemeDisplayName, "Olive Team", "1.0");
   add_builtin(metro::kThemeName, metro::kThemeDisplayName, "Olive Team", "2.0");
   add_builtin("olive-dark", "Olive Dark", "Olive Team", "1.0");
   add_builtin("olive-light", "Olive Light", "Olive Team", "1.0");
