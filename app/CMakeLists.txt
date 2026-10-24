@@ -117,13 +117,13 @@ elseif(APPLE)
   set_target_properties(olive-editor PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/MacOSXBundleInfo.plist.in
-    MACOSX_BUNDLE_GUI_IDENTIFIER org.olivevideoeditor.Olive
+    MACOSX_BUNDLE_GUI_IDENTIFIER org.olivelan.Olivelan
     MACOSX_BUNDLE_ICON_FILE olive.icns
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
-    MACOSX_BUNDLE_BUNDLE_NAME "Olive"
-    MACOSX_BUNDLE_INFO_STRING "Olive ${PROJECT_LONG_VERSION}"
-    MACOSX_BUNDLE_COPYRIGHT "©2018-2021 Olive Studios LLC and others. Published under the GNU General Public License version 3.0."
+    MACOSX_BUNDLE_BUNDLE_NAME "Olivelan"
+    MACOSX_BUNDLE_INFO_STRING "Olivelan ${PROJECT_LONG_VERSION}"
+    MACOSX_BUNDLE_COPYRIGHT "©2024-2026 Olivelan Contributors. Original core ©2018-2022 Olive Studios LLC."
     RESOURCE "${OLIVE_ICON}"
     OUTPUT_NAME "Olive"
   )

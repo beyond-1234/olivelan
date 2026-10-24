@@ -1,6 +1,6 @@
-# OliveLan 工程脚本集 (Scripts Directory)
+# Olivelan 工程脚本集 (Scripts Directory)
 
-本目录收录 OliveLan 项目在打包分发、自动化构建与核心质量门禁验证时所使用的精简工具脚本。
+本目录收录 Olivelan 项目在打包分发、自动化构建与核心质量门禁验证时所使用的精简工具脚本。
 
 ---
 

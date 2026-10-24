@@ -4,7 +4,7 @@
 
 在 NLE 和调色系统中，**颜色管线不一致比程序崩溃更为致命**，因为它会静默产出错误的画幅与成片。
 
-OliveLan 坚决废除历史编译开关 `OLIVE_ENABLE_OCIO` 与内置的简化着色器，收敛为以 **OpenColorIO 2.5.1 为唯一、强制随包分发的单轨色彩引擎**。
+Olivelan 坚决废除历史编译开关 `OLIVE_ENABLE_OCIO` 与内置的简化着色器，收敛为以 **OpenColorIO 2.5.1 为唯一、强制随包分发的单轨色彩引擎**。
 
 ```text
 素材输入 (SDR / HDR10 / HLG / Camera Log / ACES)

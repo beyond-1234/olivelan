@@ -127,10 +127,10 @@ int main(int argc, char *argv[])
   qInstallMessageHandler(olive::DebugHandler);
 
   // Set application metadata
-  QCoreApplication::setOrganizationName("olivevideoeditor.org");
-  QCoreApplication::setOrganizationDomain("olivevideoeditor.org");
-  QCoreApplication::setApplicationName("Olive");
-  QGuiApplication::setDesktopFileName("org.olivevideoeditor.Olive");
+  QCoreApplication::setOrganizationName("olivelan.org");
+  QCoreApplication::setOrganizationDomain("olivelan.org");
+  QCoreApplication::setApplicationName("Olivelan");
+  QGuiApplication::setDesktopFileName("org.olivelan.Olivelan");
   QCoreApplication::setApplicationVersion(olive::kAppVersionLong);
 
   // Patch 0078 (Phase 9): resolve the display session before anything else. The QPA platform is

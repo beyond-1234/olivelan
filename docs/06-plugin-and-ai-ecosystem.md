@@ -4,7 +4,7 @@
 
 传统剪辑软件往往采用私有的预设打包格式，导致生态割裂且资产迁移成本极高。
 
-OliveLan 确立了 **Phase 17「统一资源中心（Universal Resource Hub）」** 的核心指导思想：**零私有格式架构**。
+Olivelan 确立了 **Phase 17「统一资源中心（Universal Resource Hub）」** 的核心指导思想：**零私有格式架构**。
 
 ```text
 外部素材目录 / 音效包 / GL-Transitions 着色器

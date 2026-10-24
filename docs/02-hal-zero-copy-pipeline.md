@@ -4,7 +4,7 @@
 
 在现代非线性编辑系统（NLE）中，4K60 及更高规格预览的物理瓶颈**不在于显卡计算能力，而在于 PCIe 总线搬运（显存到内存的 Readback 税）与内存锁竞争**。
 
-OliveLan 通过 `IVideoHardwarePipeline` 抽象与 `HardwarePipelineFactory` 工厂模式，构建了统一硬件分流与分级架构：
+Olivelan 通过 `IVideoHardwarePipeline` 抽象与 `HardwarePipelineFactory` 工厂模式，构建了统一硬件分流与分级架构：
 
 ```text
                视频源帧 (H.264 / HEVC / ProRes / DNxHD)
@@ -99,7 +99,7 @@ Linux 下的视频呈现与硬解直通受 **显示服务器（Wayland vs X11）
 
 ### 陷阱 2：原生 Wayland 下导 PRIME 变量导致整窗白屏与残影坏死（The White-Screen Trap）
 - **现象**：
-  - **单屏/内屏场景**：在原生 Wayland 环境下若强加 `__NV_PRIME_RENDER_OFFLOAD=1` 环境变量，互操作虽然成功，但**OliveLan 整个窗口变为纯白死屏**。
+  - **单屏/内屏场景**：在原生 Wayland 环境下若强加 `__NV_PRIME_RENDER_OFFLOAD=1` 环境变量，互操作虽然成功，但**Olivelan 整个窗口变为纯白死屏**。
   - **多屏/外接 HDMI 场景**：在接有外接显示器（如挂在 `card0`）时强导 PRIME，虽然窗口没有白屏，但窗口交换链严重损坏，**视口无限重叠重绘屏幕上出现过的任何其他窗口残影，完全无法交互**。
 - **物理机理**：
   PRIME 将应用的 OpenGL 渲染拉到了 NVIDIA 独显上，但 Wayland 合成器仍然驻留在核显上。跨 GPU 的 Client Buffer 穿透由核显接管的 Wayland 上屏链时，`dma-buf` 交换链协议断裂。
@@ -128,7 +128,7 @@ Linux 下的视频呈现与硬解直通受 **显示服务器（Wayland vs X11）
 
 ## 5. 零拷贝性能验证与测试手段
 
-为了避免“日志报成功，后台偷偷在回读”的假读数，OliveLan 建立了多维度的独立交叉验证体系：
+为了避免“日志报成功，后台偷偷在回读”的假读数，Olivelan 建立了多维度的独立交叉验证体系：
 
 1. **`scripts/verify/verify_zero_copy.sh` 遥测拦截**：
    - 通过进程级探针，持续监控硬件帧生产数（`hardware_frames`）与主机回读数（`cpu_readback_frames`）。验收合格标准：`hardware_frames > 0` 且 `cpu_readback_frames == 0`。
