@@ -101,14 +101,7 @@ if(DOXYGEN_FOUND)
 endif()
 
 # Platform-specific deployment preferences
-if (WIN32)
-  # Set Windows application icon
-  target_sources(olive-editor PRIVATE packaging/windows/resources.rc)
-
-  # Preserve folder structure in visual studio
-  source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${OLIVE_SOURCES})
-
-elseif(APPLE)
+if(APPLE)
   # Set Mac application icon
   set(OLIVE_ICON packaging/macos/olive.icns)
   target_sources(olive-editor PRIVATE ${OLIVE_ICON})

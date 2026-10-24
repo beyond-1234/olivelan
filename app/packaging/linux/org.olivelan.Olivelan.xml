@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <mime-type type="application/vnd.olivelan-project">
+    <comment>Olivelan project</comment>
+    <comment xml:lang="zh_CN">Olivelan 剪辑工程文件</comment>
+    <glob pattern="*.ove"/>
+  </mime-type>
+</mime-info>

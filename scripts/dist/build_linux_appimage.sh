@@ -37,8 +37,8 @@ rm -rf "$APPDIR"
 cp -a "$DIST_DIR" "$APPDIR"
 cp "$APPDIR/run-olive.sh" "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
-cp "$SRC/app/packaging/linux/org.olivevideoeditor.Olive.desktop" "$APPDIR/"
-cp "$SRC/app/packaging/linux/icons/256x256/org.olivevideoeditor.Olive.png" "$APPDIR/"
+cp "$SRC/app/packaging/linux/org.olivelan.Olivelan.desktop" "$APPDIR/"
+cp "$SRC/app/packaging/linux/icons/256x256/org.olivelan.Olivelan.png" "$APPDIR/"
 
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" \
   "$TOOL" --no-appstream "$APPDIR" "$OUT"

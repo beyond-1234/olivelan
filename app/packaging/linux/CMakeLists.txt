@@ -27,21 +27,21 @@ else()
 endif()
 
 configure_file(
-  org.olivevideoeditor.Olive.appdata.xml.in
-  org.olivevideoeditor.Olive.appdata.xml
+  org.olivelan.Olivelan.appdata.xml.in
+  org.olivelan.Olivelan.appdata.xml
 )
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.olivevideoeditor.Olive.appdata.xml DESTINATION share/metainfo)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.olivelan.Olivelan.appdata.xml DESTINATION share/metainfo)
 
-install(FILES org.olivevideoeditor.Olive.desktop DESTINATION share/applications)
-install(FILES org.olivevideoeditor.Olive.xml DESTINATION share/mime/packages)
+install(FILES org.olivelan.Olivelan.desktop DESTINATION share/applications)
+install(FILES org.olivelan.Olivelan.xml DESTINATION share/mime/packages)
 
 foreach(size 16 32 48 64 128 256 512)
   install(
-    FILES icons/${size}x${size}/org.olivevideoeditor.Olive.png
+    FILES icons/${size}x${size}/org.olivelan.Olivelan.png
     DESTINATION share/icons/hicolor/${size}x${size}/apps
   )
   install(
-    FILES icons/${size}x${size}/application-vnd.olive-project.png
+    FILES icons/${size}x${size}/application-vnd.olivelan-project.png
     DESTINATION share/icons/hicolor/${size}x${size}/mimetypes
   )
 endforeach()
