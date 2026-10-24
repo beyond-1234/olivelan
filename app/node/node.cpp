@@ -488,15 +488,15 @@ QVariant Node::GetSplitValueAtTimeOnTrack(const QString &input, const rational &
 
           // Perform a cubic bezier with two control points
           interpolated = Bezier::CubicXtoY(time.toDouble(),
-                                           Imath::V2d(before->time().toDouble(), before_val),
-                                           Imath::V2d(before->time().toDouble() + before->valid_bezier_control_out().x(), before_val + before->valid_bezier_control_out().y()),
-                                           Imath::V2d(after->time().toDouble() + after->valid_bezier_control_in().x(), after_val + after->valid_bezier_control_in().y()),
-                                           Imath::V2d(after->time().toDouble(), after_val));
+                                           Vec2d(before->time().toDouble(), before_val),
+                                           Vec2d(before->time().toDouble() + before->valid_bezier_control_out().x(), before_val + before->valid_bezier_control_out().y()),
+                                           Vec2d(after->time().toDouble() + after->valid_bezier_control_in().x(), after_val + after->valid_bezier_control_in().y()),
+                                           Vec2d(after->time().toDouble(), after_val));
 
         } else if (before->type() == NodeKeyframe::kBezier || after->type() == NodeKeyframe::kBezier) {
           // Perform a quadratic bezier with only one control point
 
-          Imath::V2d control_point;
+          Vec2d control_point;
 
           if (before->type() == NodeKeyframe::kBezier) {
             control_point.x = (before->valid_bezier_control_out().x() + before->time().toDouble());
@@ -508,9 +508,9 @@ QVariant Node::GetSplitValueAtTimeOnTrack(const QString &input, const rational &
 
           // Interpolate value using quadratic beziers
           interpolated = Bezier::QuadraticXtoY(time.toDouble(),
-                                               Imath::V2d(before->time().toDouble(), before_val),
+                                               Vec2d(before->time().toDouble(), before_val),
                                                control_point,
-                                               Imath::V2d(after->time().toDouble(), after_val));
+                                               Vec2d(after->time().toDouble(), after_val));
 
         } else {
           // To have arrived here, the keyframes must both be linear

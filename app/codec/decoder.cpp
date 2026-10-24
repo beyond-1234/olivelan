@@ -26,7 +26,6 @@
 
 #include "codec/ffmpeg/ffmpegdecoder.h"
 #include "codec/planarfiledevice.h"
-#include "codec/oiio/oiiodecoder.h"
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
 #include "conformmanager.h"
@@ -188,9 +187,10 @@ QVector<DecoderPtr> Decoder::ReceiveListOfAllDecoders()
 {
   QVector<DecoderPtr> decoders;
 
-  // The order in which these decoders are added is their priority when probing. Hence FFmpeg should usually be last,
-  // since it supports so many formats and we presumably want to override those formats with a more specific decoder.
-  decoders.append(std::make_shared<OIIODecoder>());
+  // The order in which these decoders are added is their priority when probing.
+  // Patch 0032: still images and image sequences are handled by FFmpeg, which
+  // supports the same PNG/TIFF/EXR inputs, so the OIIO decoder is no longer
+  // registered here.
   decoders.append(std::make_shared<FFmpegDecoder>());
 
   return decoders;

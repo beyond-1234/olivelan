@@ -27,8 +27,52 @@
 #include "common/qtutils.h"
 #include "core.h"
 #include "node/nodeundo.h"
+#include "node/project/footage/footage.h"
 
 namespace olive {
+
+namespace {
+
+/**
+ * @brief Short metadata badges for a Footage tile (e.g. "4K", "10bit", "60FPS", "AUDIO").
+ *
+ * Reads only the already-parsed stream parameters -- no decoding or file I/O -- so it is safe to
+ * call while the view is painting. Once patch 0072b's tile view is in use this is the single place
+ * that turns decoded media metadata into user-facing labels.
+ */
+QStringList ComputeBadges(Footage *footage)
+{
+  QStringList badges;
+
+  const VideoParams video = footage->GetVideoParams();
+  const AudioParams audio = footage->GetAudioParams();
+
+  const bool has_video = video.width() > 0 && video.height() > 0;
+  const bool has_audio = audio.enabled() && audio.sample_rate() > 0;
+
+  if (has_video) {
+    if (video.width() >= 3840 || video.height() >= 2160) {
+      badges.append(QStringLiteral("4K"));
+    }
+
+    if (VideoParams::GetBytesPerChannel(video.format()) > 1) {
+      badges.append(QStringLiteral("10bit"));
+    }
+
+    if (video.frame_rate().toDouble() >= 59.94) {
+      badges.append(QStringLiteral("60FPS"));
+    }
+  } else if (has_audio) {
+    // Patch 0093 (P2-6): this branch is "audio-only", not "WAV". The old label claimed a container
+    // for every MP3/AAC/FLAC/Opus file. AudioParams does not carry the codec id, so a generic badge
+    // is the honest answer until the container name is exposed.
+    badges.append(QStringLiteral("AUDIO"));
+  }
+
+  return badges;
+}
+
+}
 
 ProjectViewModel::ProjectViewModel(QObject *parent) :
   QAbstractItemModel(parent),
@@ -182,6 +226,62 @@ QVariant ProjectViewModel::data(const QModelIndex &index, int role) const
     break;
   case Qt::ToolTipRole:
     return internal_item->data(Node::TOOLTIP);
+  case kThumbnailKeyRole:
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        // Audio-only media has no first frame to decode, so don't queue a worker for it. Stills do
+        // have a frame and must keep their key.
+        if (footage->GetFirstEnabledVideoStream().is_valid()) {
+          return footage->filename();
+        }
+      }
+    }
+    break;
+  case kDurationRole:
+  {
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        const VideoParams video = footage->GetFirstEnabledVideoStream();
+        const AudioParams audio = footage->GetFirstEnabledAudioStream();
+
+        rational duration;
+        rational timebase;
+        Timecode::Display display = Core::instance()
+                                        ? Core::instance()->GetTimecodeDisplay()
+                                        : Timecode::kTimecodeNonDropFrame;
+
+        // duration() is a raw stream duration in time_base units and can be AV_NOPTS_VALUE for
+        // live/partially indexed media; only format a positive value.
+        if (video.is_valid() && video.video_type() != VideoParams::kVideoTypeStill
+            && video.duration() > 0) {
+          duration = Timecode::timestamp_to_time(video.duration(), video.time_base());
+          timebase = video.frame_rate_as_time_base();
+        } else if (audio.is_valid() && audio.sample_rate() > 0 && audio.duration() > 0) {
+          duration = Timecode::timestamp_to_time(audio.duration(), audio.time_base());
+
+          // A frame-based timecode is meaningless without a frame rate; show seconds instead.
+          if (display == Timecode::kTimecodeDropFrame
+              || display == Timecode::kTimecodeNonDropFrame) {
+            display = Timecode::kTimecodeSeconds;
+          }
+
+          timebase = audio.sample_rate_as_time_base();
+        }
+
+        if (!duration.isNull() && !timebase.isNull()) {
+          return QString::fromStdString(Timecode::time_to_timecode(duration, timebase, display));
+        }
+      }
+    }
+    break;
+  }
+  case kBadgeRole:
+    if (column_type == kName) {
+      if (Footage *footage = dynamic_cast<Footage*>(internal_item)) {
+        return ComputeBadges(footage);
+      }
+    }
+    break;
   }
 
   return QVariant();
@@ -539,6 +639,20 @@ void ProjectViewModel::ItemRenamed()
 QModelIndex ProjectViewModel::CreateIndexFromItem(Node *item, int column)
 {
   return createIndex(IndexOfChild(item), column, item);
+}
+
+void ProjectViewModel::RefreshItem(Node *item)
+{
+  if (!item) {
+    return;
+  }
+
+  const QModelIndex first = CreateIndexFromItem(item);
+  if (!first.isValid()) {
+    return;
+  }
+
+  emit dataChanged(first, CreateIndexFromItem(item, kColumnCount - 1));
 }
 
 }

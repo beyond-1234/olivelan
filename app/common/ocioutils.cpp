@@ -20,28 +20,63 @@
 
 #include "ocioutils.h"
 
+#include <QFileInfo>
+#include <QDir>
+#include "node/project.h"
+
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+
 namespace olive {
 
-OCIO::BitDepth OCIOUtils::GetOCIOBitDepthFromPixelFormat(PixelFormat format)
+QString OCIOUtils::ResolveProjectRelativePath(const Project* project, const QString& path)
+{
+  const QString trimmed = path.trimmed();
+  if (trimmed.isEmpty()) {
+    return QString();
+  }
+
+  if (QFileInfo(trimmed).isAbsolute()) {
+    return trimmed;
+  }
+
+  // Relative path: resolve against project directory if project is saved to disk
+  if (project && !project->filename().isEmpty()) {
+    const QString candidate = QFileInfo(project->filename()).dir().filePath(trimmed);
+    if (QFileInfo::exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return trimmed;
+}
+
+// Patch 0038: OCIO-free role names (see ocioutils.h). Kept in sync with the
+// `roles:` block of app/render/ocioconf/config.ocio.
+const QString OCIOUtils::kRoleDefault = QStringLiteral("default");
+const QString OCIOUtils::kReferenceSpaceSceneLinear = QStringLiteral("scene_linear");
+const QString OCIOUtils::kReferenceSpaceCompositingLog = QStringLiteral("compositing_log");
+
+int OCIOUtils::GetOCIOBitDepthFromPixelFormat(PixelFormat format)
 {
   switch (format) {
   case PixelFormat::U8:
-    return OCIO::BIT_DEPTH_UINT8;
+    return static_cast<int>(OCIO::BIT_DEPTH_UINT8);
   case PixelFormat::U16:
-    return OCIO::BIT_DEPTH_UINT16;
+    return static_cast<int>(OCIO::BIT_DEPTH_UINT16);
     break;
   case PixelFormat::F16:
-    return OCIO::BIT_DEPTH_F16;
+    return static_cast<int>(OCIO::BIT_DEPTH_F16);
     break;
   case PixelFormat::F32:
-    return OCIO::BIT_DEPTH_F32;
+    return static_cast<int>(OCIO::BIT_DEPTH_F32);
     break;
   case PixelFormat::INVALID:
   case PixelFormat::COUNT:
     break;
   }
 
-  return OCIO::BIT_DEPTH_UNKNOWN;
+  return static_cast<int>(OCIO::BIT_DEPTH_UNKNOWN);
 }
 
 }

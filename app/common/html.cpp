@@ -248,7 +248,9 @@ void Html::WriteCharFormat(QString *style, const QTextCharFormat &fmt)
   }
 
   if (fmt.foreground().style() != Qt::NoBrush) {
-    const QColor &color = fmt.foreground().color();
+    // Bind by value: QBrush::color() returns by value, and binding a reference here
+    // trips GCC 13's -Wdangling-reference false positive (upstream code).
+    const QColor color = fmt.foreground().color();
     QString cs;
 
     if (color.alpha() == 255) {

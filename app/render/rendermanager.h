@@ -21,6 +21,7 @@
 #ifndef RENDERBACKEND_H
 #define RENDERBACKEND_H
 
+#include <QMutex>
 #include <QtConcurrent/QtConcurrent>
 
 #include "config/config.h"
@@ -46,19 +47,43 @@ public:
 
   bool RemoveTicket(RenderTicketPtr ticket);
 
+  /**
+   * @brief True once PostInit() failed and this thread stopped accepting work.
+   *
+   * RenderManager checks this synchronously (unlike the queued GUI status signal), so
+   * RenderFrame() cannot enqueue a ticket after the worker has already stopped.
+   */
+  bool IsFailed() const;
+
   void quit();
+
+signals:
+  /**
+   * @brief Emitted from the render thread after PostInit() succeeds.
+   */
+  void RendererReady();
+
+  /**
+   * @brief Emitted from the render thread when PostInit() fails.
+   *
+   * RenderManager stores the reason before forwarding it to the GUI, so a failure that
+   * happens before MainWindow is constructed is still visible when the window appears.
+   */
+  void RendererInitializationFailed(const QString& reason);
 
 protected:
   virtual void run() override;
 
 private:
-  QMutex mutex_;
+  mutable QMutex mutex_;
 
   QWaitCondition wait_;
 
   std::list<RenderTicketPtr> queue_;
 
   bool cancelled_;
+
+  bool failed_;
 
   Renderer *context_;
 
@@ -79,6 +104,23 @@ public:
     /// No graphics rendering - used to test core threading logic
     kDummy
   };
+
+  /**
+   * @brief Lifecycle of the render thread's OpenGL context.
+   *
+   * Initializing is the state before the render thread has reported either outcome. A
+   * failure is sticky for the process: the render thread stops permanently, so the UI
+   * must not imply that retrying a frame will recover it.
+   */
+  enum class RendererStatus {
+    Initializing,
+    Ready,
+    Failed
+  };
+  Q_ENUM(RendererStatus)
+
+  RendererStatus GetRendererStatus() const;
+  QString GetRendererError() const;
 
   static void CreateInstance()
   {
@@ -215,6 +257,14 @@ public slots:
   void SetAggressiveGarbageCollection(bool enabled);
 
 signals:
+  /**
+   * @brief Unified renderer state for the GUI.
+   *
+   * Emitted on the RenderManager's thread (the GUI thread), including a failure that was
+   * recorded before MainWindow connected. Consumers should also query
+   * GetRendererStatus()/GetRendererError() once after connecting to avoid a missed edge.
+   */
+  void RendererStatusChanged(RenderManager::RendererStatus status, const QString& reason);
 
 private:
   RenderManager(QObject* parent = nullptr);
@@ -244,6 +294,10 @@ private:
   RenderThread *dry_run_thread_;
   RenderThread *audio_thread_;
 
+  mutable QMutex renderer_status_mutex_;
+  RendererStatus renderer_status_ = RendererStatus::Initializing;
+  QString renderer_error_;
+
   std::vector<RenderThread *> waveform_threads_;
   size_t last_waveform_thread_;
 
@@ -253,6 +307,12 @@ private:
 
 private slots:
   void ClearOldDecoders();
+
+  void HandleRendererReady();
+  void HandleRendererInitializationFailed(const QString& reason);
+
+private:
+  void SetRendererStatus(RendererStatus status, const QString& reason = QString());
 
 };
 

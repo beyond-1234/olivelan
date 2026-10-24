@@ -22,6 +22,8 @@ set(OLIVE_SOURCES
   widget/projectexplorer/projectexplorericonview.h
   widget/projectexplorer/projectexplorericonviewitemdelegate.cpp
   widget/projectexplorer/projectexplorericonviewitemdelegate.h
+  widget/projectexplorer/projectthumbnailcache.cpp
+  widget/projectexplorer/projectthumbnailcache.h
   widget/projectexplorer/projectexplorerlistview.cpp
   widget/projectexplorer/projectexplorerlistview.h
   widget/projectexplorer/projectexplorerlistviewbase.cpp

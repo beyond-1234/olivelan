@@ -21,6 +21,7 @@
 #ifndef PREFERENCESAUDIOTAB_H
 #define PREFERENCESAUDIOTAB_H
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QPushButton>
 
@@ -45,6 +46,11 @@ private:
    * @brief UI widget for selecting the output audio device
    */
   QComboBox* audio_output_devices_;
+
+  /**
+   * @brief When checked, the output follows the operating system's default device.
+   */
+  QCheckBox* audio_output_follow_system_;
 
   /**
    * @brief UI widget for selecting the input audio device

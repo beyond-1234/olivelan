@@ -57,12 +57,14 @@ PreferencesGeneralTab::PreferencesGeneralTab()
 
     QString current_language = OLIVE_CONFIG("Language").toString();
     if (current_language.isEmpty()) {
-      // No configured language, use system language
-      current_language = QLocale::system().name();
-
-      // If we don't have a language for this, default to en_US
-      if (!languages.contains(current_language)) {
-        current_language = QStringLiteral("en_US");
+      // Default primary language: zh_CN, or fall back to system/en_US
+      if (languages.contains(QStringLiteral("zh_CN"))) {
+        current_language = QStringLiteral("zh_CN");
+      } else {
+        current_language = QLocale::system().name();
+        if (!languages.contains(current_language)) {
+          current_language = QStringLiteral("en_US");
+        }
       }
     }
     language_combobox_->setCurrentIndex(languages.indexOf(current_language));

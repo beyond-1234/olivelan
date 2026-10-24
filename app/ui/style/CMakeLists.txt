@@ -16,6 +16,7 @@
 
 add_subdirectory(olive-dark)
 add_subdirectory(olive-light)
+add_subdirectory(olive-metro)
 
 set(OLIVE_RESOURCES
   ${OLIVE_RESOURCES}
@@ -24,7 +25,15 @@ set(OLIVE_RESOURCES
 
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
+  ui/style/designtokennames.h
+  ui/style/themecapabilities.h
   ui/style/style.h
   ui/style/style.cpp
+  ui/style/designtokenregistry.h
+  ui/style/designtokenregistry.cpp
+  ui/style/qssmacropreprocessor.h
+  ui/style/qssmacropreprocessor.cpp
+  ui/style/thememanager.h
+  ui/style/thememanager.cpp
   PARENT_SCOPE
 )

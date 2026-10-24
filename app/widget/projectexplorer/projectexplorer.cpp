@@ -20,6 +20,8 @@
 
 #include "projectexplorer.h"
 
+#include "ui/style/thememanager.h"
+
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
@@ -31,6 +33,7 @@
 
 #include "common/define.h"
 #include "core.h"
+#include "dialog/footagerelink/footagerelinkdialog.h"
 #include "dialog/footageproperties/footageproperties.h"
 #include "dialog/sequence/sequence.h"
 #include "projectexplorerundo.h"
@@ -86,11 +89,10 @@ ProjectExplorer::ProjectExplorer(QWidget *parent) :
   icon_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   AddView(icon_view_);
 
-  // Set default view to tree view
-  set_view_type(ProjectToolbar::TreeView);
-
-  // Set default icon size
-  SizeChangedSlot(kProjectIconSizeDefault);
+  // Theme manifests may declare the initial project view and thumbnail size.
+  ApplyThemeCapabilities(true);
+  connect(ThemeManager::instance(), &ThemeManager::ThemeChanged,
+          this, &ProjectExplorer::OnThemeChanged);
 
   connect(tree_view_, &ProjectExplorerTreeView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
   connect(list_view_, &ProjectExplorerListView::customContextMenuRequested, this, &ProjectExplorer::ShowContextMenu);
@@ -277,9 +279,61 @@ void ProjectExplorer::ItemDoubleClickedSlot(const QModelIndex &index)
 
 void ProjectExplorer::SizeChangedSlot(int s)
 {
-  icon_view_->setGridSize(QSize(s, s));
+  const ThemeCapabilities capabilities =
+      ThemeManager::instance()->CurrentCapabilities();
+  const double height_ratio = capabilities.project_icon_height_ratio > 0.0
+      ? capabilities.project_icon_height_ratio : 1.0;
 
+  icon_view_->setGridSize(QSize(s, qRound(s * height_ratio)));
   list_view_->setIconSize(QSize(s, s));
+}
+
+void ProjectExplorer::ApplyThemeCapabilities(bool initial)
+{
+  const ThemeCapabilities capabilities =
+      ThemeManager::instance()->CurrentCapabilities();
+
+  if (initial) {
+    const QString view = capabilities.project_view.isEmpty()
+        ? QStringLiteral("tree") : capabilities.project_view;
+    if (view == QStringLiteral("icon")) {
+      set_view_type(ProjectToolbar::IconView);
+    } else if (view == QStringLiteral("list")) {
+      set_view_type(ProjectToolbar::ListView);
+    } else {
+      set_view_type(ProjectToolbar::TreeView);
+    }
+
+    SizeChangedSlot(capabilities.project_icon_size > 0
+                        ? capabilities.project_icon_size
+                        : kProjectIconSizeDefault);
+    return;
+  }
+
+  if (!capabilities.project_view.isEmpty()) {
+    if (capabilities.project_view == QStringLiteral("icon")) {
+      set_view_type(ProjectToolbar::IconView);
+    } else if (capabilities.project_view == QStringLiteral("list")) {
+      set_view_type(ProjectToolbar::ListView);
+    } else if (capabilities.project_view == QStringLiteral("tree")) {
+      set_view_type(ProjectToolbar::TreeView);
+    }
+  }
+
+  int icon_size = capabilities.project_icon_size;
+  if (icon_size <= 0) {
+    icon_size = icon_view_->iconSize().width();
+  }
+  if (icon_size <= 0) {
+    icon_size = kProjectIconSizeDefault;
+  }
+  SizeChangedSlot(icon_size);
+}
+
+void ProjectExplorer::OnThemeChanged(const QString &theme_id)
+{
+  Q_UNUSED(theme_id)
+  ApplyThemeCapabilities(false);
 }
 
 void ProjectExplorer::DirUpSlot()
@@ -364,6 +418,7 @@ void ProjectExplorer::ShowContextMenu()
     bool all_items_are_footage = true;
     bool all_items_have_video_streams = true;
     bool all_items_are_footage_or_sequence = true;
+    QVector<Footage*> missing_footage;
 
     foreach (Node* i, context_menu_items_) {
       Footage* footage_cast_test = dynamic_cast<Footage*>(i);
@@ -373,6 +428,10 @@ void ProjectExplorer::ShowContextMenu()
         all_items_have_video_streams = false;
       }
 
+      if (footage_cast_test && !QFileInfo(footage_cast_test->filename()).isFile()) {
+        missing_footage.append(footage_cast_test);
+      }
+
       if (!footage_cast_test) {
         all_items_are_footage = false;
       }
@@ -380,6 +439,11 @@ void ProjectExplorer::ShowContextMenu()
       if (!footage_cast_test && !sequence_cast_test) {
         all_items_are_footage_or_sequence = false;
       }
+    }
+
+    if (!missing_footage.isEmpty()) {
+      QAction* relink_action = menu.addAction(tr("Relink Footage..."));
+      connect(relink_action, &QAction::triggered, this, &ProjectExplorer::RelinkSelectedFootage);
     }
 
     if (all_items_are_footage && all_items_have_video_streams) {
@@ -488,6 +552,32 @@ void ProjectExplorer::ReplaceSelectedFootage()
     }
 
     Core::instance()->undo_stack()->push(p, tr("Replaced Footage"));
+  }
+}
+
+void ProjectExplorer::RelinkSelectedFootage()
+{
+  QVector<Footage*> missing_footage;
+
+  for (Node* item : context_menu_items_) {
+    if (Footage* footage = dynamic_cast<Footage*>(item)) {
+      if (!QFileInfo(footage->filename()).isFile()) {
+        missing_footage.append(footage);
+      }
+    }
+  }
+
+  if (missing_footage.isEmpty()) {
+    QMessageBox::information(this, tr("Relink Footage"),
+                             tr("All selected footage files are online."));
+    return;
+  }
+
+  FootageRelinkDialog dialog(missing_footage, this, Core::instance()->undo_stack());
+  if (dialog.exec() == QDialog::Accepted) {
+    for (Footage* footage : missing_footage) {
+      model_.RefreshItem(footage);
+    }
   }
 }
 

@@ -31,16 +31,17 @@ set(OLIVE_SOURCES
   common/ffmpegutils.h
   common/filefunctions.cpp
   common/filefunctions.h
+  common/footagerelink.cpp
+  common/footagerelink.h
   common/html.cpp
   common/html.h
   common/jobtime.cpp
   common/jobtime.h
   common/lerp.h
   common/memorypool.h
+  common/ociobridge.h
   common/ocioutils.cpp
   common/ocioutils.h
-  common/oiioutils.cpp
-  common/oiioutils.h
   common/otioutils.h
   common/qtutils.cpp
   common/qtutils.h

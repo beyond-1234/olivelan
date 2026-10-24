@@ -21,17 +21,41 @@
 #ifndef OCIOUTILS_H
 #define OCIOUTILS_H
 
-#include <OpenColorIO/OpenColorIO.h>
-namespace OCIO = OCIO_NAMESPACE;
+#include <QString>
 
 #include "render/videoparams.h"
 
 namespace olive {
 
+class Project;
+
 class OCIOUtils
 {
 public:
-  static OCIO::BitDepth GetOCIOBitDepthFromPixelFormat(PixelFormat format);
+  static QString ResolveProjectRelativePath(const Project* project, const QString& path);
+  /**
+   * @brief Map an Olive PixelFormat to an OpenColorIO bit-depth code.
+   *
+   * Patch 0037: the OpenColorIO headers are deliberately NOT included here any
+   * more, so this header no longer drags them through every includer. The return
+   * value is the numeric OCIO::BitDepth value; the few call sites that need the
+   * enum cast it back inside their own translation unit.
+   */
+  static int GetOCIOBitDepthFromPixelFormat(PixelFormat format);
+
+  /**
+   * @brief Reference-space role identifiers.
+   *
+   * Patch 0038: these are the OpenColorIO role names, but declared as plain
+   * strings so that project serialization and the colour-management UI can read
+   * and write legacy .ove files without including the OpenColorIO headers. That
+   * keeps the serializers independent of OpenColorIO types.
+   * They must stay in sync with the `roles:` block of
+   * app/render/ocioconf/config.ocio.
+   */
+  static const QString kRoleDefault;                 // "default"
+  static const QString kReferenceSpaceSceneLinear;   // "scene_linear"
+  static const QString kReferenceSpaceCompositingLog; // "compositing_log"
 };
 
 }

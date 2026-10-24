@@ -20,8 +20,12 @@
 
 #include "util/color.h"
 
+// std::min/max below live in <algorithm> and must be included explicitly: libstdc++ happens to
+// pull them in via <cmath>, libc++ (macOS) does not, so relying on the transitive include breaks
+// builds there. (Before 0030 this file included <Imath/half.h>, which supplied them.)
+#include <algorithm>
 #include <cmath>
-#include <Imath/half.h>
+#include "util/half.h"
 #include <math.h>
 #include <stdint.h>
 
@@ -207,7 +211,7 @@ void Color::toData(char *out, const PixelFormat &format, unsigned int nb_channel
       reinterpret_cast<uint16_t*>(out)[i] = f * 65535.0;
       break;
     case PixelFormat::F16:
-      reinterpret_cast<Imath::half*>(out)[i] = f;
+      reinterpret_cast<uint16_t*>(out)[i] = float_to_half(static_cast<float>(f));
       break;
     case PixelFormat::F32:
       reinterpret_cast<float*>(out)[i] = f;
@@ -236,7 +240,7 @@ Color Color::fromData(const char *in, const PixelFormat &format, unsigned int nb
       f = DataType(reinterpret_cast<const uint16_t*>(in)[i]) / 65535.0;
       break;
     case PixelFormat::F16:
-      f = DataType(reinterpret_cast<const Imath::half*>(in)[i]);
+      f = DataType(half_to_float(reinterpret_cast<const uint16_t*>(in)[i]));
       break;
     case PixelFormat::F32:
       f = DataType(reinterpret_cast<const float*>(in)[i]);

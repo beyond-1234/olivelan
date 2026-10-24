@@ -20,10 +20,14 @@
 
 #include "manageddisplay.h"
 
+#include "common/ociobridge.h"
+
 #include <QHBoxLayout>
 #include <QMessageBox>
 
+#include "node/project.h"
 #include "panel/panelmanager.h"
+#include "render/colorstats.h"
 #include "render/opengl/openglrenderer.h"
 #include "render/rendermanager.h"
 
@@ -34,7 +38,9 @@ namespace olive {
 ManagedDisplayWidget::ManagedDisplayWidget(QWidget *parent) :
   QWidget(parent),
   color_manager_(nullptr),
-  color_service_(nullptr)
+  color_service_(nullptr),
+  auto_hdr_view_(true),
+  hdr_mode_active_(false)
 {
   QHBoxLayout* layout = new QHBoxLayout(this);
   layout->setSpacing(0);
@@ -92,6 +98,12 @@ void ManagedDisplayWidget::ConnectColorManager(ColorManager *color_manager)
     return;
   }
 
+  Project* old_project = color_manager_ ? color_manager_->project() : nullptr;
+  if (old_project) {
+    disconnect(old_project, &Project::HdrFootageChanged,
+               this, &ManagedDisplayWidget::ProjectHdrFootageChanged);
+  }
+
   if (color_manager_ != nullptr) {
     disconnect(color_manager_, &ColorManager::ConfigChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
     disconnect(color_manager_, &ColorManager::ReferenceSpaceChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
@@ -102,8 +114,15 @@ void ManagedDisplayWidget::ConnectColorManager(ColorManager *color_manager)
   if (color_manager_ != nullptr) {
     connect(color_manager_, &ColorManager::ConfigChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
     connect(color_manager_, &ColorManager::ReferenceSpaceChanged, this, &ManagedDisplayWidget::ColorConfigChanged);
+
+    if (Project* project = color_manager_->project()) {
+      connect(project, &Project::HdrFootageChanged,
+              this, &ManagedDisplayWidget::ProjectHdrFootageChanged);
+    }
   }
 
+  auto_hdr_view_ = true;
+  hdr_mode_active_ = false;
   ColorConfigChanged();
   emit ColorManagerChanged(color_manager_);
 }
@@ -150,6 +169,27 @@ void ManagedDisplayWidget::ColorConfigChanged()
     return;
   }
 
+  auto_hdr_previous_transform_ =
+      color_manager_->GetRestorableColorTransform(auto_hdr_previous_transform_);
+
+  if (auto_hdr_view_) {
+    // Project-level HDR selection is sticky: mixed HDR/SDR timelines choose the
+    // HDR view once instead of rebuilding the processor at every edit point.
+    SetHdrMode(color_manager_->project() && color_manager_->project()->HasHdrFootage());
+  }
+
+  if (auto_hdr_view_ && hdr_mode_active_) {
+    // Re-apply the HDR view after a config change instead of dropping back to
+    // the project's SDR default.
+    const QString display = color_transform_.is_display()
+        ? color_transform_.display() : color_manager_->GetDefaultDisplay();
+    if (color_manager_->ListAvailableViews(display).contains(QStringLiteral("HDR to SDR"))) {
+      SetColorTransform(ColorTransform(display, QStringLiteral("HDR to SDR"),
+                                       color_transform_.look()));
+      return;
+    }
+  }
+
   SetColorTransform(color_manager_->GetCompliantColorSpace(color_transform_, false));
 }
 
@@ -163,6 +203,13 @@ void ManagedDisplayWidget::ShowDefaultContextMenu()
   Menu m(this);
 
   if (color_manager_) {
+    QAction* auto_hdr_action = m.addAction(tr("Auto HDR (Follow Project)"));
+    auto_hdr_action->setCheckable(true);
+    auto_hdr_action->setChecked(auto_hdr_view_);
+    connect(auto_hdr_action, &QAction::triggered,
+            this, &ManagedDisplayWidget::SetAutoHdrView);
+
+    m.addSeparator();
     m.addMenu(GetColorSpaceMenu(&m));
     m.addSeparator();
     m.addMenu(GetDisplayMenu(&m));
@@ -178,6 +225,7 @@ void ManagedDisplayWidget::ShowDefaultContextMenu()
 
 void ManagedDisplayWidget::MenuDisplaySelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(action->data().toString(),
@@ -189,6 +237,7 @@ void ManagedDisplayWidget::MenuDisplaySelect(QAction *action)
 
 void ManagedDisplayWidget::MenuViewSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(old_transform.display(),
@@ -200,6 +249,7 @@ void ManagedDisplayWidget::MenuViewSelect(QAction *action)
 
 void ManagedDisplayWidget::MenuLookSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   const ColorTransform& old_transform = GetColorTransform();
 
   ColorTransform new_transform = color_manager()->GetCompliantColorSpace(ColorTransform(old_transform.display(),
@@ -211,7 +261,39 @@ void ManagedDisplayWidget::MenuLookSelect(QAction *action)
 
 void ManagedDisplayWidget::MenuColorspaceSelect(QAction *action)
 {
+  auto_hdr_view_ = false;
   SetColorTransform(color_manager()->GetCompliantColorSpace(ColorTransform(action->data().toString())));
+}
+
+void ManagedDisplayWidget::SetAutoHdrView(bool enabled)
+{
+  auto_hdr_view_ = enabled;
+
+  if (!enabled || !color_manager_ || !color_manager_->project()) {
+    return;
+  }
+
+  const bool project_has_hdr = color_manager_->project()->HasHdrFootage();
+
+  if (project_has_hdr) {
+    // If a manual transform was chosen while HDR was active, leave HDR mode and re-enter it so
+    // the saved SDR transform is restored first. This keeps the Auto round-trip lossless.
+    if (hdr_mode_active_) {
+      SetHdrMode(false);
+    }
+    SetHdrMode(true);
+  } else if (hdr_mode_active_) {
+    SetHdrMode(false);
+  }
+}
+
+void ManagedDisplayWidget::ProjectHdrFootageChanged()
+{
+  if (!color_manager_ || !auto_hdr_view_ || !color_manager_->project()) {
+    return;
+  }
+
+  SetHdrMode(color_manager_->project()->HasHdrFootage());
 }
 
 void ManagedDisplayWidget::OnDestroy()
@@ -222,6 +304,7 @@ void ManagedDisplayWidget::OnDestroy()
 
 void ManagedDisplayWidget::SetColorTransform(const ColorTransform &transform)
 {
+  GetColorStats().transform_changes.fetch_add(1, std::memory_order_relaxed);
   color_transform_ = transform;
 
   SetupColorProcessor();
@@ -234,7 +317,9 @@ void ManagedDisplayWidget::OnInit()
   if (RenderManager::instance()->backend() == RenderManager::kOpenGL) {
     QOpenGLContext* context = static_cast<ManagedDisplayWidgetOpenGL*>(inner_widget_)->context();
     static_cast<OpenGLRenderer*>(attached_renderer_)->Init(context);
-    static_cast<OpenGLRenderer*>(attached_renderer_)->PostInit();
+    if (!static_cast<OpenGLRenderer*>(attached_renderer_)->PostInit()) {
+      qCritical() << "[Display] OpenGL renderer is not usable";
+    }
   }
 }
 
@@ -396,6 +481,34 @@ Menu* ManagedDisplayWidget::GetLookMenu(QMenu* parent, bool auto_connect)
   return ocio_look_menu;
 }
 
+void ManagedDisplayWidget::SetHdrMode(bool hdr)
+{
+  if (!color_manager_ || !auto_hdr_view_ || hdr == hdr_mode_active_) {
+    return;
+  }
+
+  if (hdr) {
+    const QString display = color_transform_.is_display()
+        ? color_transform_.display() : color_manager_->GetDefaultDisplay();
+    const QStringList views = color_manager_->ListAvailableViews(display);
+    if (!views.contains(QStringLiteral("HDR to SDR"))) {
+      return;
+    }
+
+    auto_hdr_previous_transform_ = color_transform_;
+    hdr_mode_active_ = true;
+    GetColorStats().hdr_view_switches.fetch_add(1, std::memory_order_relaxed);
+    qInfo() << "[Color] Auto-selected HDR to SDR view for display" << display;
+    SetColorTransform(ColorTransform(display, QStringLiteral("HDR to SDR"),
+                                     color_transform_.look()));
+  } else {
+    hdr_mode_active_ = false;
+    GetColorStats().hdr_view_switches.fetch_add(1, std::memory_order_relaxed);
+    qInfo() << "[Color] Restored SDR color transform after HDR";
+    SetColorTransform(color_manager_->GetRestorableColorTransform(auto_hdr_previous_transform_));
+  }
+}
+
 void ManagedDisplayWidget::SetupColorProcessor()
 {
   color_service_ = nullptr;
@@ -411,6 +524,10 @@ void ManagedDisplayWidget::SetupColorProcessor()
                             tr("OpenColorIO Error"),
                             tr("Failed to set color configuration: %1").arg(e.what()),
                             QMessageBox::Ok);
+    }
+
+    if (!color_service_) {
+      qWarning() << "[Color] ManagedDisplay could not create a valid color processor";
     }
   } else {
     color_service_ = nullptr;

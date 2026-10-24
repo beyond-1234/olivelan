@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/fonts">
+        <file alias="DefaultSans.otf">SourceHanSansSC-Regular.otf</file>
+        <!-- Patch 0093 (P2-5): SIL OFL 1.1 requires the licence to accompany every copy of the
+             font. Embedding it here means it ships inside the binary on platforms without a
+             packaging install rule; UNIX installs also place it in share/olive-editor/licenses. -->
+        <file alias="OFL.txt">OFL.txt</file>
+        <!-- Inter is the UI typeface for the CapCut Studio preset. It is a
+             variable font so one file covers the weights used by QSS. -->
+        <file alias="Inter.ttf">InterVariable.ttf</file>
+        <file alias="OFL-Inter.txt">OFL-Inter.txt</file>
+    </qresource>
+</RCC>

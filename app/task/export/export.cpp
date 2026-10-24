@@ -143,6 +143,12 @@ bool ExportTask::Run()
     color_processor_ = ColorProcessor::Create(color_manager_,
                                               color_manager_->GetReferenceColorSpace(),
                                               params_.color_transform());
+
+    if (!color_processor_) {
+      SetError(tr("Invalid OCIO color transform for export"));
+      encoder_->Close();
+      return false;
+    }
   }
 
   // Start render process

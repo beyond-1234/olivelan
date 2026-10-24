@@ -89,9 +89,58 @@ RenderManager::~RenderManager()
 RenderThread *RenderManager::CreateThread(Renderer *renderer)
 {
   auto t = new RenderThread(renderer, decoder_cache_, shader_cache_, this);
+
+  // Only a thread that actually owns a Renderer may update the process-wide renderer status.
+  // The audio/waveform/dry-run threads use CreateThread() with a null renderer; connecting them
+  // unconditionally would make a future GL thread look like a second status producer.
+  if (renderer) {
+    // The render thread reports from its worker thread. Queue the result onto RenderManager's
+    // thread (the GUI thread) and cache it, because video_thread_ starts before MainWindow exists.
+    connect(t, &RenderThread::RendererReady, this, &RenderManager::HandleRendererReady,
+            Qt::QueuedConnection);
+    connect(t, &RenderThread::RendererInitializationFailed,
+            this, &RenderManager::HandleRendererInitializationFailed, Qt::QueuedConnection);
+  }
+
   render_threads_.push_back(t);
   t->start(QThread::IdlePriority);
   return t;
+}
+
+RenderManager::RendererStatus RenderManager::GetRendererStatus() const
+{
+  QMutexLocker locker(&renderer_status_mutex_);
+  return renderer_status_;
+}
+
+QString RenderManager::GetRendererError() const
+{
+  QMutexLocker locker(&renderer_status_mutex_);
+  return renderer_error_;
+}
+
+void RenderManager::SetRendererStatus(RendererStatus status, const QString& reason)
+{
+  {
+    QMutexLocker locker(&renderer_status_mutex_);
+    if (renderer_status_ == status && renderer_error_ == reason) {
+      return;
+    }
+    renderer_status_ = status;
+    renderer_error_ = reason;
+  }
+
+  emit RendererStatusChanged(status, reason);
+}
+
+void RenderManager::HandleRendererReady()
+{
+  SetRendererStatus(RendererStatus::Ready);
+}
+
+void RenderManager::HandleRendererInitializationFailed(const QString& reason)
+{
+  SetRendererStatus(RendererStatus::Failed, reason);
 }
 
 RenderTicketPtr RenderManager::RenderFrame(const RenderVideoParams &params)
@@ -121,6 +170,11 @@ RenderTicketPtr RenderManager::RenderFrame(const RenderVideoParams &params)
 
   if (params.return_type == ReturnType::kNull) {
     dry_run_thread_->AddTicket(ticket);
+  } else if (video_thread_->IsFailed()) {
+    // The queued status signal may not have reached the GUI yet, so do not rely on it here.
+    // Complete the ticket immediately rather than enqueueing work that can never run.
+    ticket->Start();
+    ticket->Finish();
   } else {
     video_thread_->AddTicket(ticket);
   }
@@ -196,6 +250,7 @@ void RenderManager::ClearOldDecoders()
 RenderThread::RenderThread(Renderer *renderer, DecoderCache *decoder_cache, ShaderCache *shader_cache, QObject *parent) :
   QThread(parent),
   cancelled_(false),
+  failed_(false),
   context_(renderer),
   decoder_cache_(decoder_cache),
   shader_cache_(shader_cache)
@@ -208,10 +263,27 @@ RenderThread::RenderThread(Renderer *renderer, DecoderCache *decoder_cache, Shad
 
 void RenderThread::AddTicket(RenderTicketPtr ticket)
 {
+  {
+    QMutexLocker locker(&mutex_);
+
+    if (!failed_ && !cancelled_) {
+      ticket->moveToThread(this);
+      queue_.push_back(ticket);
+      wait_.wakeOne();
+      return;
+    }
+  }
+
+  // The worker has already stopped (failed initialization or shutdown). Finish the ticket so
+  // RenderTicketWatcher always receives a completion instead of leaving a cache task pending.
+  ticket->Start();
+  ticket->Finish();
+}
+
+bool RenderThread::IsFailed() const
+{
   QMutexLocker locker(&mutex_);
-  ticket->moveToThread(this);
-  queue_.push_back(ticket);
-  wait_.wakeOne();
+  return failed_;
 }
 
 bool RenderThread::RemoveTicket(RenderTicketPtr ticket)
@@ -237,7 +309,42 @@ void RenderThread::quit()
 void RenderThread::run()
 {
   if (context_) {
-    context_->PostInit();
+    if (!context_->PostInit()) {
+      QString reason = context_->GetLastError().trimmed();
+      if (reason.isEmpty()) {
+        reason = tr("The OpenGL renderer failed to initialize without reporting a reason.");
+      }
+
+      qCritical().noquote() << "[Render]" << reason
+                            << "- refusing to process GL jobs; the viewer will remain unavailable.";
+
+      std::list<RenderTicketPtr> pending;
+      {
+        QMutexLocker locker(&mutex_);
+        failed_ = true;
+        cancelled_ = true;
+        pending.swap(queue_);
+      }
+
+      emit RendererInitializationFailed(reason);
+
+      // Finish every ticket that was queued before the failure. Do this outside the queue lock;
+      // RenderTicket::Finish() emits a Qt signal and must not be called while holding mutex_.
+      for (const RenderTicketPtr& ticket : pending) {
+        ticket->Start();
+        ticket->Finish();
+      }
+
+      // Return the renderer's QObject affinity to the owner thread even on the failure path,
+      // mirroring the normal shutdown path so callers can delete it safely.
+      if (context_) {
+        context_->moveToThread(this->thread());
+      }
+
+      return;
+    }
+
+    emit RendererReady();
   }
 
   QMutexLocker locker(&mutex_);

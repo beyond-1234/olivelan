@@ -14,8 +14,13 @@ images maintained by the Olive team as well as from
 Dependency hierarchy:
 
 1. `ci-common`
-2. `ci-otio`, `ci-crashpad`, `ci-ffmpeg`, `ci-ocio`
+2. `ci-otio`, `ci-crashpad`, `ci-ffmpeg`
 3. `ci-olive`
+
+> **OpenColorIO is a required build dependency (Phase 15).** The former
+> `OLIVE_ENABLE_OCIO=OFF` built-in engine path has been removed. The
+> `ci-ocio` package image and OCIO layer are still absent from this historical
+> Docker layout; the Linux build image provides OCIO 2.5.1 and Imath.
 
 ## Usage
 
@@ -25,8 +30,7 @@ Pull images from [Docker Hub](https://hub.docker.com/u/olivevideoeditor):
 docker pull olivevideoeditor/ci-common:2
 docker pull olivevideoeditor/ci-package-otio:0.14.1
 docker pull olivevideoeditor/ci-package-crashpad
-docker pull olivevideoeditor/ci-package-ffmpeg:5.0
-docker pull olivevideoeditor/ci-package-ocio:2022-2.1.1
+docker pull olivevideoeditor/ci-package-ffmpeg:6.1.6
 docker pull olivevideoeditor/ci-olive:2022.2
 ```
 
@@ -48,8 +52,7 @@ cd docker
 docker build -t olivevideoeditor/ci-common:2 -f ci-common/Dockerfile .
 docker build -t olivevideoeditor/ci-package-otio:0.14.1 -f ci-otio/Dockerfile .
 docker build -t olivevideoeditor/ci-package-crashpad -f ci-crashpad/Dockerfile .
-docker build -t olivevideoeditor/ci-package-ffmpeg:5.0 -f ci-ffmpeg/Dockerfile .
-docker build -t olivevideoeditor/ci-package-ocio:2022-2.1.1 -f ci-ocio/Dockerfile .
+docker build -t olivevideoeditor/ci-package-ffmpeg:6.1.6 -f ci-ffmpeg/Dockerfile .
 docker build -t olivevideoeditor/ci-olive:2022.2 -f ci-olive/Dockerfile .
 ```
 
@@ -63,7 +66,6 @@ Publish images:
 docker push olivevideoeditor/ci-common:2
 docker push olivevideoeditor/ci-package-otio:0.14.1
 docker push olivevideoeditor/ci-package-crashpad
-docker push olivevideoeditor/ci-package-ffmpeg:5.0
-docker push olivevideoeditor/ci-package-ocio:2022-2.1.1
+docker push olivevideoeditor/ci-package-ffmpeg:6.1.6
 docker push olivevideoeditor/ci-olive:2022.2
 ```

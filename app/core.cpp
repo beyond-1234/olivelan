@@ -23,6 +23,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDebug>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -71,6 +72,7 @@
 #include "task/project/save/save.h"
 #include "task/taskmanager.h"
 #include "ui/style/style.h"
+#include "ui/style/thememanager.h"
 #include "undo/undostack.h"
 #include "widget/menu/menushared.h"
 #include "widget/taskview/taskviewitem.h"
@@ -170,6 +172,16 @@ void Core::Start()
 
     // If we have a startup
     QMetaObject::invokeMethod(this, "OpenStartupProject", Qt::QueuedConnection);
+
+    // Patch 0095: hidden continuous-playback benchmark. Startup project loading is asynchronous,
+    // so MainWindow polls until a sequence viewer is connected (or gives up after 30 s).
+    if (core_params_.autoplay_seconds() > 0) {
+      QTimer::singleShot(0, this, [this]() {
+        if (main_window_) {
+          main_window_->StartAutoplayBenchmark(core_params_.autoplay_seconds());
+        }
+      });
+    }
     break;
   case CoreParams::kHeadlessExport:
     qInfo() << "Headless export is not fully implemented yet";
@@ -731,8 +743,17 @@ void Core::AddRecoveryProjectFromTask(Task *task)
 
 void Core::StartGUI(bool full_screen)
 {
-  // Set UI style
+  // Set UI style & dynamic theme engine
   StyleManager::Init();
+
+  const QString saved_theme_id = OLIVE_CONFIG("Style").toString();
+  ThemeManager::instance()->Initialize(saved_theme_id);
+
+  // If the saved theme was broken or removed, persist the fallback so the next
+  // launch does not fail the same way again.
+  if (ThemeManager::instance()->CurrentThemeId() != saved_theme_id) {
+    OLIVE_CONFIG("Style") = ThemeManager::instance()->CurrentThemeId();
+  }
 
   // Set up shared menus
   MenuShared::CreateInstance();
@@ -1128,12 +1149,15 @@ void Core::SetStartupLocale()
   QString use_locale = OLIVE_CONFIG("Language").toString();
 
   if (use_locale.isEmpty()) {
-    // No configured locale, auto-detect the system's locale
-    use_locale = QLocale::system().name();
+    // Treat Chinese (zh_CN) as primary default language
+    use_locale = QStringLiteral("zh_CN");
   }
 
   if (!SetLanguage(use_locale)) {
-    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it";
+    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it; falling back to zh_CN/en_US";
+    if (!SetLanguage(QStringLiteral("zh_CN"))) {
+      SetLanguage(QStringLiteral("en_US"));
+    }
   }
 }
 
@@ -1632,6 +1656,7 @@ void Core::OpenProject()
 
 Core::CoreParams::CoreParams() :
   mode_(kRunNormal),
+  autoplay_seconds_(0),
   run_fullscreen_(false),
   crash_(false)
 {

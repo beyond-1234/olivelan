@@ -12,26 +12,21 @@ ARG OLIVE_ORG=olivevideoeditor
 ARG ASWF_PKG_ORG=aswftesting
 ARG CI_COMMON_VERSION=2
 ARG VFXPLATFORM_VERSION=2022
-ARG OCIO_VERSION=2.1.1
-ARG FFMPEG_VERSION=5.0
+# FFmpeg >= 6.1 (see ci-ffmpeg/Dockerfile); the matching ci-package-ffmpeg image
+# is selected by this tag. Pinned to the newest 6.1.x patch release (6.1.6).
+ARG FFMPEG_VERSION=6.1.6
 ARG OTIO_VERSION=0.14.1
-ARG OIIO_VERSION=2.3.13.0
 
 FROM ${ASWF_PKG_ORG}/ci-package-qt:${VFXPLATFORM_VERSION} as ci-package-qt
 FROM ${ASWF_PKG_ORG}/ci-package-python:${VFXPLATFORM_VERSION} as ci-package-python
 FROM ${ASWF_PKG_ORG}/ci-package-boost:${VFXPLATFORM_VERSION} as ci-package-boost
+# OpenImageIO (and the OpenVDB/Blosc/TBB packages it required) is no longer part
+# of Olive's build (patches 0032/0033), and neither is OpenEXR. OpenColorIO is now
+# opt-in - the default build uses the built-in colour engine - so its package stage
+# is gone as well (patch 0043). Imath is still copied in because libOpenColorIO
+# depends on it at runtime, so it remains necessary for OCIO-enabled builds; the
+# default build does not link it (its ldd lists no Imath).
 FROM ${ASWF_PKG_ORG}/ci-package-imath:${VFXPLATFORM_VERSION} as ci-package-imath
-FROM ${ASWF_PKG_ORG}/ci-package-openexr:${VFXPLATFORM_VERSION} as ci-package-openexr
-# A custom OIIO package without OpenVDB/Blosc/TBB would be smaller,
-# but it currently does not pick up libwebp for some reason.
-#FROM ${OLIVE_ORG}/ci-package-oiio:${OIIO_VERSION} as ci-package-oiio
-FROM ${ASWF_PKG_ORG}/ci-package-oiio:${VFXPLATFORM_VERSION} as ci-package-oiio
-FROM ${ASWF_PKG_ORG}/ci-package-openvdb:${VFXPLATFORM_VERSION} as ci-package-openvdb
-FROM ${ASWF_PKG_ORG}/ci-package-blosc:${VFXPLATFORM_VERSION} as ci-package-blosc
-FROM ${ASWF_PKG_ORG}/ci-package-tbb:${VFXPLATFORM_VERSION} as ci-package-tbb
-#FROM ${ASWF_PKG_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
-# Our package is compiled as RelWithDebInfo
-FROM ${OLIVE_ORG}/ci-package-ocio:${VFXPLATFORM_VERSION}-${OCIO_VERSION} as ci-package-ocio
 FROM ${OLIVE_ORG}/ci-package-ffmpeg:${FFMPEG_VERSION} as ci-package-ffmpeg
 FROM ${OLIVE_ORG}/ci-package-crashpad:latest as ci-package-crashpad
 FROM ${OLIVE_ORG}/ci-package-otio:${OTIO_VERSION} as ci-package-otio
@@ -60,13 +55,6 @@ COPY --from=ci-package-qt /. /usr/local/
 COPY --from=ci-package-python /. /usr/local/
 COPY --from=ci-package-boost /. /usr/local/
 COPY --from=ci-package-imath /. /usr/local/
-COPY --from=ci-package-openexr /. /usr/local/
-COPY --from=ci-package-oiio /. /usr/local/
-# The ASWF OIIO package requires OpenVDB, Blosc, and TBB
-COPY --from=ci-package-openvdb /. /usr/local/
-COPY --from=ci-package-blosc /. /usr/local/
-COPY --from=ci-package-tbb /. /usr/local/
-COPY --from=ci-package-ocio /. /usr/local/
 COPY --from=ci-package-ffmpeg /. /usr/local/
 COPY --from=ci-package-crashpad /. /usr/local/
 COPY --from=ci-package-otio /. /usr/local/

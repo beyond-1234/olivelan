@@ -40,6 +40,9 @@ public:
   virtual void Accept(MultiUndoCommand* command) override;
 
 private:
+  void RefreshThemeCombo();
+  void ImportTheme(const QString &path);
+
   /**
    * @brief UI widget for selecting the current UI style
    */

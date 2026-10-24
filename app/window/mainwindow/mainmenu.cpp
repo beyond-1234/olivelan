@@ -29,6 +29,7 @@
 #include "core.h"
 #include "dialog/actionsearch/actionsearch.h"
 #include "dialog/diskcache/diskcachedialog.h"
+#include "dialog/hal/halstatusdialog.h"
 #include "dialog/task/task.h"
 #include "panel/panelmanager.h"
 #include "tool/tool.h"
@@ -292,6 +293,7 @@ MainMenu::MainMenu(MainWindow *parent) :
   help_menu_ = new Menu(this);
   help_action_search_item_ = help_menu_->AddItem("actionsearch", this, &MainMenu::ActionSearchTriggered, tr("/"));
   help_menu_->addSeparator();
+  help_hal_status_item_ = help_menu_->AddItem("halstatus", this, &MainMenu::HALStatusTriggered);
   help_feedback_item_ = help_menu_->AddItem("feedback", this, &MainMenu::HelpFeedbackTriggered);
   help_menu_->addSeparator();
   help_about_item_ = help_menu_->AddItem("about", Core::instance(), &Core::DialogAboutShow);
@@ -679,6 +681,16 @@ void MainMenu::SequenceCacheClearTriggered()
         );
 }
 
+void MainMenu::HALStatusTriggered()
+{
+  // Non-modal: users may want to keep the panel open while importing a clip or switching
+  // a forced backend. The dialog is read-only and refreshes the probe when constructed.
+  auto* dialog = new HALStatusDialog(parentWidget());
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->show();
+  dialog->raise();
+}
+
 void MainMenu::HelpFeedbackTriggered()
 {
   QDesktopServices::openUrl(QStringLiteral("https://github.com/olive-editor/olive/issues"));
@@ -787,6 +799,7 @@ void MainMenu::Retranslate()
   // Help menu
   help_menu_->setTitle(tr("&Help"));
   help_action_search_item_->setText(tr("A&ction Search"));
+  help_hal_status_item_->setText(tr("&HAL Status..."));
   help_feedback_item_->setText(tr("Send &Feedback..."));
   help_about_item_->setText(tr("&About..."));
 }

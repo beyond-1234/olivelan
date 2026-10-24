@@ -30,10 +30,11 @@
 
 #include "config/config.h"
 #include "ui/icons/icons.h"
+#include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
-const char* StyleManager::kDefaultStyle = "olive-dark";
+const char* StyleManager::kDefaultStyle = metro::kThemeName;
 QString StyleManager::current_style_;
 QMap<QString, QString> StyleManager::available_themes_;
 
@@ -128,21 +129,32 @@ void StyleManager::Init()
 {
   qApp->setStyle(QStyleFactory::create("Fusion"));
 
+  available_themes_.insert(QString::fromLatin1(metro::kThemeName),
+                           QString::fromLatin1(metro::kThemeDisplayName));
   available_themes_.insert(QStringLiteral("olive-dark"), QStringLiteral("Olive Dark"));
   available_themes_.insert(QStringLiteral("olive-light"), QStringLiteral("Olive Light"));
 
   QString config_style = OLIVE_CONFIG("Style").toString();
 
+  // ThemeManager is the single authoritative theme-application path. It will
+  // load the palette, tokens, icons and compiled stylesheet after this. Set
+  // the requested id now so Initialize() can resolve it without applying a
+  // half-processed built-in stylesheet first.
   if (config_style.isEmpty() || !available_themes_.contains(config_style)) {
-    SetStyle(kDefaultStyle);
+    SetCurrentStyleId(kDefaultStyle);
   } else {
-    SetStyle(config_style);
+    SetCurrentStyleId(config_style);
   }
 }
 
 const QString &StyleManager::GetStyle()
 {
   return current_style_;
+}
+
+void StyleManager::SetCurrentStyleId(const QString &style_path)
+{
+  current_style_ = style_path;
 }
 
 void StyleManager::SetStyle(const QString &style_path)

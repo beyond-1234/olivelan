@@ -55,6 +55,21 @@ QStringList FFmpegEncoder::GetPixelFormatsForCodec(ExportCodec::Codec c) const
   const AVCodec* codec_info = GetEncoder(c, SampleFormat::INVALID);
 
   if (codec_info) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 19, 100)
+    const enum AVPixelFormat *p_fmts = nullptr;
+    int num_fmts = 0;
+    if (avcodec_get_supported_config(nullptr, codec_info, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void**)&p_fmts, &num_fmts) >= 0 && p_fmts) {
+      for (int i = 0; p_fmts[i] != AV_PIX_FMT_NONE; i++) {
+        if (FFmpegUtils::ConvertJPEGSpaceToRegularSpace(p_fmts[i]) != p_fmts[i]) {
+          continue;
+        }
+        const char* pix_fmt_name = av_get_pix_fmt_name(p_fmts[i]);
+        if (pix_fmt_name) {
+          pix_fmts.append(pix_fmt_name);
+        }
+      }
+    }
+#else
     for (int i=0; codec_info->pix_fmts[i]!=-1; i++) {
       if (FFmpegUtils::ConvertJPEGSpaceToRegularSpace(codec_info->pix_fmts[i]) != codec_info->pix_fmts[i]) {
         // This is a deprecated "JPEG" space, skip it
@@ -64,6 +79,7 @@ QStringList FFmpegEncoder::GetPixelFormatsForCodec(ExportCodec::Codec c) const
       const char* pix_fmt_name = av_get_pix_fmt_name(codec_info->pix_fmts[i]);
       pix_fmts.append(pix_fmt_name);
     }
+#endif
   }
 
   return pix_fmts;
@@ -88,13 +104,28 @@ std::vector<SampleFormat> FFmpegEncoder::GetSampleFormatsForCodec(ExportCodec::C
   } else {
     const AVCodec* codec_info = GetEncoder(c, SampleFormat::INVALID);
 
-    if (codec_info && codec_info->sample_fmts) {
-      for (int i=0; codec_info->sample_fmts[i]!=-1; i++) {
-        SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(static_cast<AVSampleFormat>(codec_info->sample_fmts[i]));
-        if (this_format != SampleFormat::INVALID) {
-          f.push_back(this_format);
+    if (codec_info) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(61, 19, 100)
+      const enum AVSampleFormat *s_fmts = nullptr;
+      int num_fmts = 0;
+      if (avcodec_get_supported_config(nullptr, codec_info, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void**)&s_fmts, &num_fmts) >= 0 && s_fmts) {
+        for (int i = 0; s_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
+          SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(s_fmts[i]);
+          if (this_format != SampleFormat::INVALID) {
+            f.push_back(this_format);
+          }
         }
       }
+#else
+      if (codec_info->sample_fmts) {
+        for (int i=0; codec_info->sample_fmts[i]!=-1; i++) {
+          SampleFormat this_format = FFmpegUtils::GetNativeSampleFormat(static_cast<AVSampleFormat>(codec_info->sample_fmts[i]));
+          if (this_format != SampleFormat::INVALID) {
+            f.push_back(this_format);
+          }
+        }
+      }
+#endif
     }
   }
 
@@ -107,10 +138,39 @@ bool FFmpegEncoder::Open()
     return true;
   }
 
+  // Stills / image sequences write one file per frame, each opened and closed
+  // inside WriteFrame(); there is nothing to prepare up front.
+  if (IsWritingImages()) {
+    open_ = true;
+    return true;
+  }
+
+  return OpenInternal();
+}
+
+bool FFmpegEncoder::IsWritingImages() const
+{
+  if (params().video_is_image_sequence()) {
+    return true;
+  }
+
+  switch (params().format()) {
+  case ExportFormat::kFormatOpenEXR:
+  case ExportFormat::kFormatPNG:
+  case ExportFormat::kFormatTIFF:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool FFmpegEncoder::OpenInternal()
+{
   int error_code;
 
-  // Convert QString to C string that FFmpeg expects
-  QByteArray filename_bytes = params().filename().toUtf8();
+  // Convert QString to C string that FFmpeg expects. When writing stills each
+  // frame has its own filename.
+  QByteArray filename_bytes = (output_filename_.isEmpty() ? params().filename() : output_filename_).toUtf8();
   const char* filename_c_str = filename_bytes.constData();
 
   // Create output format context
@@ -120,6 +180,13 @@ bool FFmpegEncoder::Open()
   if (error_code < 0) {
     FFmpegError(tr("Failed to allocate output context"), error_code);
     return false;
+  }
+
+  if (IsWritingImages()) {
+    // image2 warns (and declines to overwrite) when the filename has no %d
+    // pattern. We deliberately write exactly one frame per file, so tell it to
+    // update in place.
+    av_opt_set(fmt_ctx_->priv_data, "update", "1", AV_OPT_SEARCH_CHILDREN);
   }
 
   // Initialize a video stream if it's enabled
@@ -218,7 +285,9 @@ bool FFmpegEncoder::Open()
     }
   }
 
-  av_dump_format(fmt_ctx_, 0, filename_c_str, 1);
+  if (!IsWritingImages()) {
+    av_dump_format(fmt_ctx_, 0, filename_c_str, 1);
+  }
 
   // Open output file for writing
   error_code = avio_open(&fmt_ctx_->pb, filename_c_str, AVIO_FLAG_WRITE);
@@ -239,6 +308,30 @@ bool FFmpegEncoder::Open()
 }
 
 bool FFmpegEncoder::WriteFrame(FramePtr frame, rational time)
+{
+  if (IsWritingImages()) {
+    // One file per frame: resolve the concrete filename (the Encoder base class
+    // substitutes the [####] placeholder), then run a full open/encode/close
+    // cycle for just this frame.
+    output_filename_ = GetFilenameForFrame(time);
+
+    if (!OpenInternal()) {
+      output_filename_.clear();
+      return false;
+    }
+
+    const bool ok = WriteMovieFrame(frame, time);
+
+    Close();
+    output_filename_.clear();
+
+    return ok;
+  }
+
+  return WriteMovieFrame(frame, time);
+}
+
+bool FFmpegEncoder::WriteMovieFrame(FramePtr frame, rational time)
 {
   // We may need to convert this frame to a frame that swscale will understand
   if (frame->format() != video_conversion_fmt_) {
@@ -273,6 +366,18 @@ bool FFmpegEncoder::WriteFrame(FramePtr frame, rational time)
   }
 
   encoded_frame->pts = qRound64(time.toDouble() / av_q2d(video_codec_ctx_->time_base));
+
+  // Interlace signalling has to live on the frame, not just on the codec context: libavcodec's
+  // libx264 wrapper decides b_tff per frame from AV_FRAME_FLAG_TOP_FIELD_FIRST and never reads
+  // AVCodecContext::field_order. Without this a top-field-first request was encoded as
+  // bottom-field-first. (libx265 via libavcodec reads neither, so this is a no-op there.)
+  if (params().video_params().interlacing() != VideoParams::kInterlaceNone) {
+    encoded_frame->flags |= AV_FRAME_FLAG_INTERLACED;
+
+    if (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) {
+      encoded_frame->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
+    }
+  }
 
   return WriteAVFrame(encoded_frame.get(), video_codec_ctx_, video_stream_);
 }
@@ -334,7 +439,7 @@ bool FFmpegEncoder::WriteAudioData(const AudioParams &audio_params, const uint8_
   int output_sample_count = input_sample_count ? swr_get_out_samples(audio_resample_ctx_, input_sample_count) : 102400;
   uint8_t** output_data = nullptr;
   int output_linesize;
-  av_samples_alloc_array_and_samples(&output_data, &output_linesize, audio_stream_->codecpar->channels,
+  av_samples_alloc_array_and_samples(&output_data, &output_linesize, audio_stream_->codecpar->ch_layout.nb_channels,
                                      output_sample_count, static_cast<AVSampleFormat>(audio_stream_->codecpar->format), 0);
 
   // Perform conversion
@@ -349,7 +454,7 @@ bool FFmpegEncoder::WriteAudioData(const AudioParams &audio_params, const uint8_
 
       av_samples_copy(audio_frame_->data, output_data, audio_frame_offset_, i,
                       copy_length,
-                      audio_frame_->channels, static_cast<AVSampleFormat>(audio_frame_->format));
+                      audio_frame_->ch_layout.nb_channels, static_cast<AVSampleFormat>(audio_frame_->format));
 
       audio_frame_offset_ += copy_length;
       i += copy_length;
@@ -636,17 +741,14 @@ bool FFmpegEncoder::InitializeStream(AVMediaType type, AVStream** stream_ptr, AV
       //        explain them at all. I hope using both of them is the right thing to do.
       codec_ctx->flags |= AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME;
 
-
-      if (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) {
-        codec_ctx->field_order = AV_FIELD_TT;
-      } else {
-        codec_ctx->field_order = AV_FIELD_BB;
-
-        if (codec == ExportCodec::kCodecH264 || codec == ExportCodec::kCodecH264rgb) {
-          // For some reason, FFmpeg doesn't set libx264's bff flag so we have to do it ourselves
-          av_opt_set(codec_ctx->priv_data, "x264opts", "bff=1", AV_OPT_SEARCH_CHILDREN);
-        }
-      }
+      // field_order is the encoder-level declaration and what the muxer reads, but libavcodec's
+      // libx264 wrapper ignores it: it derives b_tff from the *frame* flags on every frame
+      // (libavcodec/libx264.c reads AV_FRAME_FLAG_TOP_FIELD_FIRST), and WriteMovieFrame() sets
+      // those. This used to be worked around for bottom-first only, with "x264opts bff=1", which
+      // is why requesting top-first silently produced bottom-first.
+      codec_ctx->field_order =
+        (params().video_params().interlacing() == VideoParams::kInterlacedTopFirst) ? AV_FIELD_TT
+                                                                                   : AV_FIELD_BB;
     }
 
     // Set custom options
@@ -690,8 +792,15 @@ bool FFmpegEncoder::InitializeStream(AVMediaType type, AVStream** stream_ptr, AV
 
     // Assume audio stream
     codec_ctx->sample_rate = params().audio_params().sample_rate();
-    codec_ctx->channel_layout = params().audio_params().channel_layout();
-    codec_ctx->channels = av_get_channel_layout_nb_channels(codec_ctx->channel_layout);
+
+    // Setting ch_layout also carries the channel count (there is no separate `channels` field
+    // since FFmpeg 7.0).
+    FFmpegUtils::ChannelLayoutGuard audio_layout(params().audio_params().channel_layout());
+    if (av_channel_layout_copy(&codec_ctx->ch_layout, audio_layout.get()) < 0) {
+      SetError(tr("Failed to set audio channel layout"));
+      return false;
+    }
+
     codec_ctx->sample_fmt = FFmpegUtils::GetFFmpegSampleFormat(params().audio_params().format());
     codec_ctx->time_base = {1, codec_ctx->sample_rate};
 
@@ -781,17 +890,24 @@ void FFmpegEncoder::FlushEncoders()
   }
 
   if (audio_codec_ctx_) {
-    WriteAudio(SampleBuffer());
+    // Patch 0100: WriteAudio() returns early for an unallocated SampleBuffer, so the old
+    // WriteAudio(SampleBuffer()) call never reached WriteAudioData()'s null-input flush path and
+    // the encoder dropped the same ~0.3% tail that ConformAudioInternal did. Call the drain path
+    // directly; the resample context is already initialized by the preceding WriteAudio() calls.
+    WriteAudioData(params().audio_params(), nullptr, 0);
 
     FlushCodecCtx(audio_codec_ctx_, audio_stream_);
   }
 
   if (fmt_ctx_) {
-    if (fmt_ctx_->oformat->flags & AVFMT_ALLOW_FLUSH) {
-      int r = av_interleaved_write_frame(fmt_ctx_, nullptr);
-      if (r < 0) {
-        FFmpegError(tr("Failed to write interleaved packet"), r);
-      }
+    // AVFMT_ALLOW_FLUSH was deprecated in FFmpeg 6.1 and removed in 8.0. Upstream's documented
+    // replacement is to send a NULL packet unconditionally: av_interleaved_write_frame() with a
+    // NULL packet only drains the muxer's interleaving queue and never forwards a NULL packet to
+    // the muxer's write_packet(), so muxers that do not support flushing are unaffected (there is
+    // simply nothing to drain).
+    int r = av_interleaved_write_frame(fmt_ctx_, nullptr);
+    if (r < 0) {
+      FFmpegError(tr("Failed to write interleaved packet"), r);
     }
   }
 }
@@ -828,17 +944,21 @@ bool FFmpegEncoder::InitializeResampleContext(const AudioParams &audio)
     return true;
   }
 
-  // Create resample context
-  audio_resample_ctx_ = swr_alloc_set_opts(nullptr,
-                                           static_cast<int64_t>(audio_codec_ctx_->channel_layout),
-                                           audio_codec_ctx_->sample_fmt,
-                                           audio_codec_ctx_->sample_rate,
-                                           static_cast<int64_t>(audio.channel_layout()),
-                                           FFmpegUtils::GetFFmpegSampleFormat(audio.format()),
-                                           audio.sample_rate(),
-                                           0,
-                                           nullptr);
-  if (!audio_resample_ctx_) {
+  // Create resample context. The output layout comes straight from the codec context (already an
+  // AVChannelLayout); the input layout is built from Olive's channel-layout mask — the same mask
+  // the deprecated swr_alloc_set_opts() converted internally.
+  FFmpegUtils::ChannelLayoutGuard in_layout(audio.channel_layout());
+
+  int swr_err = swr_alloc_set_opts2(&audio_resample_ctx_,
+                                    &audio_codec_ctx_->ch_layout,
+                                    audio_codec_ctx_->sample_fmt,
+                                    audio_codec_ctx_->sample_rate,
+                                    in_layout.get(),
+                                    FFmpegUtils::GetFFmpegSampleFormat(audio.format()),
+                                    audio.sample_rate(),
+                                    0,
+                                    nullptr);
+  if (swr_err < 0 || !audio_resample_ctx_) {
     return false;
   }
 
@@ -865,7 +985,9 @@ bool FFmpegEncoder::InitializeResampleContext(const AudioParams &audio)
     return false;
   }
 
-  audio_frame_->channel_layout = audio_codec_ctx_->channel_layout;
+  if (av_channel_layout_copy(&audio_frame_->ch_layout, &audio_codec_ctx_->ch_layout) < 0) {
+    return false;
+  }
   audio_frame_->format = audio_codec_ctx_->sample_fmt;
   audio_frame_->nb_samples = audio_max_samples_;
 

@@ -492,7 +492,13 @@ void Footage::Reprobe()
       set_timestamp(info.lastModified().toMSecsSinceEpoch());
 
       // Determine if we've already cached the metadata of this file
-      QString meta_cache_file = QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)).filePath(FileFunctions::GetUniqueFileIdentifier(filename));
+      const QString cache_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+      if (!cache_dir.isEmpty()) {
+        // Qt does not create CacheLocation automatically. Without this the metadata save below
+        // fails on a fresh profile, so every footage is probed again on every project load.
+        QDir().mkpath(cache_dir);
+      }
+      QString meta_cache_file = QDir(cache_dir).filePath(FileFunctions::GetUniqueFileIdentifier(filename));
 
       FootageDescription footage_info;
 
@@ -563,7 +569,29 @@ VideoParams Footage::MergeVideoStream(const VideoParams &base, const VideoParams
   merged.set_colorspace(over.colorspace());
   merged.set_premultiplied_alpha(over.premultiplied_alpha());
   merged.set_video_type(over.video_type());
-  merged.set_color_range(over.color_range());
+  // Patch 0120: only an explicit user choice may replace the freshly probed range. The cached
+  // value of a stream that was never overridden is at best a fallback, and the probe is newer.
+  if (over.color_range_overridden()) {
+    merged.set_color_range(over.color_range());
+  }
+  merged.set_color_range_overridden(over.color_range_overridden());
+
+  // Patch 0042: propagate the container colour metadata, but keep the base's
+  // value when the stream being merged in has nothing to say about it (an
+  // untagged still merged into a colour-tagged video stream, for instance).
+  if (over.color_primaries() != VideoParams::kColorPrimariesDefault) {
+    merged.set_color_primaries(over.color_primaries());
+  }
+  if (over.color_trc() != VideoParams::kTransferDefault) {
+    merged.set_color_trc(over.color_trc());
+  }
+  if (over.color_space() != VideoParams::kColorSpaceDefault) {
+    merged.set_color_space(over.color_space());
+  }
+  if (over.mastering_peak_nits() > 0) {
+    merged.set_mastering_peak_nits(over.mastering_peak_nits());
+  }
+
   if (merged.video_type() == VideoParams::kVideoTypeImageSequence) {
     merged.set_start_time(over.start_time());
     merged.set_duration(over.duration());

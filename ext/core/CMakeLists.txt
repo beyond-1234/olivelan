@@ -27,12 +27,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Link avutil
-find_package(FFMPEG 3.0 REQUIRED
+#
+# 5.1 is the real floor: ext/core's only FFmpeg use is the AVChannelLayout API
+# (av_channel_layout_from_mask / _default / _uninit), introduced in FFmpeg 5.1. The product-level
+# floor is higher (6.1, enforced by the top-level CMakeLists).
+find_package(FFMPEG 5.1 REQUIRED
   COMPONENTS avutil
 )
-
-# Link Imath
-find_package(Imath REQUIRED CONFIG)
 
 # Link OpenGL
 if(UNIX AND NOT APPLE AND NOT DEFINED OpenGL_GL_PREFERENCE)
@@ -60,7 +61,6 @@ target_include_directories(olivecore PRIVATE
 
 target_link_libraries(olivecore PRIVATE
   OpenGL::GL
-  Imath::Imath
   FFMPEG::avutil
 )
 

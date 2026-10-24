@@ -20,19 +20,43 @@
 
 #include "colorprocessor.h"
 
+#include <algorithm>
+#include <cmath>
+#include <string>
+
 #include "common/define.h"
+#include "common/ociobridge.h"
 #include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
 
 namespace olive {
 
-ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const ColorTransform &transform, Direction direction)
+// Patch 0037: the OCIO members live in an opaque Impl so that colorprocessor.h
+// (and everything that includes it) no longer needs <OpenColorIO/OpenColorIO.h>.
+struct ColorProcessor::Impl
 {
-  const QString& output = (transform.output().isEmpty()) ? config->GetDefaultDisplay() : transform.output();
+  OCIO::ConstProcessorRcPtr processor;
+  OCIO::ConstCPUProcessorRcPtr cpu_processor;
+};
+
+ColorProcessor::ColorProcessor() :
+  impl_(std::make_unique<Impl>())
+{
+}
+
+ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const ColorTransform &transform, Direction direction) :
+  impl_(std::make_unique<Impl>())
+{
+  const QString output = transform.is_display()
+      ? (transform.display().isEmpty() ? config->GetDefaultDisplay() : transform.display())
+      : (transform.output().isEmpty() ? config->GetDefaultInputColorSpace() : transform.output());
+  const OCIO::ConstConfigRcPtr ocio_config = ColorManagerOCIO::GetConfig(config);
 
   if (transform.is_display()) {
 
-    const QString& view = (transform.view().isEmpty()) ? config->GetDefaultView(output) : transform.view();
+    const QString view = (transform.view().isEmpty()) ? config->GetDefaultView(output) : transform.view();
 
     auto display_transform = OCIO::DisplayViewTransform::Create();
 
@@ -42,12 +66,12 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
     display_transform->setDirection(direction == kNormal ? OCIO::TRANSFORM_DIR_FORWARD : OCIO::TRANSFORM_DIR_INVERSE);
 
     if (transform.look().isEmpty()) {
-      processor_ = config->GetConfig()->getProcessor(display_transform);
+      impl_->processor = ocio_config->getProcessor(display_transform);
     } else {
       auto group = OCIO::GroupTransform::Create();
 
-      const char* out_cs = OCIO::LookTransform::GetLooksResultColorSpace(config->GetConfig(),
-                                                                         config->GetConfig()->getCurrentContext(),
+      const char* out_cs = OCIO::LookTransform::GetLooksResultColorSpace(ocio_config,
+                                                                         ocio_config->getCurrentContext(),
                                                                          transform.look().toUtf8());
 
       auto lt = OCIO::LookTransform::Create();
@@ -60,35 +84,35 @@ ColorProcessor::ColorProcessor(ColorManager *config, const QString &input, const
       display_transform->setSrc(out_cs);
       group->appendTransform(display_transform);
 
-      processor_ = config->GetConfig()->getProcessor(group);
+      impl_->processor = ocio_config->getProcessor(group);
     }
 
   } else {
 
-    try {
-      if (direction == kNormal) {
-        processor_ = config->GetConfig()->getProcessor(input.toUtf8(), output.toUtf8());
-      } else {
-        processor_ = config->GetConfig()->getProcessor(output.toUtf8(), input.toUtf8());
-      }
-    } catch (OCIO::Exception &e) {
-      qWarning() << "ColorProcessor exception:" << e.what();
+    if (direction == kNormal) {
+      impl_->processor = ocio_config->getProcessor(input.toUtf8(), output.toUtf8());
+    } else {
+      impl_->processor = ocio_config->getProcessor(output.toUtf8(), input.toUtf8());
     }
 
   }
 
-  cpu_processor_ = processor_->getDefaultCPUProcessor();
+  // Do not substitute a raw identity transform when OCIO cannot resolve the
+  // requested conversion. A silent identity would display an incorrect image
+  // while making the project look healthy. Create() catches the exception and
+  // returns nullptr so callers can report the actual failure.
+  impl_->cpu_processor = impl_->processor->getDefaultCPUProcessor();
 }
 
-ColorProcessor::ColorProcessor(OCIO::ConstProcessorRcPtr processor)
-{
-  processor_ = processor;
-  cpu_processor_ = processor_->getDefaultCPUProcessor();
-}
+ColorProcessor::~ColorProcessor() = default;
 
 void ColorProcessor::ConvertFrame(Frame *f)
 {
-  OCIO::BitDepth ocio_bit_depth = OCIOUtils::GetOCIOBitDepthFromPixelFormat(f->format());
+  if (!impl_->cpu_processor) {
+    return;
+  }
+
+  OCIO::BitDepth ocio_bit_depth = static_cast<OCIO::BitDepth>(OCIOUtils::GetOCIOBitDepthFromPixelFormat(f->format()));
 
   if (ocio_bit_depth == OCIO::BIT_DEPTH_UNKNOWN) {
     qCritical() << "Tried to color convert frame with no format";
@@ -104,37 +128,75 @@ void ColorProcessor::ConvertFrame(Frame *f)
                             OCIO::AutoStride,
                             f->linesize_bytes());
 
-  cpu_processor_->apply(img);
+  impl_->cpu_processor->apply(img);
 }
 
 Color ColorProcessor::ConvertColor(const Color& in)
 {
+  if (!impl_->cpu_processor) {
+    return in;
+  }
+
   // I've been bamboozled
   float c[4] = {float(in.red()), float(in.green()), float(in.blue()), float(in.alpha())};
 
-  cpu_processor_->applyRGBA(c);
+  impl_->cpu_processor->applyRGBA(c);
 
   return Color(c[0], c[1], c[2], c[3]);
 }
 
+const char *ColorProcessor::id() const
+{
+  return impl_->processor ? impl_->processor->getCacheID() : "invalid";
+}
+
+bool ColorProcessor::IsDefaulted() const
+{
+  // A successfully constructed processor always has an OCIO processor. This
+  // accessor exists for callers that receive a processor from a context where
+  // construction may have failed.
+  return !impl_->processor;
+}
+
 ColorProcessorPtr ColorProcessor::Create(ColorManager *config, const QString& input, const ColorTransform &transform, Direction direction)
 {
-  return std::make_shared<ColorProcessor>(config, input, transform, direction);
-}
+  try {
+    return std::make_shared<ColorProcessor>(config, input, transform, direction);
+  } catch (const OCIO::Exception &e) {
+    qWarning() << "[Color] Failed to create processor for" << input << "->"
+               << (transform.is_display() ? transform.display() : transform.output())
+               << ":" << e.what();
+  } catch (const std::exception &e) {
+    qWarning() << "[Color] Failed to create processor:" << e.what();
+  }
 
-ColorProcessorPtr ColorProcessor::Create(OCIO::ConstProcessorRcPtr processor)
-{
-  return std::make_shared<ColorProcessor>(processor);
-}
-
-OCIO::ConstProcessorRcPtr ColorProcessor::GetProcessor()
-{
-  return processor_;
+  return nullptr;
 }
 
 void ColorProcessor::ConvertFrame(FramePtr f)
 {
   ConvertFrame(f.get());
 }
+
+ColorProcessorPtr ColorProcessorOCIO::Create(OCIO::ConstProcessorRcPtr processor)
+{
+  if (!processor) {
+    return nullptr;
+  }
+
+  ColorProcessorPtr p(new ColorProcessor());
+
+  p->impl_->processor = processor;
+  p->impl_->cpu_processor = processor->getDefaultCPUProcessor();
+
+  return p;
+}
+
+OCIO::ConstProcessorRcPtr ColorProcessorOCIO::GetProcessor(const ColorProcessor *processor)
+{
+  return processor->impl_->processor;
+}
+
+
 
 }

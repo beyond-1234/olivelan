@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/style/olive-metro">
+    @QRC_BODY@
+  </qresource>
+</RCC>

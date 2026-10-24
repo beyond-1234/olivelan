@@ -34,6 +34,8 @@
 #include "nodeviewscene.h"
 #include "ui/colorcoding.h"
 #include "ui/icons/icons.h"
+#include "ui/style/designtokenregistry.h"
+#include "ui/style/metrostyleconfig.h"
 #include "window/mainwindow/mainwindow.h"
 
 namespace olive {
@@ -405,16 +407,25 @@ void NodeViewItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *opti
     DrawNodeTitle(painter, node_name, safe_label_bounds, Qt::AlignBottom, arrow_size);
   }
 
-  // Draw final border (output only)
+  // Draw final border (output only). Metro/Fluent: flat hairline, or a hard 2px accent frame
+  // when selected.
   if (IsOutputItem()) {
     QPen border_pen;
-    border_pen.setWidth(node_border_width_);
+
+    const int border_width = DesignTokenRegistry::instance()->GetInt(
+        QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
+    const int scaled_border = qMax(1, node_border_width_ * border_width);
 
     if (option->state & QStyle::State_Selected) {
-      border_pen.setColor(app_pal.color(QPalette::Highlight));
+      border_pen.setColor(DesignTokenRegistry::instance()->GetColor(
+          QStringLiteral("color.accent.primary"), metro::kAccentColor));
+      border_pen.setWidth(scaled_border * 2);
     } else {
-      border_pen.setColor(Qt::black);
+      border_pen.setColor(DesignTokenRegistry::instance()->GetColor(
+          QStringLiteral("color.border.hairline"), metro::kBorderColor));
+      border_pen.setWidth(scaled_border);
     }
+
 
     painter->setPen(border_pen);
     painter->setBrush(Qt::NoBrush);

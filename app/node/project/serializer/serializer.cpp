@@ -27,11 +27,6 @@
 #include "common/xmlutils.h"
 #include "core.h"
 #include "node/group/group.h"
-#include "serializer190219.h"
-#include "serializer210528.h"
-#include "serializer210907.h"
-#include "serializer211228.h"
-#include "serializer220403.h"
 #include "serializer230220.h"
 
 namespace olive {
@@ -40,15 +35,12 @@ QVector<ProjectSerializer*> ProjectSerializer::instances_;
 
 void ProjectSerializer::Initialize()
 {
-  // Make sure to order these from oldest to newest
-
-  // FIXME: Implement this - yes it's a 0.1 project loader
-  //instances_.append(new ProjectSerializer190219);
-
-  instances_.append(new ProjectSerializer210528);
-  instances_.append(new ProjectSerializer210907);
-  instances_.append(new ProjectSerializer211228);
-  instances_.append(new ProjectSerializer220403);
+  // Make sure to order these from oldest to newest.
+  //
+  // Patch 0048 (Phase 8, §六 ruling): the five legacy serializers (190219/210528/
+  // 210907/211228/220403) are removed. This project no longer loads legacy .ove
+  // files; the dispatcher below answers them with a definite kProjectTooOld rather
+  // than a silent misload.
   instances_.append(new ProjectSerializer230220);
 }
 

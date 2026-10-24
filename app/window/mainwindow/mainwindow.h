@@ -49,10 +49,12 @@
 
 namespace olive {
 
+class MainStatusBar;
+
 /**
  * @brief Olive's main window responsible for docking widgets and the main menu bar.
  */
-class MainWindow : public KDDockWidgets::MainWindow
+class MainWindow : public KDDockWidgets::QtWidgets::MainWindow
 {
   Q_OBJECT
 public:
@@ -97,6 +99,17 @@ public:
 
   void SelectFootage(const QVector<Footage*> &e);
 
+  /**
+   * @brief Patch 0095: starts playback for a fixed duration, then exits the process.
+   *
+   * Hidden `--autoplay` benchmark aid. It waits for the startup project's sequence viewer to
+   * connect, plays continuously from the current playhead, and logs a start/finish pair with
+   * playhead progress plus presented/expected/skipped frame counters. An external harness can
+   * therefore distinguish actual presentation from playhead advance while also measuring CPU
+   * time and readback counts without injecting input.
+   */
+  void StartAutoplayBenchmark(int seconds);
+
 public slots:
   void SetProject(Project *p);
 
@@ -109,6 +122,8 @@ public slots:
 protected:
   virtual void showEvent(QShowEvent* e) override;
 
+  virtual void resizeEvent(QResizeEvent* e) override;
+
   virtual void closeEvent(QCloseEvent* e) override;
 
 #ifdef Q_OS_WINDOWS
@@ -116,6 +131,19 @@ protected:
 #endif
 
 private:
+  /**
+   * @brief Applies the default dock layout once the window actually has a size.
+   *
+   * On Wayland the first showEvent/resize can be delivered while the window is still 0x0. Building
+   * the layout at that point makes KDDockWidgets lay every panel out at zero size, leaving an empty
+   * window. We therefore defer the initial layout until the window reports a non-zero size.
+   */
+  void ApplyInitialLayoutIfNeeded();
+
+  void ApplyThemeDockSizesWhenReady(int attempts);
+
+  void TryStartAutoplayBenchmark();
+
   TimelinePanel* AppendTimelinePanel();
 
   template <typename T>
@@ -141,6 +169,8 @@ private:
   void SelectFootageForProjectPanel(const QVector<Footage*> &e, ProjectPanel *p);
 
   QByteArray premaximized_state_;
+
+  MainStatusBar* status_bar_;
 
   // Standard panels
   ProjectPanel *project_panel_;
@@ -168,6 +198,15 @@ private:
 
   bool first_show_;
 
+  bool constructor_finished_{false};
+
+  bool initial_layout_applied_;
+
+  bool theme_dock_sizes_applied_;
+
+  int autoplay_seconds_;
+  int autoplay_wait_attempts_;
+
   Project *project_;
 
 private slots:
@@ -185,7 +224,17 @@ private slots:
 
   void StatusBarDoubleClicked();
 
+  /**
+   * @brief Mirror RenderManager's renderer lifecycle into the status bar.
+   *
+   * Querying after connecting is intentional: a failed RenderThread may have reported
+   * before MainWindow existed, and the signal edge would otherwise be lost.
+   */
+  void UpdateRendererStatus();
+
   void NodePanelGroupOpenedOrClosed();
+
+  void OnThemeChanged(const QString &theme_id);
 
 #ifdef Q_OS_LINUX
   void ShowNouveauWarning();
@@ -194,6 +243,13 @@ private slots:
   void TimelinePanelSelectionChanged(const QVector<Block*> &blocks);
 
   void ShowWelcomeDialog();
+
+  /**
+   * @brief Patch 0078 (Phase 9): offers the display-session choice when it is actually meaningful.
+   *
+   * Logs the session classification on every start regardless of whether the prompt is shown.
+   */
+  void ShowGpuSessionDialogIfNeeded();
 
   void RevealViewerInProject(ViewerOutput *r);
   void RevealViewerInFootageViewer(ViewerOutput *r, const TimeRange &range);

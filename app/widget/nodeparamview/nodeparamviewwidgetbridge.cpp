@@ -803,6 +803,9 @@ void NodeParamViewWidgetBridge::SetProperty(const QString &key, const QVariant &
       ff->SetPlaceholder(value.toString());
     } else if (key == QStringLiteral("directory")) {
       ff->SetDirectoryMode(value.toBool());
+    } else if (key == QStringLiteral("error")) {
+      const QString err = value.toString();
+      ff->SetError(!err.isEmpty(), err);
     }
   }
 

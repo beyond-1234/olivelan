@@ -29,6 +29,8 @@
 #include <QPushButton>
 
 #include "common/filefunctions.h"
+#include "common/ociobridge.h"
+#include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
 #include "render/diskmanager.h"
 
@@ -77,8 +79,8 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
     color_layout->addWidget(new QLabel(tr("Reference Space:")), row, 0);
 
     reference_space_ = new QComboBox(this);
-    reference_space_->addItem(tr("Scene Linear"), OCIO::ROLE_SCENE_LINEAR);
-    reference_space_->addItem(tr("Compositing Log"), OCIO::ROLE_COMPOSITING_LOG);
+    reference_space_->addItem(tr("Scene Linear"), OCIOUtils::kReferenceSpaceSceneLinear);
+    reference_space_->addItem(tr("Compositing Log"), OCIOUtils::kReferenceSpaceCompositingLog);
     QtUtils::SetComboBoxData(reference_space_, p->GetColorReferenceSpace());
     color_layout->addWidget(reference_space_, row, 1, 1, 2);
 
@@ -90,7 +92,7 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
 
     ocio_filename_->setText(working_project_->color_manager()->GetConfigFilename());
 
-    connect(ocio_filename_, &QLineEdit::textChanged, this, &ProjectPropertiesDialog::OCIOFilenameUpdated);
+    connect(ocio_filename_, &QLineEdit::editingFinished, this, &ProjectPropertiesDialog::OCIOFilenameUpdated);
     OCIOFilenameUpdated();
 
     tabs->addTab(color_group, tr("Color Management"));
@@ -143,7 +145,10 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
 
 void ProjectPropertiesDialog::accept()
 {
-  if (!ocio_config_is_valid_) {
+  const QString new_ocio_file = ocio_filename_->text().trimmed();
+  const bool ocio_changed = (working_project_->color_manager()->GetConfigFilename() != new_ocio_file);
+
+  if (ocio_changed && !ocio_config_is_valid_) {
     QMessageBox mb(this);
     mb.setWindowModality(Qt::WindowModal);
     mb.setIcon(QMessageBox::Critical);
@@ -181,10 +186,13 @@ void ProjectPropertiesDialog::accept()
 
   // This should ripple changes throughout the graph/cache that the color config has changed, and
   // therefore should be done after the cache path is changed
-  if (working_project_->color_manager()->GetConfigFilename() != ocio_filename_->text()) {
-    working_project_->color_manager()->SetConfigFilename(ocio_filename_->text());
+  if (working_project_->color_manager()->GetConfigFilename() != new_ocio_file) {
+    working_project_->color_manager()->SetConfigFilename(new_ocio_file);
   }
-  if (working_project_->color_manager()->GetDefaultInputColorSpace() != default_input_colorspace_->currentText()) {
+  // An unreadable configuration leaves the combo box empty. Writing that empty string back would
+  // erase the project's default input color space, so only apply a real selection.
+  if (default_input_colorspace_->count() > 0
+      && working_project_->color_manager()->GetDefaultInputColorSpace() != default_input_colorspace_->currentText()) {
     working_project_->color_manager()->SetDefaultInputColorSpace(default_input_colorspace_->currentText());
   }
   if (working_project_->GetColorReferenceSpace() != reference_space_->currentData().toString()) {
@@ -212,9 +220,14 @@ bool ProjectPropertiesDialog::VerifyPathAndWarnIfBad(const QString &path)
 
 void ProjectPropertiesDialog::BrowseForOCIOConfig()
 {
-  QString fn = QFileDialog::getOpenFileName(this, tr("Browse for OpenColorIO configuration"));
+  QString fn = QFileDialog::getOpenFileName(
+      this,
+      tr("Browse for OpenColorIO configuration"),
+      QString(),
+      tr("OpenColorIO Configurations (*.ocio);;All Files (*)"));
   if (!fn.isEmpty()) {
     ocio_filename_->setText(fn);
+    OCIOFilenameUpdated();
   }
 }
 
@@ -224,18 +237,28 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
 
   try {
     OCIO::ConstConfigRcPtr c;
+    const QString fn = ocio_filename_->text().trimmed();
 
-    if (ocio_filename_->text().isEmpty()) {
-      c = ColorManager::GetDefaultConfig();
+    if (fn.isEmpty()) {
+      c = ColorManagerOCIO::GetDefaultConfig();
     } else {
-      c = ColorManager::CreateConfigFromFile(ocio_filename_->text());
+      const QString resolved = OCIOUtils::ResolveProjectRelativePath(working_project_, fn);
+      if (!QFileInfo::exists(resolved)) {
+        throw OCIO::Exception(QString("File does not exist: %1").arg(fn).toUtf8().constData());
+      }
+      c = ColorManagerOCIO::CreateConfigFromFile(resolved);
+      if (!c) {
+        throw OCIO::Exception("Failed to read configuration");
+      }
+      c->validate();
     }
 
     ocio_filename_->setStyleSheet(QString());
     ocio_config_is_valid_ = true;
+    ocio_config_error_.clear();
 
     // List input color spaces
-    QStringList input_cs = ColorManager::ListAvailableColorspaces(c);
+    QStringList input_cs = ColorManagerOCIO::ListAvailableColorspaces(c);
 
     foreach (QString cs, input_cs) {
       default_input_colorspace_->addItem(cs);
@@ -244,10 +267,21 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
         default_input_colorspace_->setCurrentIndex(default_input_colorspace_->count()-1);
       }
     }
-  } catch (OCIO::Exception& e) {
+  } catch (const OCIO::Exception& e) {
     ocio_config_is_valid_ = false;
     ocio_filename_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
-    ocio_config_error_ = e.what();
+    ocio_config_error_ = QString::fromUtf8(e.what());
+
+    // The requested configuration cannot be read, but the project keeps rendering with the
+    // configuration that is currently active. Show that one instead of leaving the combo empty,
+    // which would neither reflect the effective color management nor be safe to write back.
+    foreach (const QString& cs, working_project_->color_manager()->ListAvailableColorspaces()) {
+      default_input_colorspace_->addItem(cs);
+
+      if (cs == working_project_->color_manager()->GetDefaultInputColorSpace()) {
+        default_input_colorspace_->setCurrentIndex(default_input_colorspace_->count() - 1);
+      }
+    }
   }
 }
 

@@ -15,6 +15,8 @@
 
 #include "chromakey.h"
 
+#include "common/ociobridge.h"
+
 #include "node/color/colormanager/colormanager.h"
 #include "render/colorprocessor.h"
 

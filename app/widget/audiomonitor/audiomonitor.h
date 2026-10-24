@@ -41,7 +41,7 @@ public:
 
   bool IsPlaying() const
   {
-    return waveform_;
+    return waveform_ != nullptr || playing_realtime_;
   }
 
   static void StartWaveformOnAll(const AudioWaveformCache *waveform, const rational& start, int playback_speed)
@@ -107,6 +107,7 @@ private:
 
   QPixmap cached_background_;
   int cached_channels_;
+  bool playing_realtime_{false};
 
   static QVector<AudioMonitor*> instances_;
 

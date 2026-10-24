@@ -65,10 +65,12 @@ void FileField::BrowseBtnClicked()
 
 void FileField::LineEditChanged(const QString& text)
 {
-  if (QFileInfo::exists(text) || text.isEmpty()) {
-    line_edit_->setStyleSheet(QString());
-  } else {
+  // has_error_ carries failures that cannot be inferred from the path alone (a file that exists
+  // but cannot be parsed). Without it, setting the filename would clear that highlight.
+  if (has_error_ || (!QFileInfo::exists(text) && !text.isEmpty())) {
     line_edit_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
+  } else {
+    line_edit_->setStyleSheet(QString());
   }
 }
 

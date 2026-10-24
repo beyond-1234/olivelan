@@ -57,13 +57,20 @@ void OCIOBaseNode::Value(const NodeValueRow &value, const NodeGlobals &globals, 
 {
   auto tex_met = value[kTextureInput];
   TexturePtr t = tex_met.toTexture();
-  if (t && processor_) {
-    ColorTransformJob job;
+  if (t) {
+    if (processor_) {
+      ColorTransformJob job;
 
-    job.SetColorProcessor(processor_);
-    job.SetInputTexture(tex_met);
+      job.SetColorProcessor(processor_);
+      job.SetInputTexture(tex_met);
 
-    table->Push(NodeValue::kTexture, t->toJob(job), this);
+      table->Push(NodeValue::kTexture, t->toJob(job), this);
+    } else if (PassThroughWhenMissingColorProcessor()) {
+      table->Push(NodeValue::kTexture, tex_met, this);
+    } else if (!warned_missing_processor_) {
+      warned_missing_processor_ = true;
+      qCritical() << "[OCIO] Node" << id() << "has no valid ColorProcessor; refusing silent passthrough";
+    }
   }
 }
 

@@ -167,11 +167,27 @@ bool AudioProcessor::Open(const AudioParams &from, const AudioParams &to, double
 
   in_frame_ = av_frame_alloc();
   if (in_frame_) {
+    // Setting ch_layout carries the channel count with it (there is no separate `channels` field
+    // since FFmpeg 7.0).
+    FFmpegUtils::ChannelLayoutGuard from_layout(from.channel_layout());
+    if (av_channel_layout_copy(&in_frame_->ch_layout, from_layout.get()) < 0) {
+      qCritical() << "Failed to set channel layout on input frame";
+      Close();
+      return false;
+    }
+
     in_frame_->sample_rate = from.sample_rate();
     in_frame_->format = from_fmt_;
+    in_frame_->pts = 0;
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(59, 0, 0)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    // FFmpeg 6.x abuffersrc compatibility check compares frame->channel_layout against
+    // frame->channels. Keep them in sync so subsequent pushes don't fail with EINVAL (-22).
     in_frame_->channel_layout = from.channel_layout();
     in_frame_->channels = from.channel_count();
-    in_frame_->pts = 0;
+#pragma GCC diagnostic pop
+#endif
   } else {
     qCritical() << "Failed to allocate input frame";
     Close();
@@ -227,6 +243,14 @@ int AudioProcessor::Convert(float **in, int nb_in_samples, AudioProcessor::Buffe
       in_frame_->data[i] = reinterpret_cast<uint8_t*>(in[i]);
       in_frame_->linesize[i] = from_.samples_to_bytes(nb_in_samples);
     }
+
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(59, 0, 0)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    in_frame_->channel_layout = from_.channel_layout();
+    in_frame_->channels = from_.channel_count();
+#pragma GCC diagnostic pop
+#endif
 
     r = av_buffersrc_add_frame_flags(buffersrc_ctx_, in_frame_, AV_BUFFERSRC_FLAG_KEEP_REF);
     if (r < 0) {

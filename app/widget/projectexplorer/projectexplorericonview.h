@@ -1,7 +1,7 @@
 /***
 
   Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Copyright (C) 2024 Olive Team
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -23,11 +23,15 @@
 
 #include "projectexplorerlistviewbase.h"
 #include "projectexplorericonviewitemdelegate.h"
+#include "projectthumbnailcache.h"
 
 namespace olive {
 
 /**
  * @brief The view widget used when ProjectExplorer is in Icon View
+ *
+ * Draws Metro/Fluent tile cards. Thumbnails are produced asynchronously by an owned ThumbnailCache;
+ * when one becomes ready the affected tile is repainted.
  */
 class ProjectExplorerIconView : public ProjectExplorerListViewBase
 {
@@ -35,7 +39,13 @@ class ProjectExplorerIconView : public ProjectExplorerListViewBase
 public:
   ProjectExplorerIconView(QWidget* parent);
 
+private slots:
+  void ThumbnailReady(const QString &key);
+
 private:
+  // Declared before the delegate: the delegate takes a pointer to the cache.
+  ProjectThumbnailCache thumbnail_cache_;
+
   ProjectExplorerIconViewItemDelegate delegate_;
 };
 

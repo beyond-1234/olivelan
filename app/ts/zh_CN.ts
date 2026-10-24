@@ -771,7 +771,7 @@ Current driver information: %1 %2 %3</source>
     <message>
         <source>Film Scan 3</source>
         <translatorcomment>胶片扫描2+</translatorcomment>
-        <translation></translation>
+        <translation>胶片扫描 3</translation>
     </message>
     <message>
         <source>Film Scan 2+</source>
@@ -909,7 +909,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Teal</source>
-        <translation></translation>
+        <translation>青色</translation>
     </message>
     <message>
         <source>Blue</source>
@@ -1806,6 +1806,61 @@ To remedy this, please do one of the following:
     </message>
 </context>
 <context>
+    <name>olive::OCIOFileTransformNode</name>
+    <message>
+        <source>LUT (OpenColorIO)</source>
+        <translation>LUT 调色滤镜 (OpenColorIO)</translation>
+    </message>
+    <message>
+        <source>Applies a 1D or 3D LUT (.cube, .spi1d, .spi3d, etc.) using OpenColorIO.</source>
+        <translation>使用 OpenColorIO 应用 1D 或 3D LUT (.cube, .spi1d, .spi3d 等格式)。</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>LUT 文件</translation>
+    </message>
+    <message>
+        <source>Direction</source>
+        <translation>方向</translation>
+    </message>
+    <message>
+        <source>Forward</source>
+        <translation>正向</translation>
+    </message>
+    <message>
+        <source>Inverse</source>
+        <translation>反向</translation>
+    </message>
+    <message>
+        <source>Interpolation</source>
+        <translation>插值模式</translation>
+    </message>
+    <message>
+        <source>Default / Auto</source>
+        <translation>默认 / 自动</translation>
+    </message>
+    <message>
+        <source>Linear</source>
+        <translation>线性插值</translation>
+    </message>
+    <message>
+        <source>Tetrahedral</source>
+        <translation>四面体插值</translation>
+    </message>
+    <message>
+        <source>Nearest</source>
+        <translation>最邻近插值</translation>
+    </message>
+    <message>
+        <source>Best</source>
+        <translation>最佳质量</translation>
+    </message>
+</context>
+<context>
     <name>olive::DropShadowFilter</name>
     <message>
         <source>Texture</source>
@@ -1918,7 +1973,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1 kbps</source>
-        <translation></translation>
+        <translation>%1 kbps</translation>
     </message>
 </context>
 <context>
@@ -1981,23 +2036,23 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>FLAC</source>
-        <translation></translation>
+        <translation>FLAC</translation>
     </message>
     <message>
         <source>Opus</source>
-        <translation></translation>
+        <translation>Opus</translation>
     </message>
     <message>
         <source>Vorbis</source>
-        <translation></translation>
+        <translation>Vorbis</translation>
     </message>
     <message>
         <source>VP9</source>
-        <translation></translation>
+        <translation>VP9</translation>
     </message>
     <message>
         <source>SubRip SRT</source>
-        <translation></translation>
+        <translation>SubRip SRT</translation>
     </message>
 </context>
 <context>
@@ -2187,15 +2242,15 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>MPEG-4 Audio</source>
-        <translation></translation>
+        <translation>MPEG-4 音频</translation>
     </message>
     <message>
         <source>Wave Audio</source>
-        <translation></translation>
+        <translation>Wave 音频</translation>
     </message>
     <message>
         <source>AIFF</source>
-        <translation></translation>
+        <translation>AIFF</translation>
     </message>
     <message>
         <source>MP3</source>
@@ -2203,19 +2258,19 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>FLAC</source>
-        <translation></translation>
+        <translation>FLAC</translation>
     </message>
     <message>
         <source>Ogg</source>
-        <translation></translation>
+        <translation>Ogg</translation>
     </message>
     <message>
         <source>WebM</source>
-        <translation></translation>
+        <translation>WebM</translation>
     </message>
     <message>
         <source>SubRip SRT</source>
-        <translation></translation>
+        <translation>SubRip SRT</translation>
     </message>
 </context>
 <context>
@@ -2426,7 +2481,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1: %2 %3</source>
-        <translation></translation>
+        <translation>%1: %2 %3</translation>
     </message>
     <message>
         <source>Failed to send frame to encoder</source>
@@ -2608,11 +2663,11 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>%1x%2 %3 FPS</source>
-        <translation></translation>
+        <translation>%1x%2 %3 FPS</translation>
     </message>
     <message>
         <source>%1 Hz %2 channels</source>
-        <translation></translation>
+        <translation>%1 Hz %2 声道</translation>
     </message>
     <message>
         <source>Subtitles</source>
@@ -3252,99 +3307,99 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ctrl+O</source>
-        <translation></translation>
+        <translation>Ctrl+O</translation>
     </message>
     <message>
         <source>Ctrl+S</source>
-        <translation></translation>
+        <translation>Ctrl+S</translation>
     </message>
     <message>
         <source>Ctrl+Shift+S</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+S</translation>
     </message>
     <message>
         <source>F12</source>
-        <translation></translation>
+        <translation>F12</translation>
     </message>
     <message>
         <source>Ctrl+I</source>
-        <translation></translation>
+        <translation>Ctrl+I</translation>
     </message>
     <message>
         <source>Ctrl+M</source>
-        <translation></translation>
+        <translation>Ctrl+M</translation>
     </message>
     <message>
         <source>Shift+F10</source>
-        <translation></translation>
+        <translation>Shift+F10</translation>
     </message>
     <message>
         <source>Ctrl+Z</source>
-        <translation></translation>
+        <translation>Ctrl+Z</translation>
     </message>
     <message>
         <source>Ctrl+Shift+Z</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+Z</translation>
     </message>
     <message>
         <source>Backspace</source>
-        <translation></translation>
+        <translation>Backspace</translation>
     </message>
     <message>
         <source>Ctrl+A</source>
-        <translation></translation>
+        <translation>Ctrl+A</translation>
     </message>
     <message>
         <source>Ctrl+Shift+A</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+A</translation>
     </message>
     <message>
         <source>,</source>
-        <translation></translation>
+        <translation>,</translation>
     </message>
     <message>
         <source>.</source>
-        <translation></translation>
+        <translation>.</translation>
     </message>
     <message>
         <source>Q</source>
-        <translation></translation>
+        <translation>Q</translation>
     </message>
     <message>
         <source>W</source>
-        <translation></translation>
+        <translation>W</translation>
     </message>
     <message>
         <source>Ctrl+Alt+Q</source>
-        <translation></translation>
+        <translation>Ctrl+Alt+Q</translation>
     </message>
     <message>
         <source>Ctrl+Alt+W</source>
-        <translation></translation>
+        <translation>Ctrl+Alt+W</translation>
     </message>
     <message>
         <source>Alt+Left</source>
-        <translation></translation>
+        <translation>Alt+Left</translation>
     </message>
     <message>
         <source>Alt+Right</source>
-        <translation></translation>
+        <translation>Alt+Right</translation>
     </message>
     <message>
         <source>[</source>
-        <translation></translation>
+        <translation>[</translation>
     </message>
     <message>
         <source>]</source>
-        <translation></translation>
+        <translation>]</translation>
     </message>
     <message>
         <source>;</source>
-        <translation></translation>
+        <translation>;</translation>
     </message>
     <message>
         <source>&apos;</source>
-        <translation></translation>
+        <translation>&apos;</translation>
     </message>
     <message>
         <source>M</source>
@@ -3352,67 +3407,67 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>=</source>
-        <translation></translation>
+        <translation>=</translation>
     </message>
     <message>
         <source>-</source>
-        <translation></translation>
+        <translation>-</translation>
     </message>
     <message>
         <source>Ctrl+=</source>
-        <translation></translation>
+        <translation>Ctrl+=</translation>
     </message>
     <message>
         <source>Ctrl+-</source>
-        <translation></translation>
+        <translation>Ctrl+-</translation>
     </message>
     <message>
         <source>\</source>
-        <translation></translation>
+        <translation>\</translation>
     </message>
     <message>
         <source>F11</source>
-        <translation></translation>
+        <translation>F11</translation>
     </message>
     <message>
         <source>Home</source>
-        <translation></translation>
+        <translation>Home</translation>
     </message>
     <message>
         <source>Left</source>
-        <translation></translation>
+        <translation>Left</translation>
     </message>
     <message>
         <source>Space</source>
-        <translation></translation>
+        <translation>Space</translation>
     </message>
     <message>
         <source>Shift+Space</source>
-        <translation></translation>
+        <translation>Shift+Space</translation>
     </message>
     <message>
         <source>Right</source>
-        <translation></translation>
+        <translation>Right</translation>
     </message>
     <message>
         <source>End</source>
-        <translation></translation>
+        <translation>End</translation>
     </message>
     <message>
         <source>Up</source>
-        <translation></translation>
+        <translation>Up</translation>
     </message>
     <message>
         <source>Down</source>
-        <translation></translation>
+        <translation>Down</translation>
     </message>
     <message>
         <source>Shift+I</source>
-        <translation></translation>
+        <translation>Shift+I</translation>
     </message>
     <message>
         <source>Shift+O</source>
-        <translation></translation>
+        <translation>Shift+O</translation>
     </message>
     <message>
         <source>J</source>
@@ -3420,7 +3475,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>K</source>
-        <translation></translation>
+        <translation>K</translation>
     </message>
     <message>
         <source>L</source>
@@ -3428,19 +3483,19 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>`</source>
-        <translation></translation>
+        <translation>`</translation>
     </message>
     <message>
         <source>V</source>
-        <translation></translation>
+        <translation>V</translation>
     </message>
     <message>
         <source>D</source>
-        <translation></translation>
+        <translation>D</translation>
     </message>
     <message>
         <source>X</source>
-        <translation></translation>
+        <translation>X</translation>
     </message>
     <message>
         <source>B</source>
@@ -3448,7 +3503,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>N</source>
-        <translation></translation>
+        <translation>N</translation>
     </message>
     <message>
         <source>C</source>
@@ -3456,7 +3511,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Y</source>
-        <translation></translation>
+        <translation>Y</translation>
     </message>
     <message>
         <source>U</source>
@@ -3464,19 +3519,19 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>H</source>
-        <translation></translation>
+        <translation>H</translation>
     </message>
     <message>
         <source>Z</source>
-        <translation></translation>
+        <translation>Z</translation>
     </message>
     <message>
         <source>T</source>
-        <translation></translation>
+        <translation>T</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>A</translation>
     </message>
     <message>
         <source>R</source>
@@ -3488,11 +3543,11 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ctrl+,</source>
-        <translation></translation>
+        <translation>Ctrl+,</translation>
     </message>
     <message>
         <source>/</source>
-        <translation></translation>
+        <translation>/</translation>
     </message>
     <message>
         <source>Revert</source>
@@ -3504,7 +3559,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Delete (alt)</source>
-        <translation></translation>
+        <translation>Delete (备用)</translation>
     </message>
     <message>
         <source>Nudge Left</source>
@@ -3889,51 +3944,51 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Ctrl+N</source>
-        <translation></translation>
+        <translation>Ctrl+N</translation>
     </message>
     <message>
         <source>Ctrl+Shift+N</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+N</translation>
     </message>
     <message>
         <source>Ctrl+X</source>
-        <translation></translation>
+        <translation>Ctrl+X</translation>
     </message>
     <message>
         <source>Ctrl+C</source>
-        <translation></translation>
+        <translation>Ctrl+C</translation>
     </message>
     <message>
         <source>Ctrl+V</source>
-        <translation></translation>
+        <translation>Ctrl+V</translation>
     </message>
     <message>
         <source>Ctrl+Shift+V</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+V</translation>
     </message>
     <message>
         <source>Ctrl+D</source>
-        <translation></translation>
+        <translation>Ctrl+D</translation>
     </message>
     <message>
         <source>F2</source>
-        <translation></translation>
+        <translation>F2</translation>
     </message>
     <message>
         <source>Del</source>
-        <translation></translation>
+        <translation>Del</translation>
     </message>
     <message>
         <source>Shift+Del</source>
-        <translation></translation>
+        <translation>Shift+Del</translation>
     </message>
     <message>
         <source>Ctrl+K</source>
-        <translation></translation>
+        <translation>Ctrl+K</translation>
     </message>
     <message>
         <source>Ctrl+R</source>
-        <translation></translation>
+        <translation>Ctrl+R</translation>
     </message>
     <message>
         <source>I</source>
@@ -3941,23 +3996,23 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>O</source>
-        <translation></translation>
+        <translation>O</translation>
     </message>
     <message>
         <source>G</source>
-        <translation></translation>
+        <translation>G</translation>
     </message>
     <message>
         <source>Ctrl+Shift+D</source>
-        <translation></translation>
+        <translation>Ctrl+Shift+D</translation>
     </message>
     <message>
         <source>Ctrl+L</source>
-        <translation></translation>
+        <translation>Ctrl+L</translation>
     </message>
     <message>
         <source>Shift+E</source>
-        <translation></translation>
+        <translation>Shift+E</translation>
     </message>
     <message>
         <source>Rename</source>
@@ -4003,7 +4058,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Mosaic</source>
-        <translation></translation>
+        <translation>马赛克</translation>
     </message>
     <message>
         <source>Apply a pixelated mosaic filter to video.</source>
@@ -4277,7 +4332,7 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>-</source>
-        <translation></translation>
+        <translation>-</translation>
     </message>
 </context>
 <context>
@@ -4399,15 +4454,15 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>X</source>
-        <translation></translation>
+        <translation>X</translation>
     </message>
     <message>
         <source>G</source>
-        <translation></translation>
+        <translation>G</translation>
     </message>
     <message>
         <source>Y</source>
-        <translation></translation>
+        <translation>Y</translation>
     </message>
     <message>
         <source>B</source>
@@ -4415,15 +4470,15 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>Z</source>
-        <translation></translation>
+        <translation>Z</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>A</translation>
     </message>
     <message>
         <source>W</source>
-        <translation></translation>
+        <translation>W</translation>
     </message>
 </context>
 <context>
@@ -4741,7 +4796,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;R: %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;G: %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;B: %3 (%7)&lt;/font&gt;&lt;br&gt;A: %4 (%8)&lt;/html&gt;</source>
-        <translation></translation>
+        <translation>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;红(R): %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;绿(G): %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;蓝(B): %3 (%7)&lt;/font&gt;&lt;br&gt;Alpha: %4 (%8)&lt;/html&gt;</translation>
     </message>
 </context>
 <context>
@@ -4992,7 +5047,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>OpenGL</source>
-        <translation></translation>
+        <translation>OpenGL</translation>
     </message>
     <message>
         <source>Use glFinish</source>
@@ -5218,7 +5273,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Root</source>
-        <translation></translation>
+        <translation>根目录</translation>
     </message>
 </context>
 <context>
@@ -5633,7 +5688,7 @@ Are you sure you wish to delete this footage?</source>
     <name>olive::RationalSlider</name>
     <message>
         <source>NaN</source>
-        <translation></translation>
+        <translation>非数字 (NaN)</translation>
     </message>
     <message>
         <source>Float</source>
@@ -6072,7 +6127,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>---</source>
-        <translation></translation>
+        <translation>---</translation>
     </message>
 </context>
 <context>
@@ -6773,11 +6828,11 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>V</source>
-        <translation></translation>
+        <translation>视频</translation>
     </message>
     <message>
         <source>A</source>
-        <translation></translation>
+        <translation>音频</translation>
     </message>
     <message>
         <source>S</source>
@@ -6831,11 +6886,11 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>&amp;Delete</source>
-        <translation></translation>
+        <translation>删除(&amp;D)</translation>
     </message>
     <message>
         <source>Delete All &amp;Empty</source>
-        <translation></translation>
+        <translation>删除所有空轨道(&amp;E)</translation>
     </message>
     <message>
         <source>Delete All Empty</source>
@@ -7398,6 +7453,471 @@ Please check your audio preferences and try again.</source>
     <message>
         <source>Vertical</source>
         <translation>垂直</translation>
+    </message>
+</context>
+<context>
+    <name>GpuSessionAdvisor</name>
+    <message>
+        <source>unknown</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>(none detected)</source>
+        <translation>（未检测到）</translation>
+    </message>
+    <message>
+        <source>Session: %1 (Xwayland %2)</source>
+        <translation>会话：%1（Xwayland %2）</translation>
+    </message>
+    <message>
+        <source>native Wayland</source>
+        <translation>原生 Wayland</translation>
+    </message>
+    <message>
+        <source>X11</source>
+        <translation>X11</translation>
+    </message>
+    <message>
+        <source>reachable</source>
+        <translation>可达</translation>
+    </message>
+    <message>
+        <source>not reachable</source>
+        <translation>不可达</translation>
+    </message>
+    <message>
+        <source>Display (OpenGL) GPU: %1</source>
+        <translation>显示（OpenGL）GPU：%1</translation>
+    </message>
+    <message>
+        <source>Connected displays: %1</source>
+        <translation>已连接显示器：%1</translation>
+    </message>
+    <message>
+        <source>Discrete GPU: %1</source>
+        <translation>独立显卡：%1</translation>
+    </message>
+    <message>
+        <source>NVDEC: %1</source>
+        <translation>NVDEC：%1</translation>
+    </message>
+    <message>
+        <source>available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Connected display on the discrete GPU: %1</source>
+        <translation>独显上的已连接显示器：%1</translation>
+    </message>
+    <message>
+        <source>yes</source>
+        <translation>有</translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation>没有</translation>
+    </message>
+    <message>
+        <source>Discrete GPU: no NVIDIA GPU detected</source>
+        <translation>独立显卡：未检测到 NVIDIA GPU</translation>
+    </message>
+    <message>
+        <source>Tier 1: %1</source>
+        <translation>Tier 1：%1</translation>
+    </message>
+    <message>
+        <source>unavailable - CUDA-GL interop needs the OpenGL context and CUDA on the same GPU</source>
+        <translation>不可用——CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 GPU</translation>
+    </message>
+    <message>
+        <source>Tier 2: %1</source>
+        <translation>Tier 2：%1</translation>
+    </message>
+    <message>
+        <source>available (VA-API)</source>
+        <translation>可用（VA-API）</translation>
+    </message>
+    <message>
+        <source>Tier 1 - CUDA-NVDEC decode with CUDA-GL same-GPU zero-copy. Already the best path on this machine.</source>
+        <translation>Tier 1——CUDA-NVDEC 解码，CUDA-GL 同卡零拷贝。已经是这台机器上的最优路径。</translation>
+    </message>
+    <message>
+        <source>Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3.</source>
+        <translation>Tier 2——VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。</translation>
+    </message>
+    <message>
+        <source>Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode is available.</source>
+        <translation>Tier 3——强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。</translation>
+    </message>
+    <message>
+        <source>No change needed: Tier 1 (zero-copy) is available on this machine.</source>
+        <translation>无需更改：本机 Tier 1（零拷贝）可用。</translation>
+    </message>
+    <message>
+        <source>[Best] Discrete GPU direct: a display on the discrete GPU is already connected (%1). Make that screen the primary one, or move the Olive window onto it, and the OpenGL context lands on the discrete GPU - keeping the native session and getting Tier 1.</source>
+        <translation>【最优】独显直连：独显上已有已连接的显示器（%1）。把那块屏幕设为主屏，或把 Olive 窗口移过去，OpenGL 上下文就会落在独显上——保留原生会话且拿到 Tier 1。</translation>
+    </message>
+    <message>
+        <source>[Best] Discrete GPU direct: the discrete GPU (%1) currently has no connected display - the display is driven by %2, so the OpenGL context cannot land on the discrete GPU. This needs a firmware/MUX switch to discrete-only graphics, or a monitor connected to the discrete GPU's output. After that the OpenGL context and CUDA share a card: native session kept, Tier 1 available.</source>
+        <translation>【最优】独显直连：独显（%1）当前没有已连接的显示器——显示由 %2 驱动，所以 OpenGL 上下文无法落在独显上。这需要固件/MUX 切到「独显直连」，或把显示器接到独显的输出口。之后 OpenGL 上下文与 CUDA 同卡：保留原生会话，且 Tier 1 可用。</translation>
+    </message>
+    <message>
+        <source>This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two options are the only ones.</source>
+        <translation>本机没有 NVIDIA GPU，Tier 1 不适用；下面两项是仅有的选择。</translation>
+    </message>
+    <message>
+        <source>[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context lands on the discrete GPU, which makes Tier 1 reachable. The cost is the native session (per-monitor fractional scaling, native input methods). Switching restarts Olive into the new session.</source>
+        <translation>【次优】Xwayland + PRIME：切到 X11（xcb），让 OpenGL 上下文落在独显，从而拿到 Tier 1。代价是放弃原生会话（逐屏分数缩放、原生输入法）。切换后 Olive 会自动重启进入新会话。</translation>
+    </message>
+    <message>
+        <source>Xwayland is not available (no reachable X display), so that option cannot be selected on this machine.</source>
+        <translation>Xwayland 不可用（没有可达的 X 显示），该选项在本机无法选择。</translation>
+    </message>
+    <message>
+        <source>[Keep current] Leave the session as it is and use the path shown above (%1).</source>
+        <translation>【保持当前】不更改会话，走上面「本次会话实际会走」的那条路径（%1）。</translation>
+    </message>
+    <message>
+        <source>Expected path:</source>
+        <translation>预期路径：</translation>
+    </message>
+    <message>
+        <source>Options:</source>
+        <translation>可选的改进：</translation>
+    </message>
+</context>
+<context>
+    <name>olive::GpuSessionDialog</name>
+    <message>
+        <source>GPU Session Selection</source>
+        <translation>GPU 会话选择</translation>
+    </message>
+    <message>
+        <source>Detected display session and GPU topology:</source>
+        <translation>检测到的显示会话与 GPU 拓扑：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Wayland session</source>
+        <translation>Wayland 会话</translation>
+    </message>
+    <message>
+        <source>Xwayland reachable</source>
+        <translation>Xwayland 可达</translation>
+    </message>
+    <message>
+        <source>Configured mode</source>
+        <translation>当前配置模式</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME</source>
+        <translation>Xwayland + PRIME</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>原生</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>GPU</source>
+        <translation>GPU</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Active OpenGL vendor</source>
+        <translation>当前 OpenGL 厂商</translation>
+    </message>
+    <message>
+        <source>Unknown (no live GL context yet)</source>
+        <translation>未知（尚无活动的 GL 上下文）</translation>
+    </message>
+    <message>
+        <source>Decode path on this session</source>
+        <translation>本次会话的解码路径</translation>
+    </message>
+    <message>
+        <source>Tier 1 (CUDA-NVDEC + CUDA-GL interop)</source>
+        <translation>Tier 1（CUDA-NVDEC + CUDA-GL 互操作）</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Tier 2 (VA-API DMA-BUF)</source>
+        <translation>Tier 2（VA-API DMA-BUF）</translation>
+    </message>
+    <message>
+        <source>Tier 3 (Reinforced CPU decode)</source>
+        <translation>Tier 3（强化 CPU 解码）</translation>
+    </message>
+    <message>
+        <source>Display session</source>
+        <translation>显示会话</translation>
+    </message>
+    <message>
+        <source>Native session (recommended default)</source>
+        <translation>原生会话（推荐默认）</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME offload (enables Tier 1 zero-copy)</source>
+        <translation>Xwayland + PRIME 卸载（可启用 Tier 1 零拷贝）</translation>
+    </message>
+    <message>
+        <source>No reachable X display was found on this system.</source>
+        <translation>本机未找到可达的 X 显示。</translation>
+    </message>
+    <message>
+        <source>Recommendation</source>
+        <translation>建议</translation>
+    </message>
+    <message>
+        <source>Don't ask again</source>
+        <translation>不再提示</translation>
+    </message>
+    <message>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
+    </message>
+    <message>
+        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
+        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
+    </message>
+</context>
+<context>
+    <name>olive::HALBackendDialog</name>
+    <message>
+        <source>HAL Backend Selection</source>
+        <translation>HAL 后端选择</translation>
+    </message>
+    <message>
+        <source>Detected hardware environment (GpuEnvironmentProbe):</source>
+        <translation>检测到的硬件环境（GpuEnvironmentProbe）：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Environment</source>
+        <translation>环境</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Vendor</source>
+        <translation>厂商</translation>
+    </message>
+    <message>
+        <source>Total VRAM</source>
+        <translation>显存总量</translation>
+    </message>
+    <message>
+        <source>%1 MB</source>
+        <translation>%1 MB</translation>
+    </message>
+    <message>
+        <source>Display server</source>
+        <translation>显示服务器</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>Detected devices</source>
+        <translation>检测到的设备</translation>
+    </message>
+    <message>
+        <source>%1 MB VRAM%2</source>
+        <translation>%1 MB 显存%2</translation>
+    </message>
+    <message>
+        <source>, primary display</source>
+        <translation>，主显示器</translation>
+    </message>
+    <message>
+        <source>Driver</source>
+        <translation>驱动</translation>
+    </message>
+    <message>
+        <source>Backend availability</source>
+        <translation>后端可用性</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Reinforced CPU Decode + Native YUV Upload (Tier 3)</source>
+        <translation>强化 CPU 解码 + 原生 YUV 上传（Tier 3）</translation>
+    </message>
+    <message>
+        <source>VideoToolbox (Tier 2, macOS)</source>
+        <translation>VideoToolbox（Tier 2，macOS）</translation>
+    </message>
+    <message>
+        <source>VA-API DMA-BUF (Tier 2, Linux)</source>
+        <translation>VA-API DMA-BUF（Tier 2，Linux）</translation>
+    </message>
+    <message>
+        <source>D3D11 Interop (Tier 2, Windows)</source>
+        <translation>D3D11 互操作（Tier 2，Windows）</translation>
+    </message>
+    <message>
+        <source>Decode capability matrix</source>
+        <translation>解码能力矩阵</translation>
+    </message>
+    <message>
+        <source>HEVC 8-bit</source>
+        <translation>HEVC 8 位</translation>
+    </message>
+    <message>
+        <source>HEVC 10-bit</source>
+        <translation>HEVC 10 位</translation>
+    </message>
+    <message>
+        <source>AV1 8-bit</source>
+        <translation>AV1 8 位</translation>
+    </message>
+    <message>
+        <source>AV1 10-bit</source>
+        <translation>AV1 10 位</translation>
+    </message>
+    <message>
+        <source>Backend to use for this session:</source>
+        <translation>本次会话使用的后端：</translation>
+    </message>
+    <message>
+        <source>Expected path (auto routing): %1</source>
+        <translation>预期路径（自动路由）：%1</translation>
+    </message>
+    <message>
+        <source>Will attempt: %1 (forced for this process only). If it fails to initialize, Olive falls back to automatic routing.</source>
+        <translation>将尝试：%1（仅对本次进程强制）。若初始化失败，Olive 会回退到自动路由。</translation>
+    </message>
+    <message>
+        <source>The probe marks it unavailable here, so OK will offer a working alternative first.</source>
+        <translation>探测显示它在此处不可用，因此点击“确定”会先提供一个可用的替代方案。</translation>
+    </message>
+    <message>
+        <source>The selection applies to this process only and is not saved. Automatic routing can also be forced without a dialog via -hal-backend &lt;name&gt; or the OLIVE_HAL_BACKEND environment variable.</source>
+        <translation>该选择仅对本次进程生效，不会保存。也可以不用对话框强制自动路由：-hal-backend &lt;name&gt; 或环境变量 OLIVE_HAL_BACKEND。</translation>
+    </message>
+    <message>
+        <source>Backend unavailable</source>
+        <translation>后端不可用</translation>
+    </message>
+    <message>
+        <source>CUDA-NVDEC (Tier 1) cannot work in this session: CUDA-GL interop requires the OpenGL context and CUDA to be on the same NVIDIA GPU, but the current OpenGL context is on "%1". The frame pool will fail to register its textures and this stream will produce no picture.</source>
+        <translation>CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 NVIDIA GPU，而当前 OpenGL 上下文在“%1”上。帧池将无法注册纹理，该路流不会出画面。</translation>
+    </message>
+    <message>
+        <source>The probe reports that backend "%1" is unavailable on this system.</source>
+        <translation>探测显示后端“%1”在本机不可用。</translation>
+    </message>
+    <message>
+        <source>Use Tier 2 (VA-API hardware decode)</source>
+        <translation>改用 Tier 2（VA-API 硬件解码）</translation>
+    </message>
+    <message>
+        <source>Use Tier 3 (CPU decode)</source>
+        <translation>改用 Tier 3（CPU 解码）</translation>
+    </message>
+    <message>
+        <source>Switch to Xwayland + PRIME</source>
+        <translation>改用 Xwayland + PRIME</translation>
+    </message>
+    <message>
+        <source>Force %1 anyway</source>
+        <translation>仍然强制 %1</translation>
+    </message>
+    <message>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
+    </message>
+    <message>
+        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
+        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
+    </message>
+    <message>
+        <source>detected unavailable</source>
+        <translation>探测为不可用</translation>
+    </message>
+    <message>
+        <source>Auto (dynamic probe)</source>
+        <translation>自动（动态探测）</translation>
+    </message>
+    <message>
+        <source>the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Planned - not implemented; Tier 3 is used instead</source>
+        <translation>规划中——尚未实现；实际使用 Tier 3</translation>
     </message>
 </context>
 </TS>

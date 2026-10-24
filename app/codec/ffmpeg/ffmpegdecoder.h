@@ -37,6 +37,8 @@ extern "C" {
 #include <QWaitCondition>
 
 #include "codec/decoder.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/video_hardware_pipeline.h"
 #include "common/ffmpegutils.h"
 
 namespace olive {
@@ -116,11 +118,27 @@ private:
       return avstream_;
     }
 
+    IVideoHardwarePipeline* hw_pipeline() const
+    {
+      return hw_pipeline_.get();
+    }
+
   private:
     AVFormatContext* fmt_ctx_;
     AVCodecContext* codec_ctx_;
     AVStream* avstream_;
     AVDictionary* opts_;
+    int cuda_frame_count_;
+    int nvdec_quota_slot_{-1};
+    AVBufferRef* hw_device_ctx_{nullptr};
+    std::unique_ptr<IVideoHardwarePipeline> hw_pipeline_;
+
+    // Patch 0116: per-stream record of forced backends that already failed physical
+    // initialization. The factory's global cache is keyed by codec/dimensions and is
+    // shared by every stream; this context is scoped to one decoder instance so a
+    // failure on one stream is not re-attempted for the lifetime of that stream (and
+    // is not leaked into unrelated streams).
+    StreamFallbackContext stream_fallback_ctx_;
 
   };
 
@@ -140,8 +158,6 @@ private:
   static int GetNativeChannelCount(AVPixelFormat pix_fmt);
 
   static uint64_t ValidateChannelLayout(AVStream *stream);
-
-  static const char* GetInterlacingModeInFFmpeg(VideoParams::Interlacing interlacing);
 
   static bool IsPixelFormatGLSLCompatible(AVPixelFormat f);
 
@@ -179,6 +195,11 @@ private:
   bool cache_at_eof_;
 
   Instance instance_;
+
+  TexturePtr last_valid_texture_{nullptr};
+  rational last_requested_time_{0, 1};
+  int64_t last_retrieve_time_ms_{0};
+  int64_t scrub_settle_time_ms_{0};
 
 };
 

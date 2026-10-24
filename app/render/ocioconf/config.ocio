@@ -29,10 +29,13 @@ roles:
   texture_paint: sRGB OETF
   matte_paint: Filmic Log Encoding
   cie_xyz_d65_interchange: CIE-XYZ D65
+  aces_interchange: ACES2065-1
+  rendering: ACEScg
 
 displays:
   sRGB:
     - !<View> {name: sRGB OETF, colorspace: sRGB OETF}
+    - !<View> {name: HDR to SDR, colorspace: HDR SDR}
     - !<View> {name: Non-Colour Data, colorspace: Non-Colour Data}
     - !<View> {name: Linear Raw, colorspace: Linear}
     - !<View> {name: Filmic Log Encoding Base, colorspace: Filmic Log Encoding}
@@ -241,7 +244,7 @@ colorspaces:
     equalitygroup: ""
     bitdepth: 32f
     description: |
-      Panasonic V-Log / V-Gamut
+      ARRI ALEXA LogC (EI 800) in ALEXA Wide Gamut (AWG)
     isdata: false
     allocation: uniform
     allocationvars: [0, 1]
@@ -256,7 +259,7 @@ colorspaces:
     equalitygroup: ""
     bitdepth: 32f
     description: |
-      Panasonic V-Log / V-Gamut
+      ARRI ALEXA LogC (EI 400) in ALEXA Wide Gamut (AWG)
     isdata: false
     allocation: uniform
     allocationvars: [0, 1]
@@ -279,6 +282,36 @@ colorspaces:
       children:
         - !<LogCameraTransform> {log_side_slope: 0.0647954196341293, log_side_offset: -0.295908392682586, lin_side_slope: 2231.82630906769, lin_side_offset: 64, lin_side_break: -0.0180569961199113, direction: inverse}
         - !<MatrixTransform> {matrix: [1.893123, -0.780882, -0.112242, 0, -0.205700,  1.340257, -0.134557, 0, -0.012706, -0.152185,  1.164891, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Sony S-Gamut3.Cine / S-Log3
+    family: Camera Footage
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Sony S-Gamut3.Cine / S-Log3 camera input
+    isdata: false
+    allocation: uniform
+    allocationvars: [0, 1]
+    to_reference: !<GroupTransform>
+      children:
+        - !<LogCameraTransform> {log_side_slope: 0.2556207233626588, log_side_offset: 0.4105571847507331, lin_side_slope: 5.263157894736842, lin_side_offset: 0.05263157894736842, lin_side_break: 0.01125000, direction: inverse}
+        - !<MatrixTransform> {matrix: [1.554045, -0.456044, -0.097980, 0, -0.103986, 1.201416, -0.097430, 0, -0.012586, -0.147133, 1.159719, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Sony S-Gamut3 / S-Log3
+    family: Camera Footage
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Sony S-Gamut3 / S-Log3 camera input
+    isdata: false
+    allocation: uniform
+    allocationvars: [0, 1]
+    to_reference: !<GroupTransform>
+      children:
+        - !<LogCameraTransform> {log_side_slope: 0.2556207233626588, log_side_offset: 0.4105571847507331, lin_side_slope: 5.263157894736842, lin_side_offset: 0.05263157894736842, lin_side_break: 0.01125000, direction: inverse}
+        - !<MatrixTransform> {matrix: [1.652155, -0.552467, -0.099688, 0, -0.129994, 1.229156, -0.099162, 0, -0.013620, -0.162386, 1.176006, 0, 0, 0, 0, 1]}
 
   - !<ColorSpace>
     name: Blackmagic Film Wide Gamut (Gen 5)
@@ -309,6 +342,54 @@ colorspaces:
     to_reference: !<GroupTransform>
       children:
         - !<FileTransform> {src: rec709_to_linear.spi1d, interpolation: linear}
+
+  - !<ColorSpace>
+    name: Rec.2020 PQ
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Rec.2020 / SMPTE ST-2084 (PQ) HDR input. PQ is decoded with OCIO's
+      built-in ST-2084 curve and converted from Rec.2020 primaries to the
+      Rec.709 linear reference.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<GroupTransform>
+      children:
+        - !<BuiltinTransform> {style: "CURVE - ST-2084_to_LINEAR"}
+        - !<MatrixTransform> {matrix: [1.66049633, -0.58765635, -0.07284083, 0, -0.12454704, 1.13289513, -0.00834832, 0, -0.01815369, -0.10059740, 1.11875110, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: Rec.2020 HLG
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Rec.2020 / ITU-R BT.2100 HLG HDR input. HLG is decoded with the
+      BT.2100 inverse OETF and converted from Rec.2020 primaries to the
+      Rec.709 linear reference.
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<GroupTransform>
+      children:
+        - !<FileTransform> {src: HLG_OETF_to_Linear.spi1d, interpolation: linear}
+        - !<MatrixTransform> {matrix: [1.66049633, -0.58765635, -0.07284083, 0, -0.12454704, 1.13289513, -0.00834832, 0, -0.01815369, -0.10059740, 1.11875110, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: HDR SDR
+    family: HDR
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      HDR-to-SDR display view. The curve is an OCIO-baked approximation of the
+      ACES 2.0 SDR-100nit-REC709 output transform, applied through a
+      FileTransform so the bundled config remains OCIO 2 profile compatible.
+    isdata: false
+    allocation: uniform
+    allocationvars: [0.0, 1.0]
+    from_reference: !<FileTransform> {src: HDR_Tone.spi1d, interpolation: linear}
 
   - !<ColorSpace>
     name: Rec.601 OETF (NTSC)
@@ -350,6 +431,30 @@ colorspaces:
     isdata: true
     allocation: uniform
     allocationvars: [0, 1]
+
+  - !<ColorSpace>
+    name: ACEScg
+    family: ACES
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Academy Color Encoding System (ACEScg) with AP1 primaries and D60 white point, scene-linear. Note: provides matrix-level input/working space; display rendering maps through project display view (full ACES RRT+ODT output transforms require loading external studio ACES config).
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<MatrixTransform> {matrix: [1.70505089, -0.62420202, -0.08084887, 0, -0.12970051, 1.13846808, -0.00876757, 0, -0.02416639, -0.12461416, 1.14878055, 0, 0, 0, 0, 1]}
+
+  - !<ColorSpace>
+    name: ACES2065-1
+    family: ACES
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Academy Color Encoding System (ACES2065-1 / SMPTE ST 2065-1) with AP0 primaries and D60 white point, scene-linear. Note: provides matrix-level input/working space; display rendering maps through project display view (full ACES RRT+ODT output transforms require loading external studio ACES config).
+    isdata: false
+    allocation: lg2
+    allocationvars: [-12.4739311883, 12.5260688117, 0.00392156862]
+    to_reference: !<MatrixTransform> {matrix: [2.52168619, -1.13413098, -0.38755521, 0, -0.27647991, 1.37271909, -0.09623918, 0, -0.01537806, -0.15297534, 1.16835340, 0, 0, 0, 0, 1]}
 
 looks:
   - !<Look>

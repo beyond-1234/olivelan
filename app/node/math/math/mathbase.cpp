@@ -20,6 +20,8 @@
 
 #include "math.h"
 
+#include <cmath>
+
 #include <QMatrix4x4>
 #include <QVector2D>
 

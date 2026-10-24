@@ -24,7 +24,6 @@
 
 #include "common/xmlutils.h"
 #include "ffmpeg/ffmpegencoder.h"
-#include "oiio/oiioencoder.h"
 
 namespace olive {
 
@@ -288,8 +287,6 @@ Encoder* Encoder::CreateFromID(Type id, const EncodingParams& params)
     break;
   case kEncoderTypeFFmpeg:
     return new FFmpegEncoder(params);
-  case kEncoderTypeOIIO:
-    return new OIIOEncoder(params);
   }
 
   return nullptr;
@@ -314,7 +311,9 @@ Encoder::Type Encoder::GetTypeFromFormat(ExportFormat::Format f)
   case ExportFormat::kFormatOpenEXR:
   case ExportFormat::kFormatPNG:
   case ExportFormat::kFormatTIFF:
-    return kEncoderTypeOIIO;
+    // Patch 0032: route still images and image sequences through FFmpegEncoder,
+    // which now writes one file per frame, instead of the OIIO encoder.
+    return kEncoderTypeFFmpeg;
   case ExportFormat::kFormatCount:
     break;
   }

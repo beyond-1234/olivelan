@@ -20,15 +20,16 @@
 
 #include "viewerdisplay.h"
 
-#include <OpenImageIO/imagebuf.h>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QFileInfo>
+#include <QImage>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
+#include <QOpenGLWidget>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
@@ -44,6 +45,7 @@
 #include "node/gizmo/point.h"
 #include "node/gizmo/polygon.h"
 #include "node/gizmo/screen.h"
+#include "ui/style/designtokenregistry.h"
 #include "window/mainwindow/mainwindow.h"
 
 namespace olive {
@@ -63,6 +65,10 @@ ViewerDisplayWidget::ViewerDisplayWidget(QWidget *parent) :
   deinterlace_(false),
   show_fps_(false),
   frames_skipped_(0),
+  presented_frames_(0),
+  presented_frame_pending_(false),
+  has_presented_timestamp_(false),
+  last_presented_timestamp_(0),
   show_widget_background_(false),
   playback_speed_(0),
   push_mode_(kPushNull),
@@ -71,6 +77,16 @@ ViewerDisplayWidget::ViewerDisplayWidget(QWidget *parent) :
   text_edit_(nullptr)
 {
   connect(Core::instance(), &Core::ToolChanged, this, &ViewerDisplayWidget::ToolChanged);
+
+  // Patch 0103: only count a frame after its swap has completed. UpdateFromQueue() sets the
+  // pending flag when it selects a new queue timestamp; a repeated SetImage() for the same
+  // timestamp does not create a second pending frame.
+  connect(this, &ManagedDisplayWidget::frameSwapped, this, [this]() {
+    if (presented_frame_pending_) {
+      presented_frame_pending_ = false;
+      presented_frames_++;
+    }
+  });
 
   // Initializes cursor based on tool
   UpdateCursor();
@@ -124,6 +140,12 @@ void ViewerDisplayWidget::SetSignalCursorColorEnabled(bool e)
 {
   signal_cursor_color_ = e;
   SetInnerMouseTracking(e);
+}
+
+QImage ViewerDisplayWidget::GrabFrame()
+{
+  QOpenGLWidget *widget = qobject_cast<QOpenGLWidget *>(inner_widget());
+  return widget ? widget->grabFramebuffer() : QImage();
 }
 
 void ViewerDisplayWidget::SetImage(const QVariant &buffer)
@@ -245,6 +267,9 @@ void ViewerDisplayWidget::ResetFPSTimer()
   fps_timer_start_ = QDateTime::currentMSecsSinceEpoch();
   fps_timer_update_count_ = 0;
   frames_skipped_ = 0;
+  presented_frames_ = 0;
+  presented_frame_pending_ = false;
+  has_presented_timestamp_ = false;
   frame_rate_average_count_ = 0;
 
   Core::instance()->ClearStatusBarMessage();
@@ -370,9 +395,20 @@ bool ViewerDisplayWidget::eventFilter(QObject *o, QEvent *e)
 
 void ViewerDisplayWidget::OnPaint()
 {
+  if (!renderer()->IsValid()) {
+    return;
+  }
+
+  const bool checkerboard = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("viewer.checkerboard"), 0);
+
   // Clear background to empty
   QColor bg_color = show_widget_background_ ? palette().window().color() : Qt::black;
   renderer()->ClearDestination(nullptr, bg_color.redF(), bg_color.greenF(), bg_color.blueF());
+
+  if (checkerboard) {
+    DrawCheckerboard();
+  }
 
   // We only draw if we have a pipeline
   if (push_mode_ != kPushNull) {
@@ -380,7 +416,9 @@ void ViewerDisplayWidget::OnPaint()
     VideoParams device_params = GetViewportParams();
 
     if (push_mode_ == kPushBlank) {
-      DrawBlank(device_params);
+      if (!checkerboard) {
+        DrawBlank(device_params);
+      }
     } else if (color_service()) {
       if (FramePtr frame = load_frame_.value<FramePtr>()) {
         // This is a CPU frame, upload it now
@@ -408,7 +446,9 @@ void ViewerDisplayWidget::OnPaint()
       TexturePtr texture_to_draw = texture_;
 
       if (!texture_to_draw || texture_to_draw->IsDummy()) {
-        DrawBlank(device_params);
+        if (!checkerboard) {
+          DrawBlank(device_params);
+        }
       } else {
         if (deinterlace_) {
           if (deinterlace_shader_.isNull()) {
@@ -428,6 +468,13 @@ void ViewerDisplayWidget::OnPaint()
           renderer()->BlitToTexture(deinterlace_shader_, job, deinterlace_texture_.get());
 
           texture_to_draw = deinterlace_texture_;
+        }
+
+        // Texture-level detection is only a fallback. Project-level detection
+        // in ManagedDisplayWidget makes the HDR view sticky across mixed
+        // HDR/SDR edit points.
+        if (texture_to_draw->params().needs_hdr_mapping()) {
+          SetHdrMode(true);
         }
 
         ColorTransformJob ctj;
@@ -855,8 +902,13 @@ bool ViewerDisplayWidget::OnMouseMove(QMouseEvent *event)
   if (hand_dragging_) {
 
     // Emit movement
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     emit HandDragMoved(event->x() - hand_last_drag_pos_.x(),
                        event->y() - hand_last_drag_pos_.y());
+#else
+    emit HandDragMoved(event->position().x() - hand_last_drag_pos_.x(),
+                       event->position().y() - hand_last_drag_pos_.y());
+#endif
 
     hand_last_drag_pos_ = event->pos();
 
@@ -1123,11 +1175,19 @@ void ViewerDisplayWidget::ForwardDragEventToTextEdit(T *e)
     text_edit_->dragLeaveEvent(e);
   } else {
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     T relay(AdjustPosByVAlign(GetVirtualPosForTextEdit(e->pos())).toPoint(),
             e->possibleActions(),
             e->mimeData(),
             e->mouseButtons(),
             e->keyboardModifiers());
+#else
+    T relay(AdjustPosByVAlign(GetVirtualPosForTextEdit(e->position().toPoint())).toPoint(),
+            e->possibleActions(),
+            e->mimeData(),
+            e->buttons(),
+            e->modifiers());
+#endif
 
     if (e->type() == QEvent::DragEnter) {
       text_edit_->dragEnterEvent(static_cast<QDragEnterEvent*>(&relay));
@@ -1175,7 +1235,11 @@ bool ViewerDisplayWidget::ForwardMouseEventToTextEdit(QMouseEvent *event, bool c
 
   local_pos = AdjustPosByVAlign(local_pos);
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   QMouseEvent derived(event->type(), local_pos, event->windowPos(), event->screenPos(), event->button(), event->buttons(), event->modifiers(), event->source());
+#else
+  QMouseEvent derived(event->type(), local_pos, event->scenePosition(), event->globalPosition(), event->button(), event->buttons(), event->modifiers(), event->pointingDevice());
+#endif
   return ForwardEventToTextEdit(&derived);
 }
 
@@ -1229,6 +1293,28 @@ void ViewerDisplayWidget::GenerateGizmoTransforms()
 
   gizmo_last_draw_transform_ = GenerateGizmoTransform(gt, gizmo_draw_time_);
   gizmo_last_draw_transform_inverted_ = gizmo_last_draw_transform_.inverted();
+}
+
+void ViewerDisplayWidget::DrawCheckerboard()
+{
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  const QColor dark = registry->GetColor(QStringLiteral("color.viewer.checker.dark"),
+                                         palette().window().color());
+  const QColor light = registry->GetColor(QStringLiteral("color.viewer.checker.light"),
+                                          palette().window().color().lighter(112));
+
+  // A tiny tiled brush keeps this cheap even while playing back 4K.
+  QImage tile(32, 32, QImage::Format_RGB32);
+  tile.fill(dark);
+
+  QPainter tile_painter(&tile);
+  tile_painter.fillRect(0, 0, 16, 16, light);
+  tile_painter.fillRect(16, 16, 16, 16, light);
+  tile_painter.end();
+
+  QPainter painter(paint_device());
+  painter.setRenderHint(QPainter::Antialiasing, false);
+  painter.fillRect(rect(), QBrush(tile));
 }
 
 void ViewerDisplayWidget::DrawBlank(const VideoParams &device_params)
@@ -1310,6 +1396,15 @@ void ViewerDisplayWidget::UpdateFromQueue()
       const ViewerPlaybackFrame& pf = queue_.front();
 
       if (pf.timestamp == time) {
+
+        // Patch 0103: remember that a distinct sequence frame has been selected for display.
+        // The counter is incremented on frameSwapped(), so a coalesced update or a second
+        // SetImage() for the same timestamp cannot inflate the presented count.
+        if (!has_presented_timestamp_ || pf.timestamp != last_presented_timestamp_) {
+          has_presented_timestamp_ = true;
+          last_presented_timestamp_ = pf.timestamp;
+          presented_frame_pending_ = true;
+        }
 
         // Frame was in queue, no need to decode anything
         SetImage(pf.frame);

@@ -42,6 +42,9 @@ public:
 signals:
   void AboutToDeleteTrack(Track *track);
 
+protected:
+  void paintEvent(QPaintEvent *event) override;
+
 private:
   QPushButton* CreateMSLButton(const QColor &checked_color) const;
 

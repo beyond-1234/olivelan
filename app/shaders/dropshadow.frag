@@ -27,6 +27,11 @@ float gaussian2(float x, float y, float sigma) {
   return (1.0/((sigma*sigma)*2.0*M_PI))*exp(-0.5*(((x*x) + (y*y))/(sigma*sigma)));
 }
 
+// 1D Gaussian formula for separated 1D passes (normalized integral)
+float gaussian1d(float x, float sigma) {
+  return (1.0 / (sigma * sqrt(2.0 * M_PI))) * exp(-0.5 * (x * x) / (sigma * sigma));
+}
+
 void main(void) {
   if (ove_iteration == 2 || radius_in == 0.0) {
 
@@ -56,55 +61,73 @@ void main(void) {
 
     vec4 composite = vec4(0.0);
 
-    float divider, sigma;
-
-    if (fast_in) {
-
-      // Calculate the weight of each pixel based on the radius
-      divider = 1.0 / real_radius;
-
-    } else {
-
-      // Using (radius = 3 * sigma) because 3 standard deviations covers 97% of the blur according to this document:
-      // http://chemaguerra.com/gaussian-filter-radius/
-      sigma = real_radius;
+    float sigma = real_radius;
+    if (!fast_in) {
+      // Using (radius = 3 * sigma) because 3 standard deviations covers 97% of the blur
       real_radius *= 3.0;
-
-      // Use gaussian formula to calculate the weight of all pixels
-      divider = 0.0;
-      for (float i = -real_radius + 0.5; i <= real_radius; i += 2.0) {
-        divider += gaussian2(i, 0.0, sigma);
-      }
-
     }
 
-    for (float i = -real_radius + 0.5; i <= real_radius; i += 2.0) {
-      float weight;
+    float step_size = max(1.0, floor(real_radius / 48.0));
+    float half_step = step_size * 0.5;
+    float total_weight = 0.0;
 
-      if (fast_in) {
-        weight = divider;
-      } else {
-        weight = gaussian2(i, 0.0, sigma) / divider;
+    if (fast_in) {
+      // Fast mode: unweighted box decimation
+      for (float i = -real_radius + half_step; i <= real_radius; i += step_size) {
+        vec2 pixel_coord = ove_texcoord;
+        vec4 tex_col;
+        if (ove_iteration == 0) {
+          pixel_coord.x += i / resolution_in.x;
+          tex_col = texture(tex_in, pixel_coord);
+        } else {
+          pixel_coord.y += i / resolution_in.y;
+          tex_col = texture(previous_iteration_in, pixel_coord);
+        }
+        composite += tex_col;
+        total_weight += 1.0;
       }
+    } else {
+      // High-quality Bilinear Gaussian Decimation
+      float curr = -real_radius + half_step;
+      while (curr <= real_radius) {
+        float x1 = curr;
+        float w1 = gaussian1d(x1, sigma) * step_size;
+        curr += step_size;
 
-      vec2 pixel_coord = ove_texcoord;
-      vec4 tex_col;
-      if (ove_iteration == 0) {
-        pixel_coord.x += i / resolution_in.x;
+        float tap_offset = x1;
+        float tap_weight = w1;
 
-        // Pull from main texture
-        tex_col = texture(tex_in, pixel_coord);
-      } else if (ove_iteration == 1) {
-        pixel_coord.y += i / resolution_in.y;
+        if (curr <= real_radius) {
+          float x2 = curr;
+          float w2 = gaussian1d(x2, sigma) * step_size;
+          curr += step_size;
 
-        // Pull from previous iteration
-        tex_col = texture(previous_iteration_in, pixel_coord);
+          float pair_weight = w1 + w2;
+          if (pair_weight > 0.000001) {
+            tap_offset = (x1 * w1 + x2 * w2) / pair_weight;
+            tap_weight = pair_weight;
+          }
+        }
+
+        vec2 pixel_coord = ove_texcoord;
+        vec4 tex_col;
+        if (ove_iteration == 0) {
+          pixel_coord.x += tap_offset / resolution_in.x;
+          tex_col = texture(tex_in, pixel_coord);
+        } else {
+          pixel_coord.y += tap_offset / resolution_in.y;
+          tex_col = texture(previous_iteration_in, pixel_coord);
+        }
+
+        composite += tex_col * tap_weight;
+        total_weight += tap_weight;
       }
+    }
 
-      composite += tex_col * weight;
+    if (total_weight > 0.0) {
+      composite /= total_weight;
     }
 
     frag_color = composite;
   }
-
 }

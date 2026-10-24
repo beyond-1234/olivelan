@@ -42,16 +42,24 @@ public:
 protected slots:
   virtual void ConfigChanged() = 0;
 
+public:
+  ColorProcessorPtr processor() const { return processor_; }
+
 protected:
   ColorManager *manager() const { return manager_; }
 
-  ColorProcessorPtr processor() const { return processor_; }
   void set_processor(ColorProcessorPtr p) { processor_ = p; }
+
+  virtual bool PassThroughWhenMissingColorProcessor() const { return false; }
 
 private:
   ColorManager *manager_;
 
   ColorProcessorPtr processor_;
+
+  // Value() is const but runs on render threads; a per-node flag keeps the warning attributable
+  // to this node (the previous function-local static was shared process-wide).
+  mutable bool warned_missing_processor_ = false;
 
 };
 

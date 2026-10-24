@@ -20,6 +20,10 @@
 
 #include "renderer.h"
 
+#include "common/ociobridge.h"
+#include "render/colorprocessor.h"
+#include "render/colorstats.h"
+
 #include <QDateTime>
 #include <QThread>
 #include <QTimer>
@@ -132,12 +136,14 @@ QVariant Renderer::GetDefaultShader()
 
 void Renderer::Destroy()
 {
+  valid_ = false;
+
   if (!default_shader_.isNull()) {
     DestroyNativeShader(default_shader_);
     default_shader_.clear();
   }
 
-  color_cache_.clear();
+  ClearColorCache();
 
   if (!interlace_texture_.isNull()) {
     DestroyNativeShader(interlace_texture_);
@@ -152,6 +158,17 @@ void Renderer::Destroy()
   DestroyInternal();
 }
 
+void Renderer::ClearColorCache()
+{
+  QMutexLocker locker(&color_cache_mutex_);
+  for (auto it = color_cache_.begin(); it != color_cache_.end(); ++it) {
+    if (!it.value().compiled_shader.isNull()) {
+      DestroyNativeShader(it.value().compiled_shader);
+    }
+  }
+  color_cache_.clear();
+}
+
 TexturePtr Renderer::CreateTextureFromNativeHandle(const QVariant &v, const VideoParams &params)
 {
   if (v.isNull()) {
@@ -163,13 +180,26 @@ TexturePtr Renderer::CreateTextureFromNativeHandle(const QVariant &v, const Vide
 
 bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::ColorContext *ctx)
 {
+  if (!valid_) {
+    return false;
+  }
+
   QMutexLocker locker(&color_cache_mutex_);
 
   ColorContext& color_ctx = *ctx;
 
+  // HDR display rendering is handled by the OCIO GPU shader; no extra
+  // mastering-peak cache key is needed here.
+  if (!color_job.GetColorProcessor()) {
+    qWarning() << "[Color] Refusing to blit a color job with no valid ColorProcessor";
+    return false;
+  }
+
   QString proc_id = color_job.id();
 
   if (color_cache_.contains(proc_id)) {
+    GetColorStats().shader_cache_hits.fetch_add(1, std::memory_order_relaxed);
+    color_cache_[proc_id].last_accessed = QDateTime::currentMSecsSinceEpoch();
     color_ctx = color_cache_.value(proc_id);
     return true;
   } else {
@@ -181,12 +211,20 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       ocio_func_name = color_job.GetFunctionName();
     }
     auto shader_desc = OCIO::GpuShaderDesc::CreateShaderDesc();
-    shader_desc->setLanguage(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
+    shader_desc->setLanguage(static_cast<OCIO::GpuLanguage>(GetGpuShaderLanguage()));
     shader_desc->setFunctionName(ocio_func_name.toUtf8());
     shader_desc->setResourcePrefix("ocio_");
 
     // Generate shader
-    color_job.GetColorProcessor()->GetProcessor()->getDefaultGPUProcessor()->extractGpuShaderInfo(shader_desc);
+    auto proc = color_job.GetColorProcessor();
+    auto ocio_proc = proc ? ColorProcessorOCIO::GetProcessor(proc.get()) : nullptr;
+    auto gpu_proc = ocio_proc ? ocio_proc->getDefaultGPUProcessor() : nullptr;
+    if (!gpu_proc) {
+      qWarning() << "[Color] ColorProcessor has no valid GPU processor; bypassing color transform";
+      return false;
+    }
+
+    gpu_proc->extractGpuShaderInfo(shader_desc);
 
     ShaderCode code;
     if (const Node *shader_src = color_job.CustomShaderSource()) {
@@ -197,13 +235,14 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       code = FileFunctions::ReadFileAsString(QStringLiteral(":shaders/colormanage.frag"));
       code.set_frag_code(code.frag_code().arg(shader_desc->getShaderText()));
     }
-
     // Try to compile shader
     color_ctx.compiled_shader = CreateNativeShader(code);
 
     if (color_ctx.compiled_shader.isNull()) {
       return false;
     }
+
+    GetColorStats().shader_compiles.fetch_add(1, std::memory_order_relaxed);
 
     color_ctx.lut3d_textures.resize(shader_desc->getNum3DTextures());
     for (unsigned int i=0; i<shader_desc->getNum3DTextures(); i++) {
@@ -242,7 +281,17 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       OCIO::GpuShaderDesc::TextureType channel = OCIO::GpuShaderDesc::TEXTURE_RGB_CHANNEL;
       OCIO::Interpolation interpolation = OCIO::INTERP_LINEAR;
 
+#if OCIO_VERSION_HEX >= 0x02030000
+      // OCIO 2.3 added TextureDimensions to the GpuShaderDesc texture query. The
+      // texture storage is still width x height, so keep using that below; the
+      // dimension flag only tells clients whether the generated sampler is 1D or 2D.
+      OCIO::GpuShaderDesc::TextureDimensions dimensions =
+          OCIO::GpuShaderDesc::TEXTURE_1D;
+      shader_desc->getTexture(i, tex_name, sampler_name, width, height, channel,
+                              dimensions, interpolation);
+#else
       shader_desc->getTexture(i, tex_name, sampler_name, width, height, channel, interpolation);
+#endif
 
       if (!tex_name || !*tex_name
           || !sampler_name || !*sampler_name
@@ -262,6 +311,29 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
       color_ctx.lut1d_textures[i].texture = CreateTexture(VideoParams(width, height, PixelFormat::F32, (channel == OCIO::GpuShaderDesc::TEXTURE_RED_CHANNEL) ? 1 : VideoParams::kRGBChannelCount), values);
       color_ctx.lut1d_textures[i].name = sampler_name;
       color_ctx.lut1d_textures[i].interpolation = (interpolation == OCIO::INTERP_NEAREST) ? Texture::kNearest : Texture::kLinear;
+    }
+
+
+
+    color_ctx.last_accessed = QDateTime::currentMSecsSinceEpoch();
+
+    if (color_cache_.size() >= MAX_COLOR_CACHE_ENTRIES) {
+      QString oldest_key;
+      qint64 oldest_time = std::numeric_limits<qint64>::max();
+      for (auto it = color_cache_.constBegin(); it != color_cache_.constEnd(); ++it) {
+        if (it.value().last_accessed < oldest_time) {
+          oldest_time = it.value().last_accessed;
+          oldest_key = it.key();
+        }
+      }
+      if (!oldest_key.isEmpty()) {
+        auto evicted = color_cache_.take(oldest_key);
+        if (!evicted.compiled_shader.isNull()) {
+          DestroyNativeShader(evicted.compiled_shader);
+        }
+        evicted.lut3d_textures.clear();
+        evicted.lut1d_textures.clear();
+      }
     }
 
     color_cache_.insert(proc_id, color_ctx);
@@ -286,6 +358,10 @@ void Renderer::ClearOldTextures()
 
 void Renderer::BlitColorManaged(const ColorTransformJob &color_job, Texture *destination, const VideoParams &params)
 {
+  if (!valid_) {
+    return;
+  }
+
   ColorContext color_ctx;
   if (!GetColorContext(color_job, &color_ctx)) {
     return;

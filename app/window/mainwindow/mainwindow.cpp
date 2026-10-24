@@ -22,24 +22,45 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QImage>
 #include <QMessageBox>
 #include <QScreen>
+#include <QStatusBar>
+#include <QTimer>
+
+#include <kddockwidgets/LayoutSaver.h>
+#include <kddockwidgets/core/DropArea.h>
+#include <kddockwidgets/core/MainWindow.h>
+#include "../../../ext/KDDockWidgets/src/core/layouting/LayoutingSeparator_p.h"
 
 #ifdef Q_OS_LINUX
 #include <QOffscreenSurface>
 #endif
 
 #include "dialog/about/about.h"
+#include "dialog/gpusession/gpusessiondialog.h"
+#include "codec/hal/gpu_environment_probe.h"
+#include "codec/hal/gpu_session_advisor.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/hal_stats.h"
+#include "render/colorstats.h"
+#include "render/rendermanager.h"
 #include "mainmenu.h"
 #include "mainstatusbar.h"
 #include "timeline/timelineundoworkarea.h"
+#include "ui/style/thememanager.h"
 
 namespace olive {
 
-#define super KDDockWidgets::MainWindow
+#define super KDDockWidgets::QtWidgets::MainWindow
 
 MainWindow::MainWindow(QWidget *parent) :
   super(QStringLiteral("OliveMain"), KDDockWidgets::MainWindowOption_None, parent),
+  status_bar_(nullptr),
+  initial_layout_applied_(false),
+  theme_dock_sizes_applied_(false),
   project_(nullptr)
 {
   // Resizes main window to desktop geometry on startup. Fixes the following issues:
@@ -66,10 +87,27 @@ MainWindow::MainWindow(QWidget *parent) :
   LoadCustomShortcuts();
 
   // Create and set status bar
-  MainStatusBar* status_bar = new MainStatusBar(this);
-  status_bar->ConnectTaskManager(TaskManager::instance());
-  connect(status_bar, &MainStatusBar::DoubleClicked, this, &MainWindow::StatusBarDoubleClicked);
-  setStatusBar(status_bar);
+  status_bar_ = new MainStatusBar(this);
+  status_bar_->ConnectTaskManager(TaskManager::instance());
+  connect(status_bar_, &MainStatusBar::DoubleClicked, this, &MainWindow::StatusBarDoubleClicked);
+  setStatusBar(status_bar_);
+
+  // RenderThread starts before MainWindow exists, so connect and then query the cached state.
+  if (RenderManager::instance()) {
+    connect(RenderManager::instance(), &RenderManager::RendererStatusChanged,
+            this, &MainWindow::UpdateRendererStatus);
+    UpdateRendererStatus();
+  }
+
+  // Patch 0097: a forced backend that cannot initialize used to fall back with only qWarning().
+  // Surface it in the window so the user knows why the requested tier is not active.
+  HardwarePipelineFactory::SetFallbackHandler([this](const QString& reason) {
+    QMetaObject::invokeMethod(this, [this, reason]() {
+      if (statusBar()) {
+        statusBar()->showMessage(tr("Hardware decode fallback: %1").arg(reason), 15000);
+      }
+    }, Qt::QueuedConnection);
+  });
 
   // Create standard panels
   node_panel_ = new NodePanel();
@@ -112,6 +150,8 @@ MainWindow::MainWindow(QWidget *parent) :
   sequence_viewer_panel_->ConnectTimeBasedPanel(multicam_panel_);
 
   connect(PanelManager::instance(), &PanelManager::FocusedPanelChanged, this, &MainWindow::FocusedPanelChanged);
+  connect(ThemeManager::instance(), &ThemeManager::ThemeChanged,
+          this, &MainWindow::OnThemeChanged);
 
   sequence_viewer_panel_->AddPlaybackDevice(multicam_panel_->GetMulticamWidget()->GetDisplayWidget());
   sequence_viewer_panel_->ConnectMulticamWidget(multicam_panel_->GetMulticamWidget());
@@ -120,11 +160,20 @@ MainWindow::MainWindow(QWidget *parent) :
 
   UpdateTitle();
 
-  QMetaObject::invokeMethod(this, &MainWindow::SetDefaultLayout, Qt::QueuedConnection);
+  // NOTE: the default dock layout is deliberately *not* built here. On Wayland the window has no
+  // size yet at this point (and even the first showEvent/resize can still be 0x0), which would make
+  // KDDockWidgets lay every panel out at zero size and leave an empty window. ApplyInitialLayoutIfNeeded()
+  // builds it as soon as the window reports a real size - see showEvent()/resizeEvent().
+
+  // Construction has safely finished. Mark ready and schedule layout on next event loop tick.
+  constructor_finished_ = true;
+  QTimer::singleShot(0, this, &MainWindow::ApplyInitialLayoutIfNeeded);
 }
 
 MainWindow::~MainWindow()
 {
+  HardwarePipelineFactory::SetFallbackHandler({});
+
 #ifdef Q_OS_WINDOWS
   if (taskbar_interface_) {
     taskbar_interface_->Release();
@@ -153,8 +202,110 @@ void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
     }
   }
 
-  KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()));
+  // KDDockWidgets 2.x serializes layouts as JSON, which is incompatible with the opaque binary
+  // format used by 1.x. Older Olive projects therefore carry a state blob that can't be restored.
+  // LayoutSaver::restoreLayout() parses with allow_exceptions=false and rejects such data safely
+  // (returns false, leaving the current layout untouched), so we simply fall back to the default
+  // layout rather than leaving panels in an undefined state.
+  if (!KDDockWidgets::LayoutSaver().restoreLayout(qUncompress(info.state()))) {
+    qWarning() << "Failed to restore saved dock layout (incompatible with KDDockWidgets 2.x or corrupt);"
+               << "rebuilding default layout.";
+
+    // Rebuild when a layout was already applied (0075's guarantee: restoreLayout()'s RAII cleanup
+    // can prune empty groups from the *current* layout, so the initial default layout may be left
+    // partially dismantled), and also when the window already has a real size.
+    //
+    // Patch 0092 (P2-3): if neither is true - i.e. we are still at 0x0 before the first Wayland
+    // configure - leave initial_layout_applied_ false and let ApplyInitialLayoutIfNeeded() build the
+    // layout once a real size arrives. Setting the flag here used to bypass that size gate and
+    // permanently leave every panel at zero size.
+    if (initial_layout_applied_ || (width() > 0 && height() > 0)) {
+      initial_layout_applied_ = true;
+      SetDefaultLayout();
+    }
+  }
 }
+
+namespace {
+
+bool ApplyThemeDockSizes(KDDockWidgets::Core::MainWindow *main_window,
+                         const ThemeCapabilities &capabilities)
+{
+  if (!main_window) {
+    return false;
+  }
+
+  KDDockWidgets::Core::DropArea *drop_area = main_window->dropArea();
+  if (!drop_area) {
+    return false;
+  }
+
+  const int total_width = drop_area->layoutWidth();
+  const int total_height = drop_area->layoutHeight();
+
+  if (total_width <= 0 || total_height <= 0) {
+    return false;
+  }
+
+  const auto separators = drop_area->separators();
+  if (separators.isEmpty()) {
+    return false;
+  }
+
+  const int spacing = 5;
+  const int timeline_percent = capabilities.timeline_height_percent > 0
+      ? capabilities.timeline_height_percent : 38;
+  const int timeline_height = qMax(260, qRound(total_height * timeline_percent / 100.0));
+  const int top_height = total_height - timeline_height - spacing;
+  const int project_width = capabilities.project_panel_width > 0
+      ? capabilities.project_panel_width : 363;
+  const int inspector_width = capabilities.inspector_panel_width > 0
+      ? capabilities.inspector_panel_width : 340;
+  const int param_target = total_width - (inspector_width + 6);
+  const int tool_target = 60;
+
+  // KDDockWidgets does not expose a public "set dock size" API for this layout.
+  // Moving the separators directly is the least invasive way to give a
+  // three-column preset its side widths and timeline height while keeping the
+  // panels dockable.
+  //
+  // Move the horizontal separators first. Moving the root separator recreates
+  // the child separators, so it has to be the very last operation.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (KDDockWidgets::Core::LayoutingSeparator *separator : separators) {
+      if (!separator) {
+        continue;
+      }
+
+      const bool is_root = separator->orientation() == Qt::Vertical;
+      if ((pass == 0 && is_root) || (pass == 1 && !is_root)) {
+        continue;
+      }
+
+      int target = -1;
+
+      if (is_root) {
+        target = top_height;
+      } else if (separator->geometry().y() > 0) {
+        target = tool_target;
+      } else {
+        target = separator->position() < total_width / 2 ? project_width : param_target;
+      }
+
+      if (target < 0) {
+        continue;
+      }
+
+      separator->onMousePress();
+      separator->onMouseMove(KDDockWidgets::Point(target, target), true);
+      separator->onMouseRelease();
+    }
+  }
+
+  return true;
+}
+
+} // namespace
 
 QString TransformNameForSerialization(const QString &unique, int i)
 {
@@ -265,9 +416,15 @@ void MainWindow::OpenFolder(Folder *i, bool floating)
   panel->set_root(i);
 
   if (floating) {
+    // Floating panels are intentionally top-level windows.
+    panel->show();
+    panel->raise();
     panel->setFloating(floating);
   } else {
+    // Dock first, then show, so KDDockWidgets doesn't have to spin up a transient FloatingWindow.
     project_panel_->addDockWidgetAsTab(panel);
+    panel->show();
+    panel->raise();
   }
 
   // If the panel is closed, just destroy it
@@ -292,6 +449,11 @@ void MainWindow::OpenNodeInViewer(ViewerOutput *node)
   } else {
     // Create a viewer for this node
     ViewerPanel* viewer = AppendPanelInternal(QStringLiteral("ViewerPanel"), viewer_panels_);
+
+    // Viewers open as floating windows (they aren't docked anywhere), so show them explicitly.
+    // "For some reason raise() on its own doesn't do anything, we need both."
+    viewer->show();
+    viewer->raise();
 
     viewer->ConnectViewerNode(node);
 
@@ -366,6 +528,11 @@ void MainWindow::SetProject(Project *p)
   }
 
   if (project_) {
+    if (project_->color_manager() && status_bar_) {
+      disconnect(project_->color_manager(), &ColorManager::ConfigLoadFailed, status_bar_, &MainStatusBar::SetColorConfigFailure);
+      disconnect(project_->color_manager(), &ColorManager::ConfigChanged, status_bar_, &MainStatusBar::ClearColorConfigFailure);
+    }
+
     // Clear all data
     param_panel_->SetContexts(QVector<Node*>());
     node_panel_->SetContexts(QVector<Node*>());
@@ -400,6 +567,20 @@ void MainWindow::SetProject(Project *p)
 
   if (project_) {
     project_panel_->setFocus();
+
+    if (project_->color_manager() && status_bar_) {
+      connect(project_->color_manager(), &ColorManager::ConfigLoadFailed, status_bar_, &MainStatusBar::SetColorConfigFailure);
+      connect(project_->color_manager(), &ColorManager::ConfigChanged, status_bar_, &MainStatusBar::ClearColorConfigFailure);
+
+      if (project_->color_manager()->HasError()) {
+        status_bar_->SetColorConfigFailure(project_->color_manager()->GetConfigFilename(),
+                                           project_->color_manager()->GetLastError());
+      } else {
+        status_bar_->ClearColorConfigFailure();
+      }
+    }
+  } else if (status_bar_) {
+    status_bar_->ClearColorConfigFailure();
   }
 }
 
@@ -490,6 +671,24 @@ void MainWindow::StatusBarDoubleClicked()
   task_man_panel_->raise();
 }
 
+void MainWindow::UpdateRendererStatus()
+{
+  if (!status_bar_ || !RenderManager::instance()) {
+    return;
+  }
+
+  const RenderManager::RendererStatus status = RenderManager::instance()->GetRendererStatus();
+  switch (status) {
+  case RenderManager::RendererStatus::Failed:
+    status_bar_->SetRendererFailure(RenderManager::instance()->GetRendererError());
+    break;
+  case RenderManager::RendererStatus::Ready:
+  case RenderManager::RendererStatus::Initializing:
+    status_bar_->ClearRendererFailure();
+    break;
+  }
+}
+
 void MainWindow::NodePanelGroupOpenedOrClosed()
 {
   NodePanel *p = static_cast<NodePanel*>(sender());
@@ -509,9 +708,52 @@ void MainWindow::TimelinePanelSelectionChanged(const QVector<Block *> &blocks)
 void MainWindow::ShowWelcomeDialog()
 {
   if (OLIVE_CONFIG("ShowWelcomeDialog").toBool()) {
-    AboutDialog ad(true, this);
-    ad.exec();
+    // Shown non-modally on purpose. An application-modal dialog launched around startup competes
+    // for activation with the panels that are being opened while the project/layout settles; on
+    // Wayland (KWin) that makes the main window and the dialog bounce activation back and forth,
+    // with the main window looking frozen/blank. A non-modal welcome dialog can't do that.
+    AboutDialog *ad = new AboutDialog(true, this);
+    ad->setAttribute(Qt::WA_DeleteOnClose);
+    ad->show();
+    ad->raise();
   }
+}
+
+void MainWindow::ShowGpuSessionDialogIfNeeded()
+{
+  // Always record the classification, prompt or not - it is the only trace of why a given tier was
+  // chosen on someone else's machine.
+  qInfo() << "[GPU Session]" << GpuSessionAdvisor::DescribeEnvironment();
+
+  if (OLIVE_CONFIG("GpuSessionPromptDisabled").toBool()) {
+    return;
+  }
+
+  // An explicit OLIVE_GPU_SESSION means the session is already decided (scripted runs, the test
+  // harness); don't interrupt.
+  if (GpuSessionAdvisor::IsSessionForcedByEnvironment()) {
+    return;
+  }
+
+  // Patch 0082 (Phase 9): this process exists because the user just answered this very question.
+  if (GpuSessionAdvisor::WasLaunchedByRestart()) {
+    return;
+  }
+
+  // Only a hybrid Wayland session has a real choice; everywhere else both modes put GL on the same
+  // GPU and the prompt would be pure noise.
+  if (!GpuSessionAdvisor::HasChoice()) {
+    return;
+  }
+
+  // Non-modal for the same reason as the welcome dialog: an application-modal dialog shown around
+  // startup fights the panels being opened nearby for activation, which on Wayland (KWin) makes the
+  // main window look frozen.
+  qInfo() << "[GPU Session] Prompting for the display session choice.";
+  GpuSessionDialog *dialog = new GpuSessionDialog(this);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->show();
+  dialog->raise();
 }
 
 void MainWindow::RevealViewerInProject(ViewerOutput *r)
@@ -619,8 +861,13 @@ TimelinePanel* MainWindow::AppendTimelinePanel()
   TimelinePanel* panel = AppendPanelInternal(QStringLiteral("TimelinePanel"), timeline_panels_);
 
   if (previous) {
+    // Dock first, then show, so KDDockWidgets doesn't have to spin up a transient FloatingWindow.
     previous->addDockWidgetAsTab(panel);
+    panel->show();
+    panel->raise();
   } else {
+    panel->show();
+    panel->raise();
     panel->SetSignalInsteadOfClose(false);
   }
 
@@ -771,9 +1018,12 @@ void MainWindow::UpdateNodePanelContextFromTimelinePanel(TimelinePanel *panel)
     context[i] = blocks.at(i);
   }
 
-  // If no selected blocks, set the context to the sequence
+  // If no selected blocks, most themes show the sequence context. A theme may
+  // declare that the inspector should stay genuinely empty until a clip/effect
+  // is selected.
   ViewerOutput *viewer = panel->GetConnectedViewer();
-  if (viewer && context.isEmpty()) {
+  if (viewer && context.isEmpty()
+      && !ThemeManager::instance()->CurrentCapabilities().empty_inspector_when_unselected) {
     context.append(viewer);
   }
 
@@ -822,33 +1072,108 @@ void MainWindow::FocusedPanelChanged(PanelWidget *panel)
 
 void MainWindow::SetDefaultLayout()
 {
-  KDDockWidgets::InitialOption o;
-  o.preferredSize = QSize(0, centralAreaGeometry().height());
+  const ThemeCapabilities capabilities = ThemeManager::instance()->CurrentCapabilities();
+  const bool three_column = capabilities.workspace_layout
+      == ThemeCapabilities::WorkspaceLayout::kThreeColumn;
 
-  // Top left - Tabify footage viewer, param panel, and node panel
-  addDockWidget(footage_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, o);
-  footage_viewer_panel_->addDockWidgetAsTab(param_panel_);
-  footage_viewer_panel_->addDockWidgetAsTab(node_panel_);
-  param_panel_->raise();
+  theme_dock_sizes_applied_ = false;
 
-  // Top right - sequence viewer
-  addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnRight, footage_viewer_panel_, o);
+  if (three_column) {
+    if (auto *drop_area = mainWindow()->dropArea()) {
+      const QSize area = size();
+      drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
+    }
 
-  // Bottom center - timelines
-  addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom);
+    const int total_height = qMax(600, height());
+    const int timeline_percent = capabilities.timeline_height_percent > 0
+        ? capabilities.timeline_height_percent : 38;
+    const int timeline_height = qMax(260, qRound(total_height * timeline_percent / 100.0));
+    const int project_width = capabilities.project_panel_width > 0
+        ? capabilities.project_panel_width : 363;
+    const int inspector_width = capabilities.inspector_panel_width > 0
+        ? capabilities.inspector_panel_width : 340;
 
-  // Left of timeline - tool panel
-  o.preferredSize = QSize(1, 0);
-  addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), o);
+    // Build the top row first so KDDock's splitter gives the preview the
+    // remaining width instead of stretching the inspector.
+    KDDockWidgets::InitialOption top;
+    top.preferredSize = QSize(0, total_height - timeline_height);
+    addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, top);
+    if (capabilities.show_footage_viewer) {
+      sequence_viewer_panel_->addDockWidgetAsTab(footage_viewer_panel_);
+      sequence_viewer_panel_->raise();
+    }
 
-  // Right of timeline - audio monitor
-  o.preferredSize = QSize(320, 0);
-  addDockWidget(audio_monitor_panel_, KDDockWidgets::Location_OnRight, timeline_panels_.first(), o);
+    // Left: media library and project history.
+    KDDockWidgets::InitialOption left;
+    left.preferredSize = QSize(project_width, 0);
+    addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, sequence_viewer_panel_, left);
+    project_panel_->addDockWidgetAsTab(history_panel_);
+    project_panel_->raise();
 
-  // Bottom left - project panel
-  addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, tool_panel_);
-  project_panel_->addDockWidgetAsTab(history_panel_);
-  project_panel_->raise();
+    // Right: contextual properties. The theme may keep it empty until a
+    // clip/effect is selected.
+    KDDockWidgets::InitialOption right;
+    right.preferredSize = QSize(inspector_width, 0);
+    addDockWidget(param_panel_, KDDockWidgets::Location_OnRight, sequence_viewer_panel_, right);
+    param_panel_->addDockWidgetAsTab(audio_monitor_panel_);
+    if (capabilities.show_node_panel) {
+      param_panel_->addDockWidgetAsTab(node_panel_);
+    }
+    param_panel_->raise();
+
+    // Bottom: timeline spanning the editing area. A theme may keep the legacy
+    // tool rail, but a full-width timeline is the default for this preset.
+    KDDockWidgets::InitialOption bottom;
+    bottom.preferredSize = QSize(0, timeline_height);
+    addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom, nullptr, bottom);
+
+    if (capabilities.show_tool_panel) {
+      KDDockWidgets::InitialOption tool;
+      tool.preferredSize = QSize(60, 0);
+      addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), tool);
+    } else {
+      tool_panel_->close();
+    }
+
+    if (!capabilities.show_footage_viewer) {
+      footage_viewer_panel_->close();
+    }
+    if (!capabilities.show_node_panel) {
+      node_panel_->close();
+    }
+
+    if (width() > 800 && height() > 600) {
+      QTimer::singleShot(0, this, [this]() { ApplyThemeDockSizesWhenReady(5); });
+    }
+  } else {
+    KDDockWidgets::InitialOption o;
+    o.preferredSize = QSize(0, centralAreaGeometry().height());
+
+    // Top left - Tabify footage viewer, param panel, and node panel
+    addDockWidget(footage_viewer_panel_, KDDockWidgets::Location_OnTop, nullptr, o);
+    footage_viewer_panel_->addDockWidgetAsTab(param_panel_);
+    footage_viewer_panel_->addDockWidgetAsTab(node_panel_);
+    param_panel_->raise();
+
+    // Top right - sequence viewer
+    addDockWidget(sequence_viewer_panel_, KDDockWidgets::Location_OnRight, footage_viewer_panel_, o);
+
+    // Bottom center - timelines
+    addDockWidget(timeline_panels_.first(), KDDockWidgets::Location_OnBottom);
+
+    // Left of timeline - tool panel
+    o.preferredSize = QSize(1, 0);
+    addDockWidget(tool_panel_, KDDockWidgets::Location_OnLeft, timeline_panels_.first(), o);
+
+    // Right of timeline - audio monitor
+    o.preferredSize = QSize(320, 0);
+    addDockWidget(audio_monitor_panel_, KDDockWidgets::Location_OnRight, timeline_panels_.first(), o);
+
+    // Bottom left - project panel
+    addDockWidget(project_panel_, KDDockWidgets::Location_OnLeft, tool_panel_);
+    project_panel_->addDockWidgetAsTab(history_panel_);
+    project_panel_->raise();
+  }
 
   // Hidden panels
   pixel_sampler_panel_->close();
@@ -873,9 +1198,101 @@ void MainWindow::SetDefaultLayout()
   premaximized_state_.clear();
 }
 
+void MainWindow::ApplyThemeDockSizesWhenReady(int attempts)
+{
+  if (theme_dock_sizes_applied_) {
+    return;
+  }
+
+  const ThemeCapabilities capabilities = ThemeManager::instance()->CurrentCapabilities();
+  if (capabilities.workspace_layout != ThemeCapabilities::WorkspaceLayout::kThreeColumn) {
+    return;
+  }
+
+  if (auto *drop_area = mainWindow() ? mainWindow()->dropArea() : nullptr) {
+    const QSize area = size();
+    drop_area->setLayoutSize(KDDockWidgets::Size(area.width(), area.height()));
+  }
+
+  if (ApplyThemeDockSizes(mainWindow(), capabilities)) {
+    theme_dock_sizes_applied_ = true;
+    return;
+  }
+
+  if (attempts > 0) {
+    QTimer::singleShot(50, this, [this, attempts]() {
+      ApplyThemeDockSizesWhenReady(attempts - 1);
+    });
+  }
+}
+
+void MainWindow::OnThemeChanged(const QString &theme_id)
+{
+  Q_UNUSED(theme_id)
+
+  if (!initial_layout_applied_) {
+    return;
+  }
+
+  // Rebuild the docks from the new theme's declarative capabilities. QSS-only
+  // hot reloads do not emit ThemeChanged, so this does not disturb the layout
+  // while a user is editing a stylesheet.
+  SetDefaultLayout();
+}
+
+void MainWindow::ApplyInitialLayoutIfNeeded()
+{
+  if (!constructor_finished_) {
+    return;
+  }
+
+  if (initial_layout_applied_) {
+    return;
+  }
+
+  // On Wayland the window is still 0x0 when the first showEvent/resize arrives. Building the dock
+  // layout at that size leaves every panel at zero size (an empty window), so wait for a real size.
+  if (width() <= 0 || height() <= 0) {
+    return;
+  }
+
+  initial_layout_applied_ = true;
+  SetDefaultLayout();
+
+  // Only now that the dock layout exists is it safe to show the welcome dialog; showing it earlier
+  // (while panels are still being opened) makes it compete for activation with the startup churn.
+  QMetaObject::invokeMethod(this, "ShowWelcomeDialog", Qt::QueuedConnection);
+
+  // Patch 0078 (Phase 9): same reasoning, and queued after the welcome dialog so the two never
+  // overlap on screen.
+  QMetaObject::invokeMethod(this, "ShowGpuSessionDialogIfNeeded", Qt::QueuedConnection);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *e)
+{
+  QMainWindow::resizeEvent(e);
+
+  ApplyInitialLayoutIfNeeded();
+
+  if (initial_layout_applied_ && !theme_dock_sizes_applied_
+      && ThemeManager::instance()->CurrentCapabilities().workspace_layout
+          == ThemeCapabilities::WorkspaceLayout::kThreeColumn
+      && width() > 800 && height() > 600) {
+    QTimer::singleShot(0, this, [this]() { ApplyThemeDockSizesWhenReady(5); });
+  }
+}
+
 void MainWindow::showEvent(QShowEvent *e)
 {
   QMainWindow::showEvent(e);
+
+  // The window may already have a real size here (X11), or still be 0x0 (Wayland), in which case
+  // resizeEvent() will build the layout once the compositor has configured the window.
+  ApplyInitialLayoutIfNeeded();
+  if (!initial_layout_applied_) {
+    // Retry once the event loop has processed the platform's configure/resize.
+    QTimer::singleShot(0, this, &MainWindow::ApplyInitialLayoutIfNeeded);
+  }
 
   if (first_show_) {
     QMetaObject::invokeMethod(Core::instance(), "CheckForAutoRecoveries", Qt::QueuedConnection);
@@ -889,12 +1306,19 @@ void MainWindow::showEvent(QShowEvent *e)
     context.makeCurrent(&surface);
     const char* vendor = reinterpret_cast<const char*>(context.functions()->glGetString(GL_VENDOR));
     qDebug() << "Using graphics driver:" << vendor;
+
+    // Patch 0078 (Phase 9): hand this to the HAL probe. Pipeline routing happens during footage
+    // import, which is after showEvent, and without a vendor the probe cannot tell that Tier 1's
+    // CUDA-GL interop is impossible on a hybrid Wayland session (the log used to report
+    // "gl=unknown" and then select a Tier 1 whose frame pool could never register a texture).
+    // This is a platform-level context rather than the render context, so a later report from the
+    // render path supersedes it.
+    GpuEnvironmentProbe::Instance().RecordOpenGlVendor(vendor);
+
     if (!strcmp(vendor, "nouveau")) {
       QMetaObject::invokeMethod(this, "ShowNouveauWarning", Qt::QueuedConnection);
     }
 #endif
-
-    QMetaObject::invokeMethod(this, "ShowWelcomeDialog", Qt::QueuedConnection);
 
     first_show_ = false;
   }
@@ -905,9 +1329,9 @@ T *MainWindow::AppendPanelInternal(const QString &panel_name, QList<T*>& list)
 {
   T* panel = new T(TransformNameForSerialization(panel_name, list.size()));
 
-  // For some reason raise() on its own doesn't do anything, we need both
-  panel->show();
-  panel->raise();
+  // NOTE: deliberately not shown here. Calling show() on a dock widget that isn't docked yet makes
+  // KDDockWidgets morph it into a FloatingWindow (a real top-level window), which flashes a taskbar
+  // entry before docking removes it again. Callers dock the panel first and then show it.
 
   list.append(panel);
 
@@ -921,6 +1345,148 @@ template<typename T>
 void MainWindow::RemovePanelInternal(QList<T *> &list, T *panel)
 {
   list.removeOne(panel);
+}
+
+void MainWindow::StartAutoplayBenchmark(int seconds)
+{
+  if (seconds <= 0) {
+    return;
+  }
+
+  autoplay_seconds_ = seconds;
+  autoplay_wait_attempts_ = 0;
+  qInfo() << "[Autoplay] waiting for the startup project's sequence viewer";
+  TryStartAutoplayBenchmark();
+}
+
+void MainWindow::TryStartAutoplayBenchmark()
+{
+  if (autoplay_seconds_ <= 0) {
+    return;
+  }
+
+  ViewerWidget* viewer = sequence_viewer_panel_ ? sequence_viewer_panel_->GetViewerWidget()
+                                                : nullptr;
+  if (!viewer || !sequence_viewer_panel_->GetConnectedViewer()) {
+    // 250 ms x 120 = 30 s. A project load or a slow first frame should fit comfortably; failing
+    // loudly beats hanging a benchmark harness forever.
+    if (++autoplay_wait_attempts_ >= 120) {
+      qWarning() << "[Autoplay] no sequence became available within 30 seconds; aborting";
+      close();
+      QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+      return;
+    }
+    QTimer::singleShot(250, this, &MainWindow::TryStartAutoplayBenchmark);
+    return;
+  }
+
+  const int seconds = autoplay_seconds_;
+  autoplay_seconds_ = 0;
+  ViewerOutput* node = sequence_viewer_panel_->GetConnectedViewer();
+  const rational start = node->GetPlayhead();
+
+  qInfo() << "[Autoplay] starting continuous playback for" << seconds << "seconds"
+          << "sequence length" << node->GetLength().toDouble();
+  GetHalStats().Reset();
+  // Keep ColorStats since app/project load: this captures auto-HDR view
+  // selection and shader compilation that happen before playback starts.
+  qInfo() << "[Autoplay] color stats baseline transform_changes"
+          << GetColorStats().transform_changes.load(std::memory_order_relaxed)
+          << "hdr_view_switches"
+          << GetColorStats().hdr_view_switches.load(std::memory_order_relaxed)
+          << "shader_compiles"
+          << GetColorStats().shader_compiles.load(std::memory_order_relaxed)
+          << "shader_cache_hits"
+          << GetColorStats().shader_cache_hits.load(std::memory_order_relaxed);
+  QElapsedTimer wall_timer;
+  wall_timer.start();
+  viewer->Play();
+
+  QTimer::singleShot(seconds * 1000, this, [this, viewer, node, start, seconds, wall_timer]() {
+    // Patch 0103: read before Pause(). A post-pause TimeChangedEvent calls ResetFPSTimer() and
+    // would zero the counters before this harness can report them.
+    const int presented_frames = viewer->GetPresentedFrameCount();
+    const int skipped_frames = viewer->GetSkippedFrameCount();
+    viewer->Pause();
+
+    // Hidden GPU frame-dump/readback hook for pixel-golden validation. This deliberately grabs
+    // the viewer's OpenGL framebuffer rather than decoding a file again, so OCIO/VideoToolbox/
+    // CUDA output is captured after the same render path used by playback.
+    const QString dump_path = QString::fromLocal8Bit(qgetenv("OLIVE_DUMP_FRAME"));
+    if (!dump_path.isEmpty()) {
+      const QImage frame = viewer->GrabFrame();
+      if (frame.isNull()) {
+        qWarning() << "[Autoplay] frame dump requested but the viewer framebuffer is empty";
+      } else if (!frame.save(dump_path, "PNG")) {
+        qWarning() << "[Autoplay] failed to save frame dump to" << dump_path;
+      } else {
+        qInfo() << "[Autoplay] saved GL framebuffer readback" << frame.size() << "to" << dump_path;
+      }
+    }
+
+    const double advanced = (node->GetPlayhead() - start).toDouble();
+    const double wall_elapsed = double(wall_timer.elapsed()) / 1000.0;
+    const rational frame_time = node->GetVideoParams().frame_rate_as_time_base();
+    const int expected_frames = frame_time.isNull() ? 0 : qRound(advanced / frame_time.toDouble());
+    const int wall_expected_frames =
+        frame_time.isNull() ? 0 : qRound(wall_elapsed / frame_time.toDouble());
+    const int accounted_frames = presented_frames + skipped_frames;
+    // Patch 0119: a playhead-based denominator shrinks whenever playback itself falls behind,
+    // which hides the very drops this benchmark exists to measure. The wall clock is what the
+    // run actually asked for, so the headline ratios use it (the playhead ratio is kept for
+    // comparison). Fall back to the playhead count only if the frame rate is unknown.
+    const int ratio_denominator = wall_expected_frames > 0 ? wall_expected_frames : expected_frames;
+    const double presentation_ratio =
+        ratio_denominator > 0 ? double(presented_frames) / double(ratio_denominator) : 0.0;
+    const double accounted_ratio =
+        ratio_denominator > 0 ? double(accounted_frames) / double(ratio_denominator) : 0.0;
+    const double playhead_presentation_ratio =
+        expected_frames > 0 ? double(presented_frames) / double(expected_frames) : 0.0;
+    qInfo() << "[Autoplay] finished continuous playback for" << seconds << "seconds;"
+            << "playhead advanced" << advanced << "seconds"
+            << "wall elapsed" << wall_elapsed << "seconds";
+    qInfo() << "[Autoplay] HAL stats hardware_frames"
+            << GetHalStats().hardware_frames.load(std::memory_order_relaxed)
+            << "cpu_readback_frames"
+            << GetHalStats().cpu_readback_frames.load(std::memory_order_relaxed)
+            << "import_failures"
+            << GetHalStats().import_failures.load(std::memory_order_relaxed);
+
+    qInfo() << "[Autoplay] color stats transform_changes"
+            << GetColorStats().transform_changes.load(std::memory_order_relaxed)
+            << "hdr_view_switches"
+            << GetColorStats().hdr_view_switches.load(std::memory_order_relaxed)
+            << "shader_compiles"
+            << GetColorStats().shader_compiles.load(std::memory_order_relaxed)
+            << "shader_cache_hits"
+            << GetColorStats().shader_cache_hits.load(std::memory_order_relaxed);
+
+    qInfo() << "[Autoplay] presented frames" << presented_frames
+            << "expected frames" << expected_frames
+            << "wall-clock expected frames" << wall_expected_frames
+            << "skipped frames" << skipped_frames
+            << "accounted frames" << accounted_frames
+            << "presented/expected" << presentation_ratio
+            << "playhead presented/expected" << playhead_presentation_ratio
+            << "accounted/expected" << accounted_ratio;
+    if (ratio_denominator > 0 && presented_frames < ratio_denominator) {
+      qWarning() << "[Autoplay] presentation shortfall vs wall clock:"
+                 << (ratio_denominator - presented_frames) << "frame(s) expected but not presented";
+    }
+    if (advanced < seconds * 0.95) {
+      qWarning() << "[Autoplay] playback fell behind wall clock by"
+                 << (seconds - advanced) << "seconds";
+    }
+
+    // Let in-flight render tickets and decoder threads drain, then run the normal close path.
+    // Calling QCoreApplication::exit() directly skipped MainWindow::closeEvent(), so Core destroyed
+    // RenderManager before the still-alive ViewerDisplayWidgets (null dereference in makeCurrent).
+    QTimer::singleShot(2000, this, [this]() {
+      qInfo() << "[Autoplay] render drain complete; closing the benchmark session";
+      close();
+      QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+    });
+  });
 }
 
 }

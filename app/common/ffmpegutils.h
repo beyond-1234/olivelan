@@ -24,6 +24,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
 #include <libswscale/swscale.h>
 }
 
@@ -71,6 +72,18 @@ public:
   static int GetSwsColorspaceFromAVColorSpace(AVColorSpace cs);
 
   /**
+   * @brief Resolve video range, preferring explicit decoded-frame metadata.
+   *
+   * Patch 0104: the decoder used to overwrite AVFrame::color_range with the project's cached
+   * VideoParams before the hardware pipeline could see it. That made a limited-range HDR stream
+   * in a project cached as full range render as full. Only fall back to the project value when
+   * the decoded frame does not specify a range.
+   */
+  static AVColorRange ResolveColorRange(AVColorRange decoded,
+                                        VideoParams::ColorRange fallback_or_override,
+                                        bool is_user_override = false);
+
+  /**
    * @brief Convert "JPEG"/full-range colorspace to its regular counterpart
    *
    * "JPEG "spaces are deprecated in favor of the regular space and setting `color_range`. For the
@@ -78,6 +91,61 @@ public:
    * aware), we use this function.
    */
   static AVPixelFormat ConvertJPEGSpaceToRegularSpace(AVPixelFormat f);
+
+  /**
+   * @brief RAII holder for an AVChannelLayout
+   *
+   * FFmpeg's contract is that an AVChannelLayout must be released with av_channel_layout_uninit().
+   * Every layout constructed here is either AV_CHANNEL_ORDER_NATIVE (from a mask) or
+   * AV_CHANNEL_ORDER_UNSPEC, neither of which allocates, so the destructor is currently a no-op —
+   * it is kept so the type stays correct if a future call site ever stores a
+   * AV_CHANNEL_ORDER_CUSTOM layout (which does allocate a channel map).
+   */
+  class ChannelLayoutGuard {
+  public:
+    ChannelLayoutGuard()
+    {
+      av_channel_layout_default(&layout_, 0);
+    }
+
+    explicit ChannelLayoutGuard(uint64_t mask)
+    {
+      // av_channel_layout_from_mask() rejects a zero mask with AVERROR(EINVAL), so fall back to
+      // an unspecified layout. Note a non-zero mask always yields AV_CHANNEL_ORDER_NATIVE.
+      if (mask == 0 || av_channel_layout_from_mask(&layout_, mask) < 0) {
+        av_channel_layout_default(&layout_, 0);
+      }
+    }
+
+    ChannelLayoutGuard(const ChannelLayoutGuard &) = delete;
+    ChannelLayoutGuard &operator=(const ChannelLayoutGuard &) = delete;
+
+    ~ChannelLayoutGuard()
+    {
+      av_channel_layout_uninit(&layout_);
+    }
+
+    const AVChannelLayout *get() const { return &layout_; }
+
+  private:
+    AVChannelLayout layout_{};
+  };
+
+  /**
+   * @brief Convert an AVChannelLayout into Olive's uint64_t channel-layout mask
+   *
+   * Replaces the removed `AVCodecParameters::channel_layout` field. Only
+   * AV_CHANNEL_ORDER_NATIVE can be represented losslessly by a mask; any other order returns 0,
+   * leaving the caller to fall back to a default layout for the channel count.
+   */
+  static uint64_t ChannelLayoutToMask(const AVChannelLayout &layout);
+
+  /**
+   * @brief Get the default channel-layout mask for a given channel count
+   *
+   * Equivalent to the removed av_get_default_channel_layout().
+   */
+  static uint64_t DefaultChannelLayoutMask(int nb_channels);
 };
 
 using AVFramePtr = std::shared_ptr<AVFrame>;

@@ -25,11 +25,13 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QLabel>
+#include <QMessageBox>
 
 #include "node/node.h"
 #include "widget/colorbutton/colorbutton.h"
 #include "widget/menu/menushared.h"
 #include "ui/colorcoding.h"
+#include "ui/style/thememanager.h"
 
 namespace olive {
 
@@ -47,19 +49,32 @@ PreferencesAppearanceTab::PreferencesAppearanceTab()
 
   style_combobox_ = new QComboBox();
 
-  {
-    const QMap<QString, QString>& themes = StyleManager::available_themes();
-    QMap<QString, QString>::const_iterator i;
-    for (i=themes.cbegin(); i!=themes.cend(); i++) {
-      style_combobox_->addItem(i.value(), i.key());
-
-      if (StyleManager::GetStyle() == i.key()) {
-        style_combobox_->setCurrentIndex(style_combobox_->count()-1);
-      }
-    }
-  }
+  // Pick up theme folders added since startup.
+  ThemeManager::instance()->RefreshThemes();
+  RefreshThemeCombo();
 
   appearance_layout->addWidget(style_combobox_, row, 1);
+
+  // Add "Import Theme / QSS..." button directly on appearance tab
+  QPushButton* import_theme_btn = new QPushButton(tr("Import Theme / QSS..."));
+  connect(import_theme_btn, &QPushButton::clicked, this, [this]() {
+    const QString file = QFileDialog::getOpenFileName(
+        this, tr("Import Theme File"), QString(),
+        tr("Olive Themes & QSS (*.qss *.olivetheme *.zip);;All Files (*.*)"));
+    if (!file.isEmpty()) {
+      ImportTheme(file);
+    }
+  });
+  appearance_layout->addWidget(import_theme_btn, row, 2);
+
+  QPushButton* import_folder_btn = new QPushButton(tr("Import Theme Folder..."));
+  connect(import_folder_btn, &QPushButton::clicked, this, [this]() {
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Import Theme Folder"));
+    if (!dir.isEmpty()) {
+      ImportTheme(dir);
+    }
+  });
+  appearance_layout->addWidget(import_folder_btn, row, 3);
 
   row++;
 
@@ -89,7 +104,7 @@ PreferencesAppearanceTab::PreferencesAppearanceTab()
 
     QGridLayout* marker_layout = new QGridLayout(marker_group);
 
-    marker_layout->addWidget(new QLabel("Default Marker Color"), 0, 0);
+    marker_layout->addWidget(new QLabel(tr("Default Marker Color")), 0, 0);
 
     marker_btn_ = new ColorCodingComboBox();
     marker_btn_->SetColor(OLIVE_CONFIG("MarkerColor").toInt());
@@ -101,15 +116,72 @@ PreferencesAppearanceTab::PreferencesAppearanceTab()
   layout->addStretch();
 }
 
+void PreferencesAppearanceTab::RefreshThemeCombo()
+{
+  const QString current_id = ThemeManager::instance()->CurrentThemeId();
+
+  style_combobox_->clear();
+
+  const QList<ThemeInfo> &themes = ThemeManager::instance()->GetAvailableThemes();
+  for (const ThemeInfo &theme : themes) {
+    QString display_text = theme.name;
+    if (theme.is_pure_qss) {
+      display_text += tr(" (Community QSS)");
+    } else if (!theme.is_builtin) {
+      display_text += tr(" (Custom Theme)");
+    }
+
+    style_combobox_->addItem(display_text, theme.id);
+
+    if (theme.id == current_id) {
+      style_combobox_->setCurrentIndex(style_combobox_->count() - 1);
+    }
+  }
+
+  // If the active theme disappeared from disk, show a stable selection instead
+  // of leaving the combo box on an unrelated row.
+  if (style_combobox_->currentIndex() < 0 && style_combobox_->count() > 0) {
+    style_combobox_->setCurrentIndex(0);
+  }
+}
+
+void PreferencesAppearanceTab::ImportTheme(const QString &path)
+{
+  ThemeManager *manager = ThemeManager::instance();
+
+  if (manager->ImportThemePackage(path)) {
+    RefreshThemeCombo();
+    return;
+  }
+
+  const QString details = manager->LastError();
+  QMessageBox::warning(
+      this, tr("Theme Import Failed"),
+      details.isEmpty()
+          ? tr("The theme could not be imported.")
+          : tr("The theme could not be imported.\n\n%1").arg(details));
+}
+
 void PreferencesAppearanceTab::Accept(MultiUndoCommand *command)
 {
   Q_UNUSED(command)
 
   QString style_path = style_combobox_->currentData().toString();
 
-  if (style_path != StyleManager::GetStyle()) {
-    StyleManager::SetStyle(style_path);
-    OLIVE_CONFIG("Style") = style_path;
+  if (style_path != ThemeManager::instance()->CurrentThemeId()) {
+    if (ThemeManager::instance()->ApplyTheme(style_path)) {
+      OLIVE_CONFIG("Style") = style_path;
+    } else {
+      const QString details = ThemeManager::instance()->LastError();
+      QMessageBox::warning(
+          this, tr("Theme Error"),
+          details.isEmpty()
+              ? tr("The selected theme could not be applied. Olive has fallen back to the default theme.")
+              : tr("The selected theme could not be applied. Olive has fallen back to the default theme.\n\n%1")
+                    .arg(details));
+      OLIVE_CONFIG("Style") = ThemeManager::instance()->CurrentThemeId();
+      RefreshThemeCombo();
+    }
   }
 
   for (int i=0; i<color_btns_.size(); i++) {

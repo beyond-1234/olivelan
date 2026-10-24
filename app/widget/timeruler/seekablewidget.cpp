@@ -31,6 +31,8 @@
 #include "dialog/markerproperties/markerpropertiesdialog.h"
 #include "node/project/serializer/serializer.h"
 #include "timeline/timelineundoworkarea.h"
+#include "ui/style/designtokennames.h"
+#include "ui/style/designtokenregistry.h"
 #include "widget/colorlabelmenu/colorlabelmenu.h"
 #include "widget/menu/menushared.h"
 #include "widget/timebased/timebasedwidget.h"
@@ -438,18 +440,36 @@ void SeekableWidget::DrawPlayhead(QPainter *p, int x, int y)
 
   p->setRenderHint(QPainter::Antialiasing);
 
-  int half_text_height = text_height() / 3;
+  DesignTokenRegistry *registry = DesignTokenRegistry::instance();
+  const QColor playhead_color = registry->GetColor(
+      QString::fromLatin1(tokens::kPlayhead), PLAYHEAD_COLOR);
 
-  last_playhead_shape_ = QPolygon({
-    QPoint(x, y),
-    QPoint(x - half_width, y - half_text_height),
-    QPoint(x - half_width, y - text_height()),
-    QPoint(x + 1 + half_width, y - text_height()),
-    QPoint(x + 1 + half_width, y - half_text_height),
-    QPoint(x + 1, y),
-  });
+  p->setPen(QPen(playhead_color, 1));
+  p->setBrush(playhead_color);
 
-  p->drawPolygon(last_playhead_shape_);
+  if (registry->GetInt(QStringLiteral("timeline.playhead.dot"), 0)) {
+    // CapCut-style playhead: a thin white rule with a small round grab dot
+    // sitting at the top of the ruler.
+    const int dot_y = y - text_height() + 4;
+
+    p->drawLine(x, y, x, dot_y);
+    p->drawEllipse(QPointF(x + 0.5, dot_y), 4, 4);
+
+    last_playhead_shape_ = QPolygon(QRect(x - 4, dot_y - 4, 9, y - dot_y + 8));
+  } else {
+    int half_text_height = text_height() / 3;
+
+    last_playhead_shape_ = QPolygon({
+      QPoint(x, y),
+      QPoint(x - half_width, y - half_text_height),
+      QPoint(x - half_width, y - text_height()),
+      QPoint(x + 1 + half_width, y - text_height()),
+      QPoint(x + 1 + half_width, y - half_text_height),
+      QPoint(x + 1, y),
+    });
+
+    p->drawPolygon(last_playhead_shape_);
+  }
 
   p->setRenderHint(QPainter::Antialiasing, false);
 }

@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Build image (default):
-#  docker build -t olivevideoeditor/ci-package-ffmpeg:5.0 -f ci-ffmpeg/Dockerfile .
+#  docker build -t olivevideoeditor/ci-package-ffmpeg:6.1.6 -f ci-ffmpeg/Dockerfile .
 
 ARG OLIVE_ORG=olivevideoeditor
 ARG CI_COMMON_VERSION=2
-ARG FFMPEG_VERSION=5.0
+# FFmpeg >= 6.1 is a hard floor: Olive reads AVCodecParameters::coded_side_data
+# (app/codec/ffmpeg/ffmpegdecoder.cpp), which only exists from 6.1 onwards.
+# Pinned to the newest 6.1.x patch release rather than 6.1.0, so the image carries the
+# 6.1.1..6.1.6 security fixes while staying on the 6.1 branch.
+ARG FFMPEG_VERSION=6.1.6
 ARG NASM_VERSION=2.15.05
 ARG YASM_VERSION=1.3.0
 ARG SVTAV1_VERSION=v1.1.0

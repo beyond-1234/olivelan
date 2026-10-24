@@ -26,7 +26,7 @@
 #include <QLabel>
 #include <QMessageBox>
 
-#include "common/ocioutils.h"
+#include "common/ociobridge.h"
 #include "core.h"
 #include "undo/undostack.h"
 
@@ -64,14 +64,14 @@ VideoStreamProperties::VideoStreamProperties(Footage *footage, int video_index) 
   video_layout->addWidget(new QLabel(tr("Color Space:")), row, 0);
 
   video_color_space_ = new QComboBox();
-  OCIO::ConstConfigRcPtr config = footage_->project()->color_manager()->GetConfig();
-  int number_of_colorspaces = config->getNumColorSpaces();
 
   video_color_space_->addItem(tr("Default (%1)").arg(footage_->project()->color_manager()->GetDefaultInputColorSpace()));
 
-  for (int i=0;i<number_of_colorspaces;i++) {
-    QString colorspace = config->getColorSpaceNameByIndex(i);
+  // Patch 0039: route through ColorManager instead of pulling the OCIO config
+  // directly, so this dialog also works with the built-in colour engine.
+  const QStringList colorspaces = footage_->project()->color_manager()->ListAvailableColorspaces();
 
+  for (const QString &colorspace : colorspaces) {
     video_color_space_->addItem(colorspace);
   }
 
@@ -84,9 +84,15 @@ VideoStreamProperties::VideoStreamProperties(Footage *footage, int video_index) 
   video_layout->addWidget(new QLabel(tr("Color Range:")), row, 0);
 
   color_range_combo_ = new QComboBox();
+  color_range_combo_->addItem(tr("Auto (Follow Source)"), VideoParams::kColorRangeAuto);
   color_range_combo_->addItem(tr("Limited (16-235)"), VideoParams::kColorRangeLimited);
   color_range_combo_->addItem(tr("Full (0-255)"), VideoParams::kColorRangeFull);
-  color_range_combo_->setCurrentIndex(vp.color_range());
+
+  // Patch 0113: only an explicit choice is shown as an override. An imported stream
+  // always has a cached range, but that is a fallback rather than user intent.
+  const int range_index = color_range_combo_->findData(
+      vp.color_range_overridden() ? vp.color_range() : VideoParams::kColorRangeAuto);
+  color_range_combo_->setCurrentIndex(range_index >= 0 ? range_index : 0);
 
   video_layout->addWidget(color_range_combo_, row, 1);
 
@@ -144,11 +150,22 @@ void VideoStreamProperties::Accept(MultiUndoCommand *parent)
 
   VideoParams vp = footage_->GetVideoParams(video_index_);
 
+  const VideoParams::ColorRange selected_range =
+      static_cast<VideoParams::ColorRange>(color_range_combo_->currentData().toInt());
+  const bool selected_range_override = (selected_range != VideoParams::kColorRangeAuto);
+
+  // Selecting Auto clears the override but keeps the cached range as the fallback for frames
+  // without their own metadata. Writing the kColorRangeAuto sentinel here would silently turn
+  // a full-range source into the limited fallback just because the user cleared an override.
+  const VideoParams::ColorRange new_range =
+      selected_range_override ? selected_range : vp.color_range();
+
   if ((video_premultiply_alpha_ && video_premultiply_alpha_->isChecked() != vp.premultiplied_alpha())
       || set_colorspace != vp.colorspace()
       || static_cast<VideoParams::Interlacing>(video_interlace_combo_->currentIndex()) != vp.interlacing()
       || pixel_aspect_combo_->GetPixelAspectRatio() != vp.pixel_aspect_ratio()
-      || color_range_combo_->currentData().toInt() != vp.color_range()) {
+      || new_range != vp.color_range()
+      || selected_range_override != vp.color_range_overridden()) {
 
     parent->add_child(new VideoStreamChangeCommand(footage_,
                                                    video_index_,
@@ -156,7 +173,8 @@ void VideoStreamProperties::Accept(MultiUndoCommand *parent)
                                                    set_colorspace,
                                                    static_cast<VideoParams::Interlacing>(video_interlace_combo_->currentIndex()),
                                                    pixel_aspect_combo_->GetPixelAspectRatio(),
-                                                   static_cast<VideoParams::ColorRange>(color_range_combo_->currentData().toInt())));
+                                                   new_range,
+                                                   selected_range_override));
   }
 
   if (vp.video_type() == VideoParams::kVideoTypeImageSequence) {
@@ -194,14 +212,17 @@ VideoStreamProperties::VideoStreamChangeCommand::VideoStreamChangeCommand(Footag
                                                                           bool premultiplied,
                                                                           QString colorspace,
                                                                           VideoParams::Interlacing interlacing,
-                                                                          const rational &pixel_ar, VideoParams::ColorRange range) :
+                                                                          const rational &pixel_ar,
+                                                                          VideoParams::ColorRange range,
+                                                                          bool range_override) :
   footage_(footage),
   video_index_(video_index),
   new_premultiplied_(premultiplied),
   new_colorspace_(colorspace),
   new_interlacing_(interlacing),
   new_pixel_ar_(pixel_ar),
-  new_range_(range)
+  new_range_(range),
+  new_range_override_(range_override)
 {
 }
 
@@ -219,12 +240,14 @@ void VideoStreamProperties::VideoStreamChangeCommand::redo()
   old_interlacing_ = vp.interlacing();
   old_pixel_ar_ = vp.pixel_aspect_ratio();
   old_range_ = vp.color_range();
+  old_range_override_ = vp.color_range_overridden();
 
   vp.set_premultiplied_alpha(new_premultiplied_);
   vp.set_colorspace(new_colorspace_);
   vp.set_interlacing(new_interlacing_);
   vp.set_pixel_aspect_ratio(new_pixel_ar_);
   vp.set_color_range(new_range_);
+  vp.set_color_range_overridden(new_range_override_);
 
   footage_->SetVideoParams(vp, video_index_);
 }
@@ -238,6 +261,7 @@ void VideoStreamProperties::VideoStreamChangeCommand::undo()
   vp.set_interlacing(old_interlacing_);
   vp.set_pixel_aspect_ratio(old_pixel_ar_);
   vp.set_color_range(old_range_);
+  vp.set_color_range_overridden(old_range_override_);
 
   footage_->SetVideoParams(vp, video_index_);
 }

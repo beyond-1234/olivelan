@@ -94,7 +94,8 @@ private:
                              QString colorspace,
                              VideoParams::Interlacing interlacing,
                              const rational& pixel_ar,
-                             VideoParams::ColorRange range);
+                             VideoParams::ColorRange range,
+                             bool range_override);
 
     virtual Project* GetRelevantProject() const override;
 
@@ -111,12 +112,14 @@ private:
     VideoParams::Interlacing new_interlacing_;
     rational new_pixel_ar_;
     VideoParams::ColorRange new_range_;
+    bool new_range_override_;
 
     bool old_premultiplied_;
     QString old_colorspace_;
     VideoParams::Interlacing old_interlacing_;
     rational old_pixel_ar_;
     VideoParams::ColorRange old_range_;
+    bool old_range_override_;
 
   };
 

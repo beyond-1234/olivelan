@@ -21,7 +21,7 @@
 #ifndef LIBOLIVECORE_BEZIER_H
 #define LIBOLIVECORE_BEZIER_H
 
-#include <Imath/ImathVec.h>
+#include "vec2.h"
 
 namespace olive::core {
 
@@ -39,19 +39,19 @@ public:
   const double &cp2_x() const { return cp2_x_; }
   const double &cp2_y() const { return cp2_y_; }
 
-  Imath::V2d to_vec() const
+  Vec2d to_vec() const
   {
-    return Imath::V2d(x_, y_);
+    return Vec2d(x_, y_);
   }
 
-  Imath::V2d control_point_1_to_vec() const
+  Vec2d control_point_1_to_vec() const
   {
-    return Imath::V2d(cp1_x_, cp1_y_);
+    return Vec2d(cp1_x_, cp1_y_);
   }
 
-  Imath::V2d control_point_2_to_vec() const
+  Vec2d control_point_2_to_vec() const
   {
-    return Imath::V2d(cp2_x_, cp2_y_);
+    return Vec2d(cp2_x_, cp2_y_);
   }
 
   void set_x(const double &x) { x_ = x; }
@@ -65,7 +65,7 @@ public:
 
   static double QuadraticTtoY(double a, double b, double c, double t);
 
-  static double QuadraticXtoY(double x, const Imath::V2d &a, const Imath::V2d &b, const Imath::V2d &c)
+  static double QuadraticXtoY(double x, const Vec2d &a, const Vec2d &b, const Vec2d &c)
   {
     return QuadraticTtoY(a.y, b.y, c.y, QuadraticXtoT(x, a.x, b.x, c.x));
   }
@@ -74,7 +74,7 @@ public:
 
   static double CubicTtoY(double a, double b, double c, double d, double t);
 
-  static double CubicXtoY(double x, const Imath::V2d &a, const Imath::V2d &b, const Imath::V2d &c, const Imath::V2d &d)
+  static double CubicXtoY(double x, const Vec2d &a, const Vec2d &b, const Vec2d &c, const Vec2d &d)
   {
     return CubicTtoY(a.y, b.y, c.y, d.y, CubicXtoT(x, a.x, b.x, c.x, d.x));
   }

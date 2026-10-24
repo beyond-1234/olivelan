@@ -20,6 +20,8 @@
 
 #include "colordialog.h"
 
+#include "common/ociobridge.h"
+
 #include <QDialogButtonBox>
 #include <QSplitter>
 #include <QVBoxLayout>
@@ -129,7 +131,12 @@ void ColorDialog::SetColor(const ManagedColor &start)
                                                                color_manager_->GetReferenceColorSpace(),
                                                                start.color_input());
 
-    managed_start = linear_to_input->ConvertColor(start);
+    if (linear_to_input) {
+      managed_start = linear_to_input->ConvertColor(start);
+    } else {
+      qWarning() << "[Color] ColorDialog could not create input-space processor";
+      managed_start = start;
+    }
 
   }
 
@@ -173,6 +180,11 @@ void ColorDialog::ColorSpaceChanged(const QString &input, const ColorTransform &
                                                             output);
 
   ColorProcessorPtr ref_to_input = ColorProcessor::Create(color_manager_, color_manager_->GetReferenceColorSpace(), input);
+
+  if (!input_to_ref_processor_ || !ref_to_display || !ref_to_input) {
+    qWarning() << "[Color] ColorDialog could not create one or more color processors; "
+               << "color controls will use unmanaged values";
+  }
 
   // FIXME: For some reason, using OCIO::TRANSFORM_DIR_INVERSE (wrapped by ColorProcessor::kInverse) causes OCIO to
   //        crash. We've disabled that functionality for now (also disabling display_tab_ in ColorValuesWidget)

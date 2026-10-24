@@ -53,11 +53,11 @@ public:
 
   QString id() const
   {
-    if (id_.isEmpty()) {
-      return processor_->id();
-    } else {
+    if (!id_.isEmpty()) {
       return id_;
     }
+
+    return processor_ ? processor_->id() : QStringLiteral("invalid-color-job");
   }
 
   void SetOverrideID(const QString &id) { id_ = id; }

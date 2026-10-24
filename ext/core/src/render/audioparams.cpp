@@ -159,7 +159,17 @@ bool AudioParams::is_valid() const
 
 void AudioParams::calculate_channel_count()
 {
-  channel_count_ = av_get_channel_layout_nb_channels(channel_layout());
+  // av_get_channel_layout_nb_channels() was deprecated in FFmpeg 5.1 and removed in 7.0. Build
+  // the equivalent native layout from the mask and read its channel count instead.
+  // A zero/invalid mask is rejected with AVERROR(EINVAL), so fall back to an unspecified layout,
+  // which yields the same 0 channels the removed function returned for a zero mask.
+  AVChannelLayout layout{};
+  if (av_channel_layout_from_mask(&layout, channel_layout()) < 0) {
+    av_channel_layout_default(&layout, 0);
+  }
+
+  channel_count_ = layout.nb_channels;
+  av_channel_layout_uninit(&layout);
 }
 
 }

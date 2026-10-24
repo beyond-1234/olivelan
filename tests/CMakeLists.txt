@@ -56,6 +56,7 @@ function(olive_add_test GROUP NAME SOURCE)
     ${NAME}
     PRIVATE
     ${OLIVE_DEFINITIONS}
+    OLIVE_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
   )
   target_compile_options(
     ${NAME}
@@ -69,6 +70,7 @@ function(olive_add_test GROUP NAME SOURCE)
 endif()
 endfunction()
 
+add_subdirectory(codec)
 add_subdirectory(compositing)
 add_subdirectory(general)
 add_subdirectory(timeline)

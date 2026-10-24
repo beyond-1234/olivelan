@@ -15,6 +15,8 @@
 #include "node/project/sequence/sequence.h"
 #include "nodeviewitem.h"
 #include "ui/colorcoding.h"
+#include "ui/style/designtokenregistry.h"
+#include "ui/style/metrostyleconfig.h"
 
 namespace olive {
 
@@ -248,29 +250,35 @@ QPointF NodeViewContext::MapScenePosToNodePosInContext(const QPointF &pos) const
 
 void NodeViewContext::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-  // Set pen and brush
+  // Metro/Fluent: hard-edged rectangle (no rounded corners).
   Color color = context_->color();
   QColor c = QtUtils::toQColor(color);
-  QPen pen(c, 2);
-  if (option->state & QStyle::State_Selected) {
-    pen.setStyle(Qt::DotLine);
-  }
-  painter->setPen(pen);
 
+  // Flat hairline border, or a hard 2px accent frame when selected.
+  const int border_width = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("stroke.hairline.width"), metro::kBorderWidth);
+  if (option->state & QStyle::State_Selected) {
+    painter->setPen(QPen(DesignTokenRegistry::instance()->GetColor(
+                             QStringLiteral("color.accent.primary"), metro::kAccentColor),
+                         border_width * 2));
+  } else {
+    painter->setPen(QPen(DesignTokenRegistry::instance()->GetColor(
+                             QStringLiteral("color.border.hairline"), metro::kBorderColor),
+                         border_width));
+  }
+
+  // Draw semi-transparent rect for whole item
   QColor bg = c;
   bg.setAlpha(128);
   painter->setBrush(bg);
-
-  // Draw semi-transparent rect for whole item
-  int rounded = painter->fontMetrics().height();
-  painter->drawRoundedRect(rect(), rounded, rounded);
+  painter->drawRect(rect());
 
   // Draw solid background for titlebar
   QRectF titlebar_rect = rect();
   titlebar_rect.setHeight(last_titlebar_height_ - rect().top());
   painter->setClipRect(titlebar_rect);
   painter->setBrush(c);
-  painter->drawRoundedRect(rect(), rounded, rounded);
+  painter->drawRect(rect());
   painter->setClipping(false);
 
   // Draw titlebar text

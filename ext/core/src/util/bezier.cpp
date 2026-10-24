@@ -21,6 +21,7 @@
 #include "util/bezier.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace olive::core {
 

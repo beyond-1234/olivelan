@@ -375,6 +375,15 @@ void RenderProcessor::ProcessVideoFootage(TexturePtr destination, const FootageJ
   if (decoder && render_ctx_) {
     Decoder::RetrieveVideoParams p;
     p.divider = stream->video_params().divider();
+    bool is_primary = true;
+    if (destination && destination->width() > 0 && destination->height() > 0 &&
+        stream_data.width() > 0 && stream_data.height() > 0) {
+      if (destination->width() <= stream_data.width() / 2 && destination->height() <= stream_data.height() / 2) {
+        p.divider = std::max(p.divider, 2);
+        is_primary = false;
+      }
+    }
+    p.is_primary = is_primary;
     p.maximum_format = destination->format();
 
     if (!IsCancelled()) {
@@ -387,6 +396,7 @@ void RenderProcessor::ProcessVideoFootage(TexturePtr destination, const FootageJ
         p.time = (stream_data.video_type() == VideoParams::kVideoTypeVideo) ? input_time : Decoder::kAnyTimecode;
         p.cancelled = GetCancelPointer();
         p.force_range = stream_data.color_range();
+        p.force_range_is_user_override = stream_data.color_range_overridden();
         p.src_interlacing = stream_data.interlacing();
 
         unmanaged_texture = decoder->RetrieveVideo(p);
@@ -397,6 +407,12 @@ void RenderProcessor::ProcessVideoFootage(TexturePtr destination, const FootageJ
           ColorProcessorPtr processor = ColorProcessor::Create(color_manager,
                                                                using_colorspace,
                                                                color_manager->GetReferenceColorSpace());
+
+          if (!processor) {
+            qWarning() << "[Color] RenderProcessor could not convert"
+                       << using_colorspace << "to the reference color space";
+            return;
+          }
 
           ColorTransformJob job;
 
@@ -559,6 +575,11 @@ void RenderProcessor::ConvertToReferenceSpace(TexturePtr destination, TexturePtr
 
   ColorManager* color_manager = QtUtils::ValueToPtr<ColorManager>(ticket_->property("colormanager"));
   ColorProcessorPtr cp = ColorProcessor::Create(color_manager, input_cs, color_manager->GetReferenceColorSpace());
+
+  if (!cp) {
+    qWarning() << "[Color] RenderProcessor could not convert" << input_cs << "to the reference color space";
+    return;
+  }
 
   ColorTransformJob ctj;
 

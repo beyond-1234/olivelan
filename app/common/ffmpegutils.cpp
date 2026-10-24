@@ -133,6 +133,23 @@ int FFmpegUtils::GetSwsColorspaceFromAVColorSpace(AVColorSpace cs)
   return SWS_CS_DEFAULT;
 }
 
+AVColorRange FFmpegUtils::ResolveColorRange(AVColorRange decoded,
+                                            VideoParams::ColorRange fallback_or_override,
+                                            bool is_user_override)
+{
+  if (is_user_override) {
+    return fallback_or_override == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG
+                                                               : AVCOL_RANGE_MPEG;
+  }
+
+  if (decoded != AVCOL_RANGE_UNSPECIFIED) {
+    return decoded;
+  }
+
+  return fallback_or_override == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG
+                                                         : AVCOL_RANGE_MPEG;
+}
+
 AVPixelFormat FFmpegUtils::ConvertJPEGSpaceToRegularSpace(AVPixelFormat f)
 {
   switch (f) {
@@ -194,6 +211,27 @@ PixelFormat FFmpegUtils::GetCompatiblePixelFormat(const PixelFormat &pix_fmt)
   }
 
   return PixelFormat::INVALID;
+}
+
+uint64_t FFmpegUtils::ChannelLayoutToMask(const AVChannelLayout &layout)
+{
+  if (layout.order == AV_CHANNEL_ORDER_NATIVE) {
+    return layout.u.mask;
+  }
+
+  return 0;
+}
+
+uint64_t FFmpegUtils::DefaultChannelLayoutMask(int nb_channels)
+{
+  AVChannelLayout layout{};
+  av_channel_layout_default(&layout, nb_channels);
+
+  const uint64_t mask = ChannelLayoutToMask(layout);
+
+  av_channel_layout_uninit(&layout);
+
+  return mask;
 }
 
 }

@@ -147,6 +147,16 @@ private:
   void UpdateNavBarText();
 
   /**
+   * @brief Apply declarative view defaults from the active theme manifest.
+   *
+   * On the first call, missing capabilities restore the legacy tree/default
+   * view. Later calls only override the view when the theme actually declares
+   * a preference, so switching to a theme without view capabilities preserves
+   * the user's current layout.
+   */
+  void ApplyThemeCapabilities(bool initial);
+
+  /**
    * @brief Get the currently active QAbstractItemView
    */
   QAbstractItemView* CurrentView() const;
@@ -183,6 +193,8 @@ private slots:
 
   void ReplaceSelectedFootage();
 
+  void RelinkSelectedFootage();
+
   void OpenContextMenuItemInNewTab();
 
   void OpenContextMenuItemInNewWindow();
@@ -190,6 +202,8 @@ private slots:
   void ContextMenuStartProxy(QAction* a);
 
   void ViewSelectionChanged();
+
+  void OnThemeChanged(const QString &theme_id);
 
 };
 

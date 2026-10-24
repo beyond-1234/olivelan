@@ -35,16 +35,11 @@ class ColorManager : public QObject
   Q_OBJECT
 public:
   ColorManager(Project *project);
+  ~ColorManager();
 
   void Init();
 
-  OCIO::ConstConfigRcPtr GetConfig() const;
-
-  static OCIO::ConstConfigRcPtr CreateConfigFromFile(const QString& filename);
-
   QString GetConfigFilename() const;
-
-  static OCIO::ConstConfigRcPtr GetDefaultConfig();
 
   static void SetUpDefaultConfig();
 
@@ -72,25 +67,48 @@ public:
 
   ColorTransform GetCompliantColorSpace(const ColorTransform& transform, bool force_display = false);
 
-  static QStringList ListAvailableColorspaces(OCIO::ConstConfigRcPtr config);
+  /**
+   * @brief Resolve a transform for restoring state after a config/HDR change.
+   *
+   * Unlike GetCompliantColorSpace(), this method never returns an unknown
+   * colour-space name. Missing/removed colour spaces fall back to a valid
+   * project default, and invalid display/view/look names are repaired.
+   */
+  ColorTransform GetRestorableColorTransform(const ColorTransform& transform);
 
   void GetDefaultLumaCoefs(double *rgb) const;
 
   Project *project() const;
 
-  void UpdateConfigFromFilename();
+  bool UpdateConfigFromFilename();
+
+  QString GetLastError() const;
+
+  bool HasError() const;
+
+  // Reflects the configuration currently in effect, not the outcome of the last attempt: a failed
+  // load keeps the previously active configuration, so this stays true if that one came from a
+  // file.
+  bool IsCustomConfig() const;
 
 signals:
   void ConfigChanged(const QString &s);
+
+  void ConfigLoadFailed(const QString &filename, const QString &error);
 
   void ReferenceSpaceChanged(const QString &s);
 
   void DefaultInputChanged(const QString &s);
 
 private:
-  OCIO::ConstConfigRcPtr config_;
+  struct Impl;
 
-  static OCIO::ConstConfigRcPtr default_config_;
+  std::unique_ptr<Impl> impl_;
+
+  // Patch 0037: the OCIO-typed accessors (GetConfig/CreateConfigFromFile/
+  // GetDefaultConfig/ListAvailableColorspaces) live in common/ociobridge.h so
+  // this header stays free of <OpenColorIO/OpenColorIO.h>.
+  friend struct ColorManagerOCIO;
 
 };
 

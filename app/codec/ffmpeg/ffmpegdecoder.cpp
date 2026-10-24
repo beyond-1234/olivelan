@@ -19,36 +19,80 @@
 ***/
 
 #include "ffmpegdecoder.h"
+#include "hardware_quota.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
 
-#include <OpenImageIO/imagebuf.h>
+#include <QDateTime>
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
 #include <QString>
 #include <QtMath>
 #include <QThread>
 #include <QtConcurrent/QtConcurrent>
 
+#include "codec/decode_input_policy.h"
+#include "codec/hal/gpu_environment_probe.h"
+
 #include "codec/planarfiledevice.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "codec/hal/hal_stats.h"
+#include "codec/hal/gpu_environment_probe.h"
 #include "common/ffmpegutils.h"
 #include "common/filefunctions.h"
 #include "render/renderer.h"
+#include "render/opengl/openglrenderer.h"
 #include "render/subtitleparams.h"
 
 namespace olive {
 
 QVariant Yuv2RgbShader;
 QVariant DeinterlaceShader;
+
+namespace {
+
+/**
+ * @brief Patch 0042 (Phase 8): peak luminance of the mastering display, in cd/m2.
+ *
+ * FFmpeg 6.1 exposes per-stream side data through AVCodecParameters; the older
+ * AVStream::side_data array is deprecated. Returns 0 when the container carries
+ * no (or incomplete) mastering-display metadata, which the caller surfaces as
+ * "unknown" and which the "HDR Peak Nits" footage control can then override.
+ */
+double GetMasteringPeakNits(const AVCodecParameters *codecpar)
+{
+  for (int i = 0; i < codecpar->nb_coded_side_data; i++) {
+    const AVPacketSideData &sd = codecpar->coded_side_data[i];
+
+    if (sd.type == AV_PKT_DATA_MASTERING_DISPLAY_METADATA
+        && sd.size >= int(sizeof(AVMasteringDisplayMetadata))) {
+      const AVMasteringDisplayMetadata *md =
+          reinterpret_cast<const AVMasteringDisplayMetadata *>(sd.data);
+
+      if (md->has_luminance) {
+        return VideoParams::MasteringDisplayMaxLuminanceToNits(md->max_luminance.num,
+                                                              md->max_luminance.den);
+      }
+    }
+  }
+
+  return 0.0;
+}
+
+} // namespace
 
 FFmpegDecoder::FFmpegDecoder() :
   sws_ctx_(nullptr),
@@ -233,35 +277,154 @@ TexturePtr FFmpegDecoder::ProcessFrameIntoTexture(AVFramePtr f, const RetrieveVi
 
 TexturePtr FFmpegDecoder::RetrieveVideoInternal(const RetrieveVideoParams &p)
 {
-  if (AVFramePtr f = RetrieveFrame(p.time, p.cancelled)) {
+  if (instance_.hw_pipeline()) {
+    instance_.hw_pipeline()->UpdatePriority(p.is_primary);
+
+    // Execution-time renderer injection: only here does a live, thread-current OpenGL
+    // renderer exist. Probing (Instance::Open) runs during footage import, before any
+    // viewport renderer is constructed, so the pipeline cannot hold one any earlier.
+    if (auto* gl_renderer = dynamic_cast<OpenGLRenderer*>(p.renderer)) {
+      instance_.hw_pipeline()->SetRenderer(gl_renderer);
+
+      // Record which GPU the real render context lives on. Tier 1's CUDA-GL interop only works
+      // when that is the same NVIDIA GPU as CUDA/NVDEC; the probe uses this to stop advertising
+      // Tier 1 on hybrid machines whose window context landed on the iGPU.
+      if (QOpenGLContext* ctx = QOpenGLContext::currentContext()) {
+        if (ctx->isValid()) {
+          if (QOpenGLFunctions* functions = ctx->functions()) {
+            GpuEnvironmentProbe::Instance().RecordOpenGlVendor(
+                reinterpret_cast<const char*>(functions->glGetString(GL_VENDOR)), true);
+          }
+        }
+      }
+    }
+  }
+
+  const int64_t now_ms = QDateTime::currentMSecsSinceEpoch();
+  const int64_t delta_ms = (last_retrieve_time_ms_ > 0) ? (now_ms - last_retrieve_time_ms_) : 1000;
+  last_retrieve_time_ms_ = now_ms;
+
+  rational time_step = p.time - last_requested_time_;
+  last_requested_time_ = p.time;
+  bool is_linear_step = (time_step > 0 && time_step <= rational(2, 24));
+  if (!is_linear_step && delta_ms < 60 && delta_ms > 0) {
+    scrub_settle_time_ms_ = now_ms + 150; // 150ms debounce window
+  }
+
+  // If this is a secondary / downscaled / PiP track and rapid scrubbing is active,
+  // immediately return last_valid_texture_ to keep the primary viewport buttery smooth!
+  if (!p.is_primary && (now_ms < scrub_settle_time_ms_) && last_valid_texture_) {
+    return last_valid_texture_;
+  }
+
+  AVFramePtr f = RetrieveFrame(p.time, p.cancelled);
+  if (!f) {
     if (p.cancelled && p.cancelled->IsCancelled()) {
       return nullptr;
     }
-
-    AVFramePtr original = f;
-
-    // Disregard "JPEG" pixel formats because we allow the user to override that
-    f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
-
-    // Force frame's color range to whatever it's set to in Olive
-    f->color_range = p.force_range == VideoParams::kColorRangeFull ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
-
-    // Perform any CPU processing required
-    f = PreProcessFrame(f, p);
-    if (!f) {
-      // Error occurred while software scaling
-      return nullptr;
+    // [Anti-Stall Fallback] If frame retrieval failed, hold and reuse last valid texture
+    // to keep the audio/video presentation clock smooth and avoid 1-second UI freeze!
+    if (last_valid_texture_) {
+      return last_valid_texture_;
     }
-
-    // Finally, perform any GPU processing required
-    return ProcessFrameIntoTexture(f, p, original);
+    return nullptr;
   }
 
-  return nullptr;
+  AVFramePtr original = f;
+
+  // Patch 0104/0113: an explicit range on the decoded frame wins over the project's cached
+  // params; only a range the user actually chose in Footage Properties may override the frame.
+  // Imported VideoParams always have a range, so deriving the override from the value alone
+  // (patch 0105) made every cached stream look user-overridden and undid the 0104 fix.
+  const bool is_user_override = p.force_range_is_user_override
+      && (p.force_range == VideoParams::kColorRangeLimited ||
+          p.force_range == VideoParams::kColorRangeFull);
+  f->color_range = FFmpegUtils::ResolveColorRange(f->color_range, p.force_range, is_user_override);
+
+  // Any hardware-resident frame (CUDA / VideoToolbox / VA-API) is routed through the active
+  // pipeline's ProcessHardwareFrame. The direct GPU-resident path is valid for progressive frames
+  // at any preview divider: the backend's YUV composite shader renders directly to the divider's
+  // effective size, so scaled previews no longer need a per-frame av_hwframe_transfer_data() +
+  // swscale round-trip. Interlaced sources and failed imports still fall through to the host
+  // fallback, otherwise swscale would receive a device pointer and crash. Previously this branch
+  // was gated behind OLIVE_ENABLE_CUDA_NVDEC, leaving the native Tier 2 backends (CR-09) dead.
+  const AVPixelFormat fmt = static_cast<AVPixelFormat>(f->format);
+  const bool is_hw_frame = (fmt == AV_PIX_FMT_CUDA ||
+                            fmt == AV_PIX_FMT_VIDEOTOOLBOX ||
+                            fmt == AV_PIX_FMT_VAAPI);
+  if (is_hw_frame) {
+    if (p.src_interlacing == VideoParams::kInterlaceNone && instance_.hw_pipeline()) {
+      VideoParams hw_params(f->width,
+                            f->height,
+                            PixelFormat::U8,
+                            VideoParams::kRGBAChannelCount,
+                            av_guess_sample_aspect_ratio(instance_.fmt_ctx(), instance_.avstream(), f.get()),
+                            VideoParams::kInterlaceNone,
+                            p.divider);
+      hw_params.set_opaque(true);
+
+      // Carry the stream metadata into the hardware pipeline as a fallback. The decoded frame
+      // still wins when it describes the matrix itself, and VideoToolbox additionally reads the
+      // actual range from the CVPixelBuffer pixel format. Without these fields a decoder that
+      // leaves color metadata unspecified would fall back to the project's cached copy only.
+      const AVCodecParameters *codecpar = instance_.avstream()->codecpar;
+      hw_params.set_color_range(p.force_range);
+      hw_params.set_color_range_overridden(is_user_override);
+      hw_params.set_color_space(codecpar->color_space);
+      hw_params.set_color_primaries(codecpar->color_primaries);
+      hw_params.set_color_trc(codecpar->color_trc);
+      const QString hdr_colorspace =
+          VideoParams::GetHdrColorSpaceForTransfer(codecpar->color_trc);
+      if (!hdr_colorspace.isEmpty()) {
+        hw_params.set_colorspace(hdr_colorspace);
+      }
+
+      HardwareDecodedFrame hw_frame;
+      if (instance_.hw_pipeline()->ProcessHardwareFrame(f.get(), hw_params, hw_frame) && hw_frame.texture) {
+        last_valid_texture_ = hw_frame.texture;
+        return hw_frame.texture;
+      }
+    }
+
+    // Host fallback: the last line of defence for frames that skipped the direct path.
+    AVFramePtr software_frame = CreateAVFramePtr();
+    GetHalStats().RecordCpuReadback();
+    int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
+    if (transfer_error < 0) {
+      qCritical() << "[HAL-Fallback] Failed to transfer hardware frame for preview:" << FFmpegError(transfer_error);
+      if (last_valid_texture_) {
+        return last_valid_texture_;
+      }
+      return nullptr;
+    }
+    av_frame_copy_props(software_frame.get(), f.get());
+    f = software_frame;
+  }
+
+  // Disregard "JPEG" pixel formats because we allow the user to override that
+  f->format = FFmpegUtils::ConvertJPEGSpaceToRegularSpace(static_cast<AVPixelFormat>(f->format));
+
+  // Perform any CPU processing required
+  f = PreProcessFrame(f, p);
+  if (!f) {
+    // Error occurred while software scaling
+    if (last_valid_texture_) {
+      return last_valid_texture_;
+    }
+    return nullptr;
+  }
+
+  // Finally, perform any GPU processing required
+  TexturePtr tex = ProcessFrameIntoTexture(f, p, original);
+  if (tex) {
+    last_valid_texture_ = tex;
+  }
+  return tex;
 }
 
 void FFmpegDecoder::CloseInternal()
 {
+  last_valid_texture_ = nullptr;
   if (working_packet_) {
     av_packet_free(&working_packet_);
     working_packet_ = nullptr;
@@ -308,6 +471,12 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
   // Handle format context error
   if (error_code == 0) {
 
+    // Matroska with PGS subtitles often lacks header dimensions on the subtitle tracks,
+    // firing repetitive "unspecified size" warnings under the default 5 MB probesize.
+    if (fmt_ctx->iformat && strcmp(fmt_ctx->iformat->name, "matroska,webm") == 0) {
+      fmt_ctx->probesize = std::max<int64_t>(fmt_ctx->probesize, 50 * 1024 * 1024);
+    }
+
     // Retrieve metadata about the media
     avformat_find_stream_info(fmt_ctx, nullptr);
 
@@ -336,6 +505,18 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
 
         if (avstream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
 
+          const int dovi_profile = GetDoviProfile(avstream->codecpar);
+          if (dovi_profile == 5) {
+            qCritical() << "[FFmpegDecoder] Refusing Dolby Vision Profile 5 stream"
+                        << filename << "stream" << i
+                        << "- it uses IPT/ICtCp without an HDR10/HLG base layer;"
+                        << "transcode to HDR10 or HLG before importing.";
+            continue;
+          } else if (dovi_profile != 0) {
+            qInfo() << "[FFmpegDecoder] Dolby Vision profile" << dovi_profile
+                    << "detected; RPU is not processed, using the base layer.";
+          }
+
           AVPixelFormat compatible_pix_fmt = AV_PIX_FMT_NONE;
 
           bool image_is_still = false;
@@ -355,8 +536,8 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
               // Read first frame and retrieve some metadata
               if (instance.GetFrame(pkt, frame) >= 0) {
                 // Check if video is interlaced and what field dominance it has if so
-                if (frame->interlaced_frame) {
-                  if (frame->top_field_first) {
+                if (frame->flags & AV_FRAME_FLAG_INTERLACED) {
+                  if (frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST) {
                     interlacing = VideoParams::kInterlacedTopFirst;
                   } else {
                     interlacing = VideoParams::kInterlacedBottomFirst;
@@ -425,6 +606,24 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
           stream.set_duration(avstream->duration);
           stream.set_color_range(avstream->codecpar->color_range == AVCOL_RANGE_JPEG ? VideoParams::kColorRangeFull : VideoParams::kColorRangeLimited);
 
+          // Patch 0042: carry the container's colour description through to the
+          // renderer. The transfer characteristic drives the HDR decision, and an
+          // HDR stream defaults its input colour space to the matching Rec.2020
+          // space rather than silently riding the (SDR) project default. An empty
+          // result leaves colorspace() empty, which Footage resolves to the
+          // project default as before.
+          stream.set_color_primaries(avstream->codecpar->color_primaries);
+          stream.set_color_trc(avstream->codecpar->color_trc);
+          // NB: AVCodecParameters spells this one `color_space`, unlike
+          // AVCodecContext's older `colorspace`.
+          stream.set_color_space(avstream->codecpar->color_space);
+          stream.set_mastering_peak_nits(GetMasteringPeakNits(avstream->codecpar));
+
+          const QString hdr_colorspace = VideoParams::GetHdrColorSpaceForTransfer(avstream->codecpar->color_trc);
+          if (!hdr_colorspace.isEmpty()) {
+            stream.set_colorspace(hdr_colorspace);
+          }
+
           // Defaults to false, requires user intervention if incorrect
           stream.set_premultiplied_alpha(false);
 
@@ -439,9 +638,9 @@ FootageDescription FFmpegDecoder::Probe(const QString &filename, CancelAtom *can
         } else if (avstream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
 
           // Create an audio stream object
-          uint64_t channel_layout = avstream->codecpar->channel_layout;
+          uint64_t channel_layout = FFmpegUtils::ChannelLayoutToMask(avstream->codecpar->ch_layout);
           if (!channel_layout) {
-            channel_layout = static_cast<uint64_t>(av_get_default_channel_layout(avstream->codecpar->channels));
+            channel_layout = FFmpegUtils::DefaultChannelLayoutMask(avstream->codecpar->ch_layout.nb_channels);
           }
 
           if (avstream->duration == AV_NOPTS_VALUE || duration_guessed_from_bitrate) {
@@ -557,18 +756,42 @@ bool FFmpegDecoder::ConformAudioInternal(const QVector<QString> &filenames, cons
     return false;
   }
 
-  // Create resampling context
-  SwrContext* resampler = swr_alloc_set_opts(nullptr,
-                                             params.channel_layout(),
-                                             FFmpegUtils::GetFFmpegSampleFormat(params.format()),
-                                             params.sample_rate(),
-                                             channel_layout,
-                                             static_cast<AVSampleFormat>(instance_.avstream()->codecpar->format),
-                                             instance_.avstream()->codecpar->sample_rate,
-                                             0,
-                                             nullptr);
+  // Create resampling context.
+  //
+  // in_layout is built from the *mask* returned by ValidateChannelLayout() rather than from
+  // codecpar->ch_layout directly: the deprecated swr_alloc_set_opts() converted a mask into a
+  // native layout internally, so going through the mask keeps this bit-for-bit identical to the
+  // previous behaviour. (Passing an AV_CHANNEL_ORDER_CUSTOM layout through verbatim would instead
+  // preserve its custom order, diverging from the old code's downgrade to a native layout.)
+  FFmpegUtils::ChannelLayoutGuard out_layout(params.channel_layout());
+  FFmpegUtils::ChannelLayoutGuard in_layout(channel_layout);
 
-  swr_init(resampler);
+  SwrContext* resampler = nullptr;
+  int swr_err = swr_alloc_set_opts2(&resampler,
+                                    out_layout.get(),
+                                    FFmpegUtils::GetFFmpegSampleFormat(params.format()),
+                                    params.sample_rate(),
+                                    in_layout.get(),
+                                    static_cast<AVSampleFormat>(instance_.avstream()->codecpar->format),
+                                    instance_.avstream()->codecpar->sample_rate,
+                                    0,
+                                    nullptr);
+  if (swr_err < 0 || !resampler) {
+    // Note: the previous swr_alloc_set_opts() call had no NULL check here; this is a deliberate
+    // hardening that only affects an already-failing path.
+    qCritical() << "Failed to initialize resampling context";
+    return false;
+  }
+
+  int swr_init_err = swr_init(resampler);
+  if (swr_init_err < 0) {
+    // The resampler accepted the parameters above but cannot configure itself with them - e.g. a
+    // target AudioParams whose channel layout has no channels. This used to fall straight through
+    // into the conversion loop, where params.channel_count() == 0 divided by zero (SIGFPE).
+    qCritical() << "Failed to initialize resampling context:" << swr_init_err;
+    swr_free(&resampler);
+    return false;
+  }
 
   AVPacket* pkt = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
@@ -648,6 +871,50 @@ bool FFmpegDecoder::ConformAudioInternal(const QVector<QString> &filenames, cons
       SignalProcessingProgress(frame->best_effort_timestamp, duration);
     }
 
+    // Patch 0100: swr_convert only emits samples when it has enough input. At EOF its internal
+    // delay still holds the tail (measured as ~0.3% of a 1 s conform), which the old loop
+    // discarded. Passing a null input frame and in_count=0 drains that delay into the same
+    // interleaved file before it is closed.
+    if (success) {
+      while (true) {
+        int nb_samples = swr_get_out_samples(resampler, 0);
+        if (nb_samples <= 0) {
+          break;
+        }
+
+        int nb_bytes_per_channel = params.samples_to_bytes(nb_samples) / nb_channels;
+        data.set_sample_count(nb_bytes_per_channel);
+        data.allocate();
+
+        nb_samples = swr_convert(resampler,
+                                 reinterpret_cast<uint8_t**>(data.to_raw_ptrs().data()),
+                                 nb_samples,
+                                 nullptr,
+                                 0);
+
+        if (nb_samples > 0) {
+          nb_bytes_per_channel = params.samples_to_bytes(nb_samples) / nb_channels;
+          wave_out.write(
+              const_cast<const char**>(reinterpret_cast<char**>(data.to_raw_ptrs().data())),
+              nb_bytes_per_channel);
+        }
+
+        data.destroy();
+
+        if (nb_samples < 0) {
+          char err_str[512];
+          av_strerror(nb_samples, err_str, 512);
+          qWarning() << "libswresample failed while flushing at EOF:" << nb_samples << err_str;
+          success = false;
+          break;
+        }
+
+        if (nb_samples == 0) {
+          break;
+        }
+      }
+    }
+
     wave_out.close();
   } else {
     qWarning() << "Failed to open WAVE output for indexing";
@@ -691,20 +958,12 @@ int FFmpegDecoder::GetNativeChannelCount(AVPixelFormat pix_fmt)
 
 uint64_t FFmpegDecoder::ValidateChannelLayout(AVStream* stream)
 {
-  if (stream->codecpar->channel_layout) {
-    return stream->codecpar->channel_layout;
+  uint64_t channel_layout = FFmpegUtils::ChannelLayoutToMask(stream->codecpar->ch_layout);
+  if (channel_layout) {
+    return channel_layout;
   }
 
-  return av_get_default_channel_layout(stream->codecpar->channels);
-}
-
-const char *FFmpegDecoder::GetInterlacingModeInFFmpeg(VideoParams::Interlacing interlacing)
-{
-  if (interlacing == VideoParams::kInterlacedTopFirst) {
-    return "tff";
-  } else {
-    return "bff";
-  }
+  return FFmpegUtils::DefaultChannelLayoutMask(stream->codecpar->ch_layout.nb_channels);
 }
 
 bool FFmpegDecoder::IsPixelFormatGLSLCompatible(AVPixelFormat f)
@@ -743,6 +1002,24 @@ AVFramePtr FFmpegDecoder::PreProcessFrame(AVFramePtr f, const RetrieveVideoParam
   // In pre-processing, we try to achieve the following:
   //   - If a divider is being used, scale down the image
   //   - If a pixel format is not compatible with the GLSL shader, convert it to RGBA ourselves
+
+  // Last line of defence: a hardware frame must never reach swscale. Download it first.
+  // Covers any HW format (CUDA / VideoToolbox / VA-API) that bypassed the RetrieveVideoInternal
+  // direct path and any build where the GPU-resident branch was skipped. Previously gated behind
+  // OLIVE_ENABLE_CUDA_NVDEC, which let native Tier 2 frames crash swscale on non-NVIDIA builds.
+  const AVPixelFormat pre_fmt = static_cast<AVPixelFormat>(f->format);
+  if (pre_fmt == AV_PIX_FMT_CUDA || pre_fmt == AV_PIX_FMT_VIDEOTOOLBOX || pre_fmt == AV_PIX_FMT_VAAPI) {
+    qWarning() << "[HAL] Hardware frame reached pre-processing; downloading to host memory";
+    AVFramePtr software_frame = CreateAVFramePtr();
+    GetHalStats().RecordCpuReadback();
+    int transfer_error = av_hwframe_transfer_data(software_frame.get(), f.get(), 0);
+    if (transfer_error < 0) {
+      qCritical() << "[HAL] Failed to transfer hardware frame in pre-processing:" << FFmpegError(transfer_error);
+      return nullptr;
+    }
+    av_frame_copy_props(software_frame.get(), f.get());
+    f = software_frame;
+  }
 
   if (p.divider == 1 && IsPixelFormatGLSLCompatible(static_cast<AVPixelFormat>(f->format))) {
     // No CPU processing required, the user wants this in full resolution and the pixel format can
@@ -1021,12 +1298,16 @@ FFmpegDecoder::Instance::Instance() :
   fmt_ctx_(nullptr),
   codec_ctx_(nullptr),
   avstream_(nullptr),
-  opts_(nullptr)
+  opts_(nullptr),
+  cuda_frame_count_(0)
 {
 }
 
 bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 {
+  // A new file/stream starts with a clean fallback history.
+  stream_fallback_ctx_.failed_backends.clear();
+
   // Open file in a format context
   int error_code = avformat_open_input(&fmt_ctx_, filename, nullptr, nullptr);
 
@@ -1034,6 +1315,11 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
   if (error_code != 0) {
     qCritical() << "Failed to open input:" << filename << FFmpegError(error_code);
     return false;
+  }
+
+  // Matroska with PGS subtitles often lacks header dimensions on the subtitle tracks.
+  if (fmt_ctx_->iformat && strcmp(fmt_ctx_->iformat->name, "matroska,webm") == 0) {
+    fmt_ctx_->probesize = std::max<int64_t>(fmt_ctx_->probesize, 50 * 1024 * 1024);
   }
 
   // Get stream information from format
@@ -1047,6 +1333,22 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   // Get reference to correct AVStream
   avstream_ = fmt_ctx_->streams[stream_index];
+
+  // Refuse Profile 5 before creating a decoder or hardware pipeline. Its base layer is IPT,
+  // not YCbCr, and no path in this tree applies the Dolby RPU; decoding it would silently
+  // paint wrong colours. Existing projects with such a clip fail loudly (and stay offline)
+  // instead of looking "successful" with corrupt colour.
+  if (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+    const int dovi_profile = GetDoviProfile(avstream_->codecpar);
+    if (dovi_profile == 5) {
+      qCritical() << "[FFmpegDecoder] Dolby Vision Profile 5 is not supported:"
+                  << filename << "- transcode to HDR10 or HLG before importing.";
+      return false;
+    } else if (dovi_profile != 0) {
+      qInfo() << "[FFmpegDecoder] Dolby Vision profile" << dovi_profile
+              << "detected; RPU is not processed, using the base layer.";
+    }
+  }
 
   // Find decoder
   const AVCodec* codec = avcodec_find_decoder(avstream_->codecpar->codec_id);
@@ -1076,8 +1378,70 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
     return false;
   }
 
-  // Set multithreading setting
-  error_code = av_dict_set(&opts_, "threads", "auto", 0);
+  bool hw_pipeline_ready = false;
+  const bool is_video_stream = (avstream_->codecpar->codec_type == AVMEDIA_TYPE_VIDEO);
+  if (is_video_stream) {
+    if (codec_ctx_->framerate.num <= 0 || codec_ctx_->framerate.den <= 0) {
+      if (avstream_->r_frame_rate.num > 0 && avstream_->r_frame_rate.den > 0) {
+        codec_ctx_->framerate = avstream_->r_frame_rate;
+      } else if (avstream_->avg_frame_rate.num > 0 && avstream_->avg_frame_rate.den > 0) {
+        codec_ctx_->framerate = avstream_->avg_frame_rate;
+      }
+    }
+    // NOTE: constructed outside any single-backend macro. The factory itself selects the correct
+    // Tier (CUDA / VideoToolbox / VA-API / D3D11 / Software) per platform & GPU, so Tier 2 native
+    // backends are reachable on non-NVIDIA builds (fixes CR-09: construction was previously gated
+    // behind OLIVE_ENABLE_CUDA_NVDEC).
+    hw_pipeline_ = HardwarePipelineFactory::CreatePipeline(codec_ctx_, codec_ctx_->width, codec_ctx_->height,
+                                                           nullptr, &stream_fallback_ctx_);
+    if (hw_pipeline_) {
+      if (hw_pipeline_->GetType() != HardwareBackendType::SoftwareFallback) {
+        // get_format is a non-capturing C callback; reach the pipeline through codec_ctx->opaque.
+        codec_ctx_->opaque = this;
+        codec_ctx_->get_format = [](AVCodecContext* context, const AVPixelFormat* pixel_formats) {
+          auto* self = static_cast<Instance*>(context->opaque);
+          AVPixelFormat target_hw_fmt = AV_PIX_FMT_NONE;
+          if (self && self->hw_pipeline()) {
+            target_hw_fmt = self->hw_pipeline()->GetPreferredHwPixelFormat();
+          }
+
+          const bool dimensions_supported =
+              context->width <= HardwareQuotaManager::GetConfig().max_frame_width &&
+              context->height <= HardwareQuotaManager::GetConfig().max_frame_height;
+          if (dimensions_supported && target_hw_fmt != AV_PIX_FMT_NONE) {
+            for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+              if (*format == target_hw_fmt) {
+                return target_hw_fmt;
+              }
+            }
+          }
+
+          for (const AVPixelFormat* format = pixel_formats; *format != AV_PIX_FMT_NONE; ++format) {
+            const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(*format);
+            if (descriptor && !(descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+              return *format;
+            }
+          }
+
+          return AV_PIX_FMT_NONE;
+        };
+        hw_pipeline_ready = true;
+      }
+      qInfo() << "[HAL-Pipeline] Activated" << hw_pipeline_->GetBackendName() << "for" << filename;
+    }
+  }
+
+  // Set multithreading setting: match Tier 3 budget and avoid statically skipping B-frames on primary streams
+  if (hw_pipeline_ && hw_pipeline_->GetType() == HardwareBackendType::SoftwareFallback && is_video_stream) {
+    int fallback_threads = codec_ctx_->thread_count;
+    if (fallback_threads <= 0) {
+      fallback_threads = 2;
+    }
+    error_code = av_dict_set(&opts_, "threads", QByteArray::number(fallback_threads).constData(), 0);
+    // Note: codec_ctx_->skip_frame is managed dynamically by hw_pipeline_->UpdatePriority(is_primary).
+  } else {
+    error_code = av_dict_set(&opts_, "threads", "auto", 0);
+  }
 
   // Handle failure to set multithreaded decoding
   if (error_code < 0) {
@@ -1086,6 +1450,35 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
   // Open codec
   error_code = avcodec_open2(codec_ctx_, codec, &opts_);
+  if (error_code < 0 && hw_pipeline_ready) {
+    qWarning() << "[HAL-Pipeline] Hardware decoder initialization failed; retrying software decode:" << error_code;
+    if (hw_pipeline_) {
+      hw_pipeline_->Close();
+      hw_pipeline_.reset();
+    }
+    if (hw_device_ctx_) {
+      av_buffer_unref(&hw_device_ctx_);
+      hw_device_ctx_ = nullptr;
+    }
+    if (nvdec_quota_slot_ >= 0) {
+      HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
+      nvdec_quota_slot_ = -1;
+    }
+    avcodec_free_context(&codec_ctx_);
+    codec_ctx_ = avcodec_alloc_context3(codec);
+    if (!codec_ctx_ || avcodec_parameters_to_context(codec_ctx_, avstream_->codecpar) < 0) {
+      qCritical() << "Failed to recreate software codec context";
+      return false;
+    }
+
+    if (opts_) {
+      av_dict_free(&opts_);
+      opts_ = nullptr;
+    }
+    av_dict_set(&opts_, "threads", "2", 0);
+    codec_ctx_->skip_frame = AVDISCARD_NONREF;
+    error_code = avcodec_open2(codec_ctx_, codec, &opts_);
+  }
   if (error_code < 0) {
     char buf[512];
     av_strerror(error_code, buf, 512);
@@ -1098,6 +1491,30 @@ bool FFmpegDecoder::Instance::Open(const char *filename, int stream_index)
 
 void FFmpegDecoder::Instance::Close()
 {
+  stream_fallback_ctx_.failed_backends.clear();
+
+  if (codec_ctx_) {
+    avcodec_flush_buffers(codec_ctx_);
+  }
+
+  if (hw_pipeline_) {
+    hw_pipeline_->Close();
+    hw_pipeline_.reset();
+  }
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (hw_device_ctx_) {
+    av_buffer_unref(&hw_device_ctx_);
+    hw_device_ctx_ = nullptr;
+  }
+  if (nvdec_quota_slot_ >= 0) {
+    HardwareQuotaManager::ReleaseSlot(nvdec_quota_slot_);
+    nvdec_quota_slot_ = -1;
+    qInfo() << "[NVDEC-Quota] Released. Active:"
+            << HardwareQuotaManager::GetActiveSessionCount() << "/"
+            << HardwareQuotaManager::GetMaxPhysicalSessions();
+  }
+#endif
   if (opts_) {
     av_dict_free(&opts_);
     opts_ = nullptr;
@@ -1149,6 +1566,17 @@ int FFmpegDecoder::Instance::GetFrame(AVPacket *pkt, AVFrame *frame)
       }
     }
   }
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+  if (ret >= 0 && frame->format == AV_PIX_FMT_CUDA) {
+    ++cuda_frame_count_;
+    if (cuda_frame_count_ == 1 || cuda_frame_count_ % 60 == 0) {
+      qInfo() << "[CUDA-NVDEC] Received hardware frame" << cuda_frame_count_
+              << "size=" << frame->width << "x" << frame->height
+              << "format=" << av_get_pix_fmt_name(static_cast<AVPixelFormat>(frame->format));
+    }
+  }
+#endif
 
   return ret;
 }

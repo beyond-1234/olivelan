@@ -35,13 +35,22 @@ extern "C" {
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFontDatabase>
 #include <QMessageBox>
 #include <QSurfaceFormat>
+#include <QTranslator>
+
+#include <kddockwidgets/KDDockWidgets.h>
 
 #include "core.h"
 #include "common/commandlineparser.h"
 #include "common/debug.h"
+#include "codec/hal/gpu_session_advisor.h"
+#include "codec/hal/hardware_pipeline_factory.h"
+#include "config/config.h"
+#include "dialog/hal/halbackenddialog.h"
 #include "node/project/serializer/serializer.h"
+#include "bootstrap/graphicsfallback.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -124,6 +133,13 @@ int main(int argc, char *argv[])
   QGuiApplication::setDesktopFileName("org.olivevideoeditor.Olive");
   QCoreApplication::setApplicationVersion(olive::kAppVersionLong);
 
+  // Patch 0078 (Phase 9): resolve the display session before anything else. The QPA platform is
+  // bound when QApplication is constructed (see below), so a stored preference has to be turned
+  // into environment variables here or not at all. Config::Load() depends on the organization /
+  // application names set above, and its error paths are safe to reach before Core exists.
+  olive::Config::Load();
+  olive::GpuSessionAdvisor::ApplySessionPreference();
+
 
   //
   // Parse command line arguments
@@ -176,6 +192,19 @@ int main(int argc, char *argv[])
       parser.AddOption({QStringLiteral("d"), QStringLiteral("-decompress")},
                        QCoreApplication::translate("main", "Decompress project file (No GUI)"));
 
+  auto hal_backend_option =
+      parser.AddOption({QStringLiteral("hal-backend"), QStringLiteral("-hal-backend")},
+                       QCoreApplication::translate("main",
+                          "Force a HAL decode backend for this session "
+                          "(auto|cuda|videotoolbox|vaapi|software)"),
+                       true,
+                       QCoreApplication::translate("main", "backend"));
+
+  auto hal_dialog_option =
+      parser.AddOption({QStringLiteral("hal-dialog"), QStringLiteral("-hal-dialog")},
+                       QCoreApplication::translate("main",
+                          "Show the HAL backend selection dialog with probe results on startup"));
+
 #ifdef _WIN32
   auto console_option =
       parser.AddOption({QStringLiteral("c"), QStringLiteral("-console")},
@@ -207,6 +236,10 @@ int main(int argc, char *argv[])
 
   // Hidden crash option for debugging the crash handling
   auto crash_option = parser.AddOption({QStringLiteral("-crash")}, QString(), true, QString(), true);
+
+  // Patch 0095: hidden continuous-playback benchmark. Not part of the user-facing CLI.
+  auto autoplay_option = parser.AddOption({QStringLiteral("-autoplay")}, QString(), true,
+                                          QStringLiteral("seconds"), true);
 
   parser.Process(args);
 
@@ -242,6 +275,28 @@ int main(int argc, char *argv[])
     startup_params.set_crash_on_startup(true);
   }
 
+  if (autoplay_option->IsSet()) {
+    bool ok = false;
+    const int seconds = autoplay_option->GetSetting().toInt(&ok);
+    if (ok && seconds > 0) {
+      startup_params.set_autoplay_seconds(seconds);
+    } else {
+      qWarning() << "--autoplay expects a positive number of seconds";
+    }
+  }
+
+  // HAL backend forcing (phase5-07). Environment variable is the lowest-priority source;
+  // -hal-backend overrides it, and the -hal-dialog selection overrides both.
+  {
+    const QByteArray env_backend = qgetenv("OLIVE_HAL_BACKEND");
+    if (!env_backend.isEmpty()) {
+      olive::HardwarePipelineFactory::SetForcedBackend(QString::fromLocal8Bit(env_backend));
+    }
+    if (hal_backend_option->IsSet()) {
+      olive::HardwarePipelineFactory::SetForcedBackend(hal_backend_option->GetSetting());
+    }
+  }
+
   startup_params.set_fullscreen(fullscreen_option->IsSet());
 
   startup_params.set_startup_project(project_argument->GetSetting());
@@ -258,12 +313,15 @@ int main(int argc, char *argv[])
   QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
   format.setVersion(3, 2);
   format.setProfile(QSurfaceFormat::CoreProfile);
+  format.setRenderableType(QSurfaceFormat::OpenGL);
 
   format.setDepthBufferSize(24);
   QSurfaceFormat::setDefaultFormat(format);
 
   // Enable application automatically using higher resolution images from icons
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
   QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#endif
 
   QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
@@ -280,6 +338,64 @@ int main(int argc, char *argv[])
 #endif // _WIN32
 
     a.reset(new QApplication(argc, argv));
+
+    // Patch 0078 (Phase 9): record the platform that was actually selected, so the session choice
+    // can be asserted from a log rather than guessed.
+    qInfo() << "[GPU Session] QApplication platform:" << QGuiApplication::platformName();
+
+    // Graphics capability is independent of Core/Project/Node state. Probe it
+    // before any MainWindow or render thread exists.
+    const olive::GraphicsFallback::Result graphics_result =
+        olive::GraphicsFallback::EnsureUsableOpenGL();
+    if (graphics_result == olive::GraphicsFallback::Result::Relaunching) {
+      return 0;
+    }
+    if (graphics_result == olive::GraphicsFallback::Result::Unavailable) {
+      const QString message = QCoreApplication::translate(
+          "main",
+          "Olive could not create an OpenGL context. The viewer cannot start.\n\n"
+          "%1\n\n"
+          "Try an X11/XWayland session or install/update the GPU driver. "
+          "The diagnostics log contains more details.")
+          .arg(olive::GraphicsFallback::LastError());
+      qCritical().noquote() << message;
+      QMessageBox::critical(nullptr,
+                            QCoreApplication::translate("main", "OpenGL unavailable"),
+                            message);
+      return 1;
+    }
+
+    // Initialize the default UI font stack. Inter is registered so theme
+    // manifests can opt into it, but it is not forced globally: the embedded
+    // Source Han Sans font remains the default family for themes that do not
+    // declare a font stack.
+    QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Inter.ttf"));
+
+    QStringList ui_families;
+    int cjk_font_id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DefaultSans.otf"));
+    if (cjk_font_id != -1) {
+      ui_families.append(QFontDatabase::applicationFontFamilies(cjk_font_id));
+    } else {
+      // Fallback geometric sans Chinese font stack
+#if defined(Q_OS_WIN)
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("Microsoft YaHei UI") << QStringLiteral("SimHei");
+#elif defined(Q_OS_MAC)
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("PingFang SC") << QStringLiteral("Heiti SC");
+#else
+      ui_families << QStringLiteral("Source Han Sans SC") << QStringLiteral("Noto Sans CJK SC") << QStringLiteral("WenQuanYi Micro Hei");
+#endif
+    }
+
+    ui_families.removeDuplicates();
+    QFont app_font = QApplication::font();
+    if (!ui_families.isEmpty()) {
+      app_font.setFamilies(ui_families);
+    }
+    QApplication::setFont(app_font);
+
+    // KDDockWidgets 2.x requires a frontend to be selected before any MainWindow/DockWidget is
+    // created. Olive only links the QtWidgets frontend (see ext/CMakeLists.txt).
+    KDDockWidgets::initFrontend(KDDockWidgets::FrontendType::QtWidgets);
   } else {
     a.reset(new QCoreApplication(argc, argv));
   }
@@ -326,6 +442,47 @@ int main(int argc, char *argv[])
 #if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(7, 14, 100)
   avfilter_register_all();
 #endif
+
+  // HAL backend selection dialog (phase5-07). GUI mode only, shown before Core
+  // startup so the forced backend applies to every decoder instance. Cancelled
+  // dialog keeps whatever was set from -hal-backend / OLIVE_HAL_BACKEND.
+  //
+  // Patch 0081 (Phase 9): the translator is normally installed by Core::SetStartupLocale(), which
+  // runs inside Core::Start() - i.e. *after* this dialog. Without installing one here too, this
+  // dialog is the one piece of UI that could never be translated. Declared at this scope so it
+  // outlives the dialog; Core later installs its own, which takes precedence in Qt's
+  // reverse-order translator lookup.
+  QTranslator early_translator;
+
+  if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
+      && hal_dialog_option->IsSet()
+      && dynamic_cast<QApplication*>(a.get())) {
+    bool early_loaded = false;
+    if (!startup_params.startup_language().isEmpty()) {
+      early_loaded = early_translator.load(startup_params.startup_language());
+    } else {
+      QString locale = olive::Config::Current()[QStringLiteral("Language")].toString();
+      if (locale.isEmpty()) {
+        locale = QStringLiteral("zh_CN");
+      }
+      early_loaded = early_translator.load(QStringLiteral(":/ts/%1").arg(locale));
+    }
+
+    if (early_loaded) {
+      QCoreApplication::installTranslator(&early_translator);
+    }
+
+    olive::HALBackendDialog hal_dialog;
+    if (hal_dialog.exec() == QDialog::Accepted) {
+      olive::HardwarePipelineFactory::SetForcedBackend(hal_dialog.SelectedBackend());
+    }
+  }
+
+  // Patch 0082 (Phase 9): the user asked to switch display session, which needs a new process. The
+  // replacement is already running, so stop here instead of initialising Core behind its back.
+  if (olive::GpuSessionAdvisor::RestartLaunched()) {
+    return 0;
+  }
 
   // Enable Google Crashpad if compiled with it
 #ifdef USE_CRASHPAD

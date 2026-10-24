@@ -14,14 +14,88 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
-project(olive-editor VERSION 0.2.0 LANGUAGES CXX)
+project(olive-editor VERSION 0.2.0 LANGUAGES C CXX)
 
-option(BUILD_QT6 "Build with Qt 6 over 5 (experimental)" OFF)
 option(BUILD_DOXYGEN "Build Doxygen documentation" OFF)
 option(BUILD_TESTS "Build unit tests" OFF)
 option(USE_WERROR "Error on compile warning" OFF)
+
+# Backend switches: AUTO (default, detect-and-enable-if-present) or OFF (force
+# disable). No "ON" state — for test distribution a missing dependency should
+# silently disable the backend rather than abort the configure step.
+set(OLIVE_ENABLE_CUDA_NVDEC "AUTO" CACHE STRING "Enable FFmpeg CUDA/NVDEC decoding (AUTO/OFF)")
+set(OLIVE_ENABLE_VAAPI_DMABUF "AUTO" CACHE STRING "Enable Linux VA-API DMA-BUF decoding (AUTO/OFF)")
+set_property(CACHE OLIVE_ENABLE_CUDA_NVDEC PROPERTY STRINGS AUTO OFF)
+set_property(CACHE OLIVE_ENABLE_VAAPI_DMABUF PROPERTY STRINGS AUTO OFF)
+
+# Normalize "ON" (legacy) to the AUTO path so a stale -D...=ON still works.
+if(OLIVE_ENABLE_CUDA_NVDEC STREQUAL "ON")
+  set(OLIVE_ENABLE_CUDA_NVDEC "AUTO")
+endif()
+if(OLIVE_ENABLE_VAAPI_DMABUF STREQUAL "ON")
+  set(OLIVE_ENABLE_VAAPI_DMABUF "AUTO")
+endif()
+
+if(OLIVE_ENABLE_CUDA_NVDEC STREQUAL "OFF")
+  # Disabled
+else()
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND OR CMAKE_CUDA_COMPILER)
+    set(OLIVE_ENABLE_CUDA_NVDEC ON)
+  else()
+    set(OLIVE_ENABLE_CUDA_NVDEC OFF)
+    message("   CUDA toolkit not found; CUDA/NVDEC backend will be disabled.")
+  endif()
+endif()
+
+if(OLIVE_ENABLE_CUDA_NVDEC)
+  if(NOT CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 89)
+  endif()
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  list(APPEND OLIVE_LIBRARIES CUDA::cudart)
+endif()
+
+# Platform-native decode backends. These are auto-enabled per platform: the
+# dependency ships with the OS SDK, so no manual -D flag is needed.
+#   - VA-API DMA-BUF : Linux only (needs libva + libva-drm headers)
+#   - D3D11 interop  : Windows only (d3d11.h ships with Windows SDK)
+#   - VideoToolbox   : macOS only (already gated by __APPLE__ in the source)
+if(UNIX AND NOT APPLE)
+  if(OLIVE_ENABLE_VAAPI_DMABUF STREQUAL "OFF")
+    set(OLIVE_ENABLE_VAAPI_DMABUF OFF)
+  else()
+    find_package(PkgConfig)
+    pkg_check_modules(LIBVA libva libva-drm)
+
+    # Patch 0117: libva alone is not enough. vaapi_dmabuf_pipeline.cpp also includes
+    # <EGL/egl.h> and links eglCreateImageKHR/glEGLImageTargetTexture2DOES; without the
+    # EGL development package the backend used to be enabled and then failed to compile.
+    find_path(EGL_INCLUDE_DIR NAMES EGL/egl.h)
+    find_library(EGL_LIBRARY NAMES EGL)
+
+    if(LIBVA_FOUND AND EGL_INCLUDE_DIR AND EGL_LIBRARY)
+      set(OLIVE_ENABLE_VAAPI_DMABUF ON)
+      list(APPEND OLIVE_INCLUDE_DIRS ${LIBVA_INCLUDE_DIRS} ${EGL_INCLUDE_DIR})
+      list(APPEND OLIVE_LIBRARIES ${LIBVA_LIBRARIES} ${EGL_LIBRARY})
+    else()
+      set(OLIVE_ENABLE_VAAPI_DMABUF OFF)
+      if(NOT LIBVA_FOUND)
+        message("   libva/libva-drm not found; VA-API DMA-BUF backend will be disabled.")
+      elseif(NOT EGL_INCLUDE_DIR)
+        message("   EGL headers (EGL/egl.h) not found; VA-API DMA-BUF backend will be disabled.")
+      else()
+        message("   EGL library not found; VA-API DMA-BUF backend will be disabled.")
+      endif()
+    endif()
+  endif()
+endif()
+
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,19 +132,34 @@ if(MSVC)
 else()
   set(OLIVE_COMPILE_OPTIONS
     "$<$<CONFIG:RELEASE>:-O2>"
-    -Wuninitialized
-    -pedantic-errors
-    -Wall
-    -Wextra
-    -Wno-unused-parameter
-    -Wshadow
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wuninitialized>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-pedantic-errors>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wall>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wextra>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-parameter>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-Wshadow>"
   )
   if (USE_WERROR)
     list(APPEND OLIVE_COMPILE_OPTIONS "-Werror")
+
+    # GCC 13 emits -Wmaybe-uninitialized from Qt's inline QRect code (reached via
+    # app/widget/curvewidget/curveview.cpp) during optimisation. It is a third-party
+    # false positive, and optimisation-time warnings are *not* covered by the
+    # system-header suppression that -isystem installs for Qt. Keep it visible as a
+    # warning, but do not let it fail the build.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      list(APPEND OLIVE_COMPILE_OPTIONS "-Wno-error=maybe-uninitialized")
+    endif()
   endif()
 endif()
 
 set(OLIVE_DEFINITIONS -DQT_DEPRECATED_WARNINGS)
+if(OLIVE_ENABLE_CUDA_NVDEC STREQUAL "ON")
+  list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_CUDA_NVDEC)
+endif()
+if(OLIVE_ENABLE_VAAPI_DMABUF STREQUAL "ON")
+  list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_VAAPI_DMABUF)
+endif()
 if (WIN32)
   list(APPEND OLIVE_DEFINITIONS -DUNICODE -D_UNICODE)
 endif()
@@ -84,91 +173,95 @@ endif()
 find_package(OpenGL REQUIRED)
 list(APPEND OLIVE_LIBRARIES OpenGL::GL)
 
-# Link OpenColorIO
-find_package(OpenColorIO 2.1.1 REQUIRED)
-list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
-list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+# Phase 15: OpenColorIO is a required product dependency. The former
+# OLIVE_ENABLE_OCIO OFF build and built-in colour engine have been removed.
+# Prefer the upstream CONFIG target (2.2+); keep the module fallback for
+# distributions that only ship headers/libraries. OCIO is a colour evaluation
+# dependency only; do not reintroduce OpenImageIO/OpenEXR here.
+find_package(OpenColorIO 2.2.0 CONFIG QUIET)
 
-# Link OpenImageIO
-find_package(OpenImageIO 2.1.12 REQUIRED)
-list(APPEND OLIVE_LIBRARIES ${OIIO_LIBRARIES})
-list(APPEND OLIVE_INCLUDE_DIRS ${OIIO_INCLUDE_DIRS})
+if(NOT OpenColorIO_FOUND)
+  find_package(OpenColorIO 2.2.0 REQUIRED MODULE)
+endif()
 
-# Link OpenEXR
-find_package(OpenEXR REQUIRED)
-list(APPEND OLIVE_LIBRARIES ${OPENEXR_LIBRARIES})
-list(APPEND OLIVE_INCLUDE_DIRS ${OPENEXR_INCLUDES})
+if(TARGET OpenColorIO::OpenColorIO)
+  list(APPEND OLIVE_LIBRARIES OpenColorIO::OpenColorIO)
+elseif(OpenColorIO_LIBRARIES)
+  list(APPEND OLIVE_LIBRARIES ${OpenColorIO_LIBRARIES})
+  list(APPEND OLIVE_INCLUDE_DIRS ${OpenColorIO_INCLUDE_DIRS})
+else()
+  list(APPEND OLIVE_LIBRARIES ${OCIO_LIBRARIES})
+  list(APPEND OLIVE_INCLUDE_DIRS ${OCIO_INCLUDE_DIRS})
+endif()
+
 
 # Link Olive
 list(APPEND OLIVE_LIBRARIES olivecore)
 list(APPEND OLIVE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext/core/include)
 
-# Link Qt
+# Link vendored LZ4 (used by the frame cache container)
+list(APPEND OLIVE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4)
+
+# Link Qt 6 (explicitly require Qt 6, minimum version 6.2 for LTS/C++17 compatibility, supporting distro-provided 6.4+)
 set(QT_LIBRARIES
   Core
   Gui
   Widgets
   OpenGL
+  OpenGLWidgets
   LinguistTools
   Concurrent
 )
 if (UNIX AND NOT APPLE)
   list(APPEND QT_LIBRARIES DBus)
 endif()
-if (BUILD_QT6)
-  set(QT_NAME Qt6)
+
+# Phase 10/14 baseline: Qt 6.6 is the minimum that keeps QZipReader in
+# QtCore/private across supported distributions. Product builds pin Qt 6.8 LTS;
+# Ubuntu 24.04's system Qt 6.4.2 is no longer a supported build baseline.
+find_package(Qt6 6.6 REQUIRED
+  COMPONENTS
+    ${QT_LIBRARIES}
+  OPTIONAL_COMPONENTS
+    Network
+)
+
+message(STATUS "Qt6 baseline: minimum 6.6, found ${Qt6_VERSION}")
+
+if (NOT Qt6Network_FOUND)
+  message("   Qt6::Network module not found, crash reporting will be disabled.")
+endif()
+
+# Zip package import for .olivetheme is optional: it uses Qt's private
+# QZipReader, which is only available when the Qt private development headers
+# are installed. Directory and plain .qss imports work without it.
+if (TARGET Qt6::CorePrivate)
+  list(APPEND OLIVE_LIBRARIES Qt6::CorePrivate)
+  list(APPEND OLIVE_DEFINITIONS OLIVE_HAVE_QZIPREADER)
+  message(STATUS "Qt6 CorePrivate found - .olivetheme zip import enabled")
 else()
-  set(QT_NAME Qt5)
+  message(STATUS "Qt6 CorePrivate not found - .olivetheme zip import disabled")
 endif()
-find_package(QT
-  NAMES
-    ${QT_NAME}
-  REQUIRED
-  COMPONENTS
-    ${QT_LIBRARIES}
-  OPTIONAL_COMPONENTS
-    Network
-)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED
-  COMPONENTS
-    ${QT_LIBRARIES}
-  OPTIONAL_COMPONENTS
-    Network
-)
-if (NOT Qt${QT_VERSION_MAJOR}Network_FOUND)
-  message("   Qt${QT_VERSION_MAJOR}::Network module not found, crash reporting will be disabled.")
-endif()
+
 list(APPEND OLIVE_LIBRARIES
-  Qt${QT_VERSION_MAJOR}::Core
-  Qt${QT_VERSION_MAJOR}::Gui
-  Qt${QT_VERSION_MAJOR}::Widgets
-  Qt${QT_VERSION_MAJOR}::OpenGL
-  Qt${QT_VERSION_MAJOR}::Concurrent
+  Qt6::Core
+  Qt6::Gui
+  Qt6::Widgets
+  Qt6::OpenGL
+  Qt6::OpenGLWidgets
+  Qt6::Concurrent
 )
-
-if (${QT_VERSION_MAJOR} EQUAL "6")
-  find_package(Qt${QT_VERSION_MAJOR}
-    REQUIRED
-      OpenGLWidgets
-  )
-
-  list(APPEND OLIVE_LIBRARIES
-    Qt${QT_VERSION_MAJOR}::OpenGLWidgets
-  )
-
-  # Link KDDockWidgets
-  #find_package(KDDockWidgets-qt6 CONFIG REQUIRED)
-else()
-  # Link KDDockWidgets
-  #find_package(KDDockWidgets CONFIG REQUIRED)
-endif()
 
 list(APPEND OLIVE_LIBRARIES
   KDAB::kddockwidgets
 )
 
 # Link FFmpeg
-find_package(FFMPEG 3.0 REQUIRED
+#
+# 6.1 is the *real* floor, not the upstream-declared 3.0: this tree reads
+# AVCodecParameters::coded_side_data, which was added in FFmpeg 6.1 (6.0 and earlier only had the
+# deprecated AVStream::side_data).
+find_package(FFMPEG 6.1 REQUIRED
   COMPONENTS
   avutil
   avcodec
@@ -186,6 +279,24 @@ list(APPEND OLIVE_LIBRARIES
   FFMPEG::swscale
   FFMPEG::swresample
 )
+
+# Belt-and-braces floor check, independent of the version *string* format.
+#
+# FFMPEG_VERSION is read out of libavutil/ffversion.h and its shape varies by how FFmpeg was
+# produced (release tarball "6.1", distro package "6.1.1-3ubuntu5", git snapshot
+# "N-123456-gabcdef"), so the comparison above is a user-facing hint rather than a guarantee.
+# Assert on the actual symbol the code depends on instead.
+# NOTE: AVCodecParameters is declared in libavcodec/codec_par.h, *not* libavcodec/avcodec.h.
+include(CheckStructHasMember)
+set(CMAKE_REQUIRED_INCLUDES ${FFMPEG_INCLUDE_DIRS})
+check_struct_has_member("AVCodecParameters" coded_side_data "libavcodec/codec_par.h"
+                        OLIVE_HAVE_AVCODECPARAMETERS_CODED_SIDE_DATA)
+unset(CMAKE_REQUIRED_INCLUDES)
+if (NOT OLIVE_HAVE_AVCODECPARAMETERS_CODED_SIDE_DATA)
+  message(FATAL_ERROR
+    "FFmpeg >= 6.1 is required: AVCodecParameters::coded_side_data was not found "
+    "(searched libavcodec/codec_par.h). This tree cannot be built against FFmpeg 6.0 or older.")
+endif ()
 
 # Link PortAudio
 find_package(PortAudio REQUIRED)
@@ -228,22 +339,30 @@ endif()
 if (WIN32)
   list(APPEND OLIVE_DEFINITIONS "-DUNICODE -D_UNICODE")
 elseif (APPLE)
-  list(APPEND OLIVE_LIBRARIES "-framework IOKit")
+  list(APPEND OLIVE_LIBRARIES "-framework CoreAudio" "-framework CoreFoundation" "-framework IOKit" "-framework IOSurface" "-framework CoreVideo" "-framework OpenGL")
 elseif(UNIX)
-  list(APPEND OLIVE_LIBRARIES Qt${QT_VERSION_MAJOR}::DBus)
+  list(APPEND OLIVE_LIBRARIES Qt6::DBus)
 endif()
 
 # Generate Git hash
 set(PROJECT_LONG_VERSION ${PROJECT_VERSION})
-if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
-  find_package(Git)
-  if(GIT_FOUND)
+find_package(Git QUIET)
+if(GIT_FOUND)
+  if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
     execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       OUTPUT_VARIABLE GIT_HASH
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+  elseif(EXISTS "${CMAKE_SOURCE_DIR}/../.git")
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
+      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/.."
+      OUTPUT_VARIABLE GIT_HASH
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  endif()
 
+  if(GIT_HASH)
     set(PROJECT_LONG_VERSION ${PROJECT_VERSION}-${GIT_HASH})
   endif()
 endif()

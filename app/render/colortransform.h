@@ -24,7 +24,6 @@
 #include <QString>
 
 #include "common/define.h"
-#include "common/ocioutils.h"
 
 namespace olive {
 

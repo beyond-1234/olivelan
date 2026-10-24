@@ -18,12 +18,19 @@
 set(OLIVE_SOURCES
   core.h
   core.cpp
+  # Vendored LZ4 (third-party, warning-clean but built with -w to keep -Werror happy)
+  ${CMAKE_SOURCE_DIR}/third_party/lz4/lz4.c
+)
+
+set_source_files_properties(${CMAKE_SOURCE_DIR}/third_party/lz4/lz4.c
+  PROPERTIES COMPILE_OPTIONS "$<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-w>"
 )
 
 #set(OLIVE_RESOURCES)
 
 # Add subdirectories, which will populate the above variables
 add_subdirectory(audio)
+add_subdirectory(bootstrap)
 add_subdirectory(cli)
 add_subdirectory(codec)
 add_subdirectory(common)
@@ -44,7 +51,7 @@ add_subdirectory(widget)
 add_subdirectory(window)
 
 # Add translations
-qt_add_translation(OLIVE_QM_FILES ${OLIVE_TS_FILES})
+qt6_add_translation(OLIVE_QM_FILES ${OLIVE_TS_FILES})
 
 set(QRC_BODY "")
 foreach(QM_FILE ${OLIVE_QM_FILES})
@@ -64,7 +71,7 @@ add_library(olive-version-obj
   version.cpp
   version.h
 )
-target_link_libraries(olive-version-obj PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+target_link_libraries(olive-version-obj PRIVATE Qt6::Core)
 target_compile_options(olive-version-obj PRIVATE -DAPPVERSION="${PROJECT_VERSION}" -DAPPVERSIONLONG="${PROJECT_LONG_VERSION}" )
 
 # Add main library
@@ -123,6 +130,13 @@ elseif(APPLE)
 elseif(UNIX)
   # Set Linux-specific properties for application
   install(TARGETS olive-editor RUNTIME DESTINATION bin)
+
+  # Patch 0093 (P2-5): Source Han Sans SC is distributed under SIL OFL 1.1, which requires the
+  # licence to accompany the font. The qrc embeds it in the binary; this also installs a
+  # filesystem copy for distributors and users.
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/OFL.txt
+                ${CMAKE_CURRENT_SOURCE_DIR}/ui/fonts/OFL-Inter.txt
+          DESTINATION share/olive-editor/licenses)
 endif()
 
 # Set link libraries
@@ -142,6 +156,6 @@ target_include_directories(olive-editor PRIVATE ${OLIVE_INCLUDE_DIRS})
 target_include_directories(libolive-editor PRIVATE ${OLIVE_INCLUDE_DIRS})
 
 # Add crash handler
-if (GoogleCrashpad_FOUND AND Qt${QT_VERSION_MAJOR}Network_FOUND)
+if (GoogleCrashpad_FOUND AND Qt6Network_FOUND)
   add_subdirectory(crashhandler)
 endif()

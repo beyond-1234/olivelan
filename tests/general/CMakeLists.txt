@@ -15,3 +15,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 olive_add_test(General common-tests common-tests.cpp)
+olive_add_test(General color-role-tests color-role-tests.cpp)
+olive_add_test(General color-hdr-metadata-tests color-hdr-metadata-tests.cpp)
+olive_add_test(General color-equivalence-tests color-equivalence-tests.cpp)
+olive_add_test(General legacy-serializer-tests legacy-serializer-tests.cpp)
+olive_add_test(General hal-honesty-tests hal-honesty-tests.cpp)
+olive_add_test(General vaapi-composite-tests vaapi-composite-tests.cpp)
+olive_add_test(General preview-resource-tests preview-resource-tests.cpp)
+olive_add_test(General phase14-decode-policy-tests phase14-decode-policy-tests.cpp)
+olive_add_test(General phase10-ocio-tests phase10-ocio-tests.cpp)
+olive_add_test(General gpu-color-tests gpu-color-tests.cpp)
+olive_add_test(General p2-regression-tests p2-regression-tests.cpp)
+olive_add_test(General theme-tests theme-tests.cpp)
+olive_add_test(General footage-relink-tests footage-relink-tests.cpp)

@@ -21,13 +21,18 @@
 #include "viewer.h"
 
 #include <QDateTime>
+#include <QEasingCurve>
 #include <QFontDialog>
+#include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPropertyAnimation>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QShowEvent>
+#include <QTimer>
 #include <QtMath>
 #include <QVBoxLayout>
 
@@ -42,6 +47,7 @@
 #include "panel/multicam/multicampanel.h"
 #include "panel/panelmanager.h"
 #include "render/rendermanager.h"
+#include "ui/style/designtokenregistry.h"
 #include "viewerpreventsleep.h"
 #include "widget/audiomonitor/audiomonitor.h"
 #include "widget/menu/menu.h"
@@ -78,6 +84,11 @@ ViewerWidget::ViewerWidget(ViewerDisplayWidget *display, QWidget *parent) :
   ignore_scrub_(0),
   multicam_panel_(nullptr)
 {
+  floating_controls_ = DesignTokenRegistry::instance()->GetInt(
+      QStringLiteral("viewer.controls.floating"), 0);
+  floating_controls_animated_ = false;
+  floating_controls_animation_ = nullptr;
+
   // Set up main layout
   QVBoxLayout* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -112,25 +123,44 @@ ViewerWidget::ViewerWidget(ViewerDisplayWidget *display, QWidget *parent) :
   // Create waveform view when audio is connected and video isn't
   waveform_view_ = new AudioWaveformView();
   ConnectTimelineView(waveform_view_);
-  layout->addWidget(waveform_view_);
 
-  // Create time ruler
-  layout->addWidget(ruler());
-
-  // Create scrollbar
-  layout->addWidget(scrollbar());
-
-  // Create lower controls
-  controls_ = new PlaybackControls();
+  // Create lower controls. CapCut Studio floats a compact, semi-transparent
+  // transport over the preview; the classic presets keep a ruler below it.
+  QWidget *controls_parent = floating_controls_
+      ? static_cast<QWidget *>(sizer_)
+      : static_cast<QWidget *>(this);
+  controls_ = new PlaybackControls(controls_parent);
   controls_->SetTimecodeEnabled(true);
   controls_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+
+  if (floating_controls_) {
+    controls_->setObjectName(QStringLiteral("ViewerFloatingControls"));
+    controls_->setAttribute(Qt::WA_StyledBackground, true);
+    controls_->setFixedHeight(44);
+    if (controls_->layout()) {
+      controls_->layout()->setContentsMargins(6, 3, 6, 3);
+    }
+
+    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect(controls_);
+    shadow->setBlurRadius(22);
+    shadow->setOffset(0, 3);
+    shadow->setColor(QColor(0, 0, 0, 80));
+    controls_->setGraphicsEffect(shadow);
+    controls_->raise();
+  } else {
+    layout->addWidget(waveform_view_);
+    layout->addWidget(ruler());
+    layout->addWidget(scrollbar());
+  }
   connect(controls_, &PlaybackControls::PlayClicked, this, static_cast<void(ViewerWidget::*)()>(&ViewerWidget::Play));
   connect(controls_, &PlaybackControls::PauseClicked, this, &ViewerWidget::Pause);
   connect(controls_, &PlaybackControls::PrevFrameClicked, this, &ViewerWidget::PrevFrame);
   connect(controls_, &PlaybackControls::NextFrameClicked, this, &ViewerWidget::NextFrame);
   connect(controls_, &PlaybackControls::BeginClicked, this, &ViewerWidget::GoToStart);
   connect(controls_, &PlaybackControls::EndClicked, this, &ViewerWidget::GoToEnd);
-  layout->addWidget(controls_);
+  if (!floating_controls_) {
+    layout->addWidget(controls_);
+  }
 
   // FIXME: Magic number
   SetScale(48.0);
@@ -312,6 +342,79 @@ void ViewerWidget::resizeEvent(QResizeEvent *event)
   super::resizeEvent(event);
 
   UpdateMinimumScale();
+
+  if (floating_controls_) {
+    PositionFloatingControls();
+  }
+}
+
+void ViewerWidget::showEvent(QShowEvent *event)
+{
+  super::showEvent(event);
+
+  if (floating_controls_ && controls_ && sizer_) {
+    // Position immediately when the sizer already has its final geometry, then defer one
+    // event-loop turn for panels that are shown before their nested layout has run. This keeps
+    // the transport visible (and centered) on first display instead of requiring a resize.
+    PositionFloatingControls();
+    QTimer::singleShot(0, this, [this]() { PositionFloatingControls(); });
+  }
+}
+
+void ViewerWidget::PositionFloatingControls()
+{
+  if (!floating_controls_ || !controls_ || !sizer_) {
+    return;
+  }
+
+  const int available_width = sizer_->width() - 32;
+  if (available_width <= 0 || sizer_->height() <= 0) {
+    return;
+  }
+
+  const int bar_width = qMin(620, available_width);
+  const int bar_height = controls_->height();
+  const int x = (sizer_->width() - bar_width) / 2;
+  const int y = qMax(8, sizer_->height() - bar_height - 16);
+
+  const QRect target(x, y, bar_width, bar_height);
+
+  controls_->show();
+
+  if (!floating_controls_animated_) {
+    floating_controls_animated_ = true;
+
+    // A single restrained ease-out entrance; no hover bounce, no continuous
+    // motion in the editing surface.
+    controls_->setGeometry(target.translated(0, 8));
+
+    floating_controls_animation_ = new QPropertyAnimation(controls_, "geometry", this);
+    floating_controls_animation_->setDuration(DesignTokenRegistry::instance()->GetInt(
+        QStringLiteral("motion.duration.ms"), 200));
+    floating_controls_animation_->setEasingCurve(QEasingCurve::OutCubic);
+    floating_controls_animation_->setStartValue(target.translated(0, 8));
+    floating_controls_animation_->setEndValue(target);
+    QPropertyAnimation *animation = floating_controls_animation_;
+    connect(animation, &QPropertyAnimation::finished, this, [this, animation]() {
+      if (floating_controls_animation_ == animation) {
+        floating_controls_animation_ = nullptr;
+      }
+      animation->deleteLater();
+    });
+    animation->start();
+  } else if (floating_controls_animation_
+             && floating_controls_animation_->state() == QAbstractAnimation::Running) {
+    // The first showEvent has already started the entrance animation. A deferred layout pass or
+    // a resize must retarget that animation rather than setGeometry() it (which would stop the
+    // animation mid-flight and make the controls jump/off-center on first display).
+    if (floating_controls_animation_->endValue().toRect() != target) {
+      floating_controls_animation_->setEndValue(target);
+    }
+  } else {
+    controls_->setGeometry(target);
+  }
+
+  controls_->raise();
 }
 
 RenderTicketPtr ViewerWidget::GetSingleFrame(const rational &t, bool dry)
@@ -331,6 +434,21 @@ void ViewerWidget::TogglePlayPause()
 bool ViewerWidget::IsPlaying() const
 {
   return playback_speed_ != 0;
+}
+
+int ViewerWidget::GetPresentedFrameCount() const
+{
+  return display_widget_->GetPresentedFrameCount();
+}
+
+int ViewerWidget::GetSkippedFrameCount() const
+{
+  return display_widget_->GetSkippedFrameCount();
+}
+
+QImage ViewerWidget::GrabFrame()
+{
+  return display_widget_->GrabFrame();
 }
 
 void ViewerWidget::SetColorMenuEnabled(bool enabled)
@@ -714,6 +832,19 @@ bool ViewerWidget::IsVideoVisible() const
 
 void ViewerWidget::UpdateWaveformViewFromMode()
 {
+  if (floating_controls_) {
+    // The CapCut preset is a preview-first workspace. Audio waveforms remain
+    // available in the timeline, and keeping the OpenGL viewer visible also
+    // keeps the floating transport reachable for audio-only sequences.
+    sizer_->setVisible(true);
+    waveform_view_->setVisible(false);
+
+    if (GetConnectedNode()) {
+      GetConnectedNode()->SetWaveformEnabled(false);
+    }
+    return;
+  }
+
   bool prefer_waveform = ShouldForceWaveform();
 
   sizer_->setVisible(waveform_mode_ == kWFViewerAndWaveform || waveform_mode_ == kWFViewerOnly || (waveform_mode_ == kWFAutomatic && !prefer_waveform));
@@ -814,7 +945,7 @@ void ViewerWidget::ReceivedAudioBufferForScrubbing()
               QString error;
               const QByteArray &packed = buf.at(0);
               AudioManager::instance()->ClearBufferedOutput();
-              if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), packed, &error)) {
+              if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), packed, &error, true)) {
                 Core::instance()->ShowStatusBarMessage(tr("Audio scrubbing failed: %1").arg(error));
               }
               AudioMonitor::PushSampleBufferOnAll(samples);
@@ -882,7 +1013,10 @@ void ViewerWidget::UpdateTextureFromNode()
   }
 
   if (IsPlaying()) {
-    qWarning() << "UpdateTextureFromNode called while playing";
+    // VideoParamsChanged can arrive from import/relink while playback is still running.
+    // Defer the texture refresh to PauseInternal(), which always calls this function again;
+    // this is a normal deferred update, not an error worth warning about.
+    qDebug() << "Deferring texture refresh until playback pauses";
     return;
   }
 
@@ -987,8 +1121,10 @@ void ViewerWidget::PlayInternal(int speed, bool in_to_out_only)
     AudioManager::instance()->SetOutputNotifyInterval(audio_processor_.to().time_to_bytes(kAudioPlaybackInterval));
     connect(AudioManager::instance(), &AudioManager::OutputNotify, this, &ViewerWidget::QueueNextAudioBuffer);
 
-    static const int prequeue_count = 2;
-    prequeuing_audio_ = prequeue_count; // Queue two buffers ahead of time
+    // Queue 4 buffers ahead of time (1.0 second safety watermark) so that Tier 3 CPU decode
+    // spikes or heavy 4K HDR timeline seeking cannot empty the ring buffer during playback start.
+    static const int prequeue_count = 4;
+    prequeuing_audio_ = prequeue_count;
     audio_playback_queue_time_ = GetConnectedNode()->GetPlayhead();
     for (int i=0; i<prequeue_count; i++) {
       QueueNextAudioBuffer();
@@ -1159,7 +1295,11 @@ RenderTicketPtr ViewerWidget::GetFrame(const rational &t)
     // Frame has been cached, grab the frame
     RenderTicketPtr ticket = std::make_shared<RenderTicket>();
     ticket->setProperty("time", QVariant::fromValue(t));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QtConcurrent::run(static_cast<void(*)(RenderTicketPtr, const QString &, const QUuid &, const int64_t &)>(ViewerWidget::DecodeCachedImage), ticket, GetConnectedNode()->video_frame_cache()->GetCacheDirectory(), GetConnectedNode()->video_frame_cache()->GetUuid(), Timecode::time_to_timestamp(t, timebase(), Timecode::kFloor));
+#else
+    (void)QtConcurrent::run(static_cast<void(*)(RenderTicketPtr, const QString &, const QUuid &, const int64_t &)>(ViewerWidget::DecodeCachedImage), ticket, GetConnectedNode()->video_frame_cache()->GetCacheDirectory(), GetConnectedNode()->video_frame_cache()->GetUuid(), Timecode::time_to_timestamp(t, timebase(), Timecode::kFloor));
+#endif
     return ticket;
   }
 }
@@ -1175,13 +1315,19 @@ void ViewerWidget::FinishPlayPreprocess()
 
   // Start audio waveform playback
   if (!prequeued_audio_.isEmpty()) {
+    // Fade out any scrub tail still in the queue and make the first playback buffer start from
+    // silence, otherwise starting playback right after a scrub can step from old to new audio.
+    AudioManager::instance()->ClearBufferedOutput();
+
     QString error;
     if (!AudioManager::instance()->PushToOutput(audio_processor_.to(), prequeued_audio_, &error)) {
       QMessageBox::critical(this, tr("Audio Error"), tr("Failed to start audio: %1\n\n"
                                                         "Please check your audio preferences and try again.").arg(error));
     }
     prequeued_audio_.clear();
+  }
 
+  if (GetConnectedNode() && GetConnectedNode()->GetAudioParams().is_valid()) {
     AudioMonitor::StartWaveformOnAll(GetConnectedNode()->GetConnectedWaveform(),
                                      GetConnectedNode()->GetPlayhead(), playback_speed_);
   }

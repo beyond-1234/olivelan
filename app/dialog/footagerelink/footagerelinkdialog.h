@@ -22,27 +22,54 @@
 #define FOOTAGERELINKDIALOG_H
 
 #include <QDialog>
-#include <QTreeWidget>
+#include <QStringList>
+#include <QVector>
 
 #include "node/project/footage/footage.h"
 
+class QLabel;
+class QPushButton;
+class QTreeWidget;
+
 namespace olive {
+
+class UndoStack;
 
 class FootageRelinkDialog : public QDialog
 {
   Q_OBJECT
 public:
-  FootageRelinkDialog(const QVector<Footage*>& footage, QWidget* parent = nullptr);
+  /**
+   * @brief Prompt for missing footage and let the user choose media locations.
+   *
+   * When `undo_stack` is provided (the project is already open), accepted
+   * changes are pushed as one undo command. During project load it is null and
+   * the paths are applied directly.
+   */
+  FootageRelinkDialog(const QVector<Footage*>& footage, QWidget* parent = nullptr,
+                      UndoStack* undo_stack = nullptr);
+
+protected:
+  virtual void accept() override;
 
 private:
-  void UpdateFootageItem(int index);
+  void SelectFolder();
+  void BrowseFile();
+  void RefreshList();
+  void UpdateButtons();
+  int SelectedIndex() const;
+  bool IsFound(int index) const;
+  int MissingCount() const;
 
-  QTreeWidget* table_;
+  QTreeWidget* file_list_;
+  QLabel* status_label_;
+  QPushButton* browse_button_;
 
   QVector<Footage*> footage_;
-
-private slots:
-  void BrowseForFootage();
+  QStringList original_paths_;
+  QStringList new_paths_;
+  QString last_search_dir_;
+  UndoStack* undo_stack_;
 
 };
 

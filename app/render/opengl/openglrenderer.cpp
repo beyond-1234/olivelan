@@ -20,10 +20,35 @@
 
 #include "openglrenderer.h"
 
+#include <algorithm>
 #include <iostream>
+#include <cstring>
+#include <cstdlib>
 #include <QDateTime>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
+
+#include <OpenColorIO/OpenColorIO.h>
+namespace OCIO = OCIO_NAMESPACE;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+extern "C" {
+#include <libavutil/hwcontext.h>
+}
+#include "cuda_nv12_to_rgba.h"
+#endif
+
+#include "preview_scale.h"
+#include "scratch_cache_policy.h"
+
+#if defined(__APPLE__)
+#include <CoreVideo/CoreVideo.h>
+#include <IOSurface/IOSurface.h>
+#include <OpenGL/CGLIOSurface.h>
+#include <OpenGL/CGLCurrent.h>
+#endif
 
 #include "config/config.h"
 
@@ -112,16 +137,29 @@ bool OpenGLRenderer::Init()
   GL_PREAMBLE;
 
   if (context_) {
-    qCritical() << "Can't initialize already initialized OpenGLRenderer";
+    const QString error = tr("The OpenGL renderer was already initialized.");
+    qCritical() << error;
+    SetLastError(error);
     return false;
   }
 
   surface_.create();
+  if (!surface_.isValid()) {
+    const QString error = tr("Failed to create the offscreen surface required for rendering.");
+    qCritical() << error;
+    SetLastError(error);
+    return false;
+  }
 
   context_ = new QOpenGLContext(this);
   context_->setShareContext(QOpenGLContext::globalShareContext());
   if (!context_->create()) {
-    qCritical() << "Failed to create OpenGL context";
+    const QString error = tr("Failed to create an OpenGL context. The graphics driver may be "
+                             "missing or unable to provide the requested OpenGL 3.2 profile.");
+    qCritical() << error;
+    SetLastError(error);
+    delete context_;
+    context_ = nullptr;
     return false;
   }
 
@@ -138,29 +176,58 @@ void OpenGLRenderer::PostDestroy()
   }
 }
 
-void OpenGLRenderer::PostInit()
+bool OpenGLRenderer::PostInit()
 {
-  GL_PREAMBLE;
+  if (!context_ || !context_->isValid()) {
+    const QString error = tr("Cannot initialize the renderer without a valid OpenGL context.");
+    qCritical() << error;
+    SetLastError(error);
+    return false;
+  }
 
   // Make context current on that surface
   if (context_->parent() == this && !context_->makeCurrent(&surface_)) {
-    qCritical() << "Failed to makeCurrent() on offscreen surface in thread" << thread();
-    return;
+    const QString error = tr("Failed to make the OpenGL context current on the render thread.");
+    qCritical() << error << "Thread:" << thread();
+    SetLastError(error);
+    return false;
   }
 
   functions_ = context_->functions();
+  if (!functions_) {
+    const QString error = tr("The OpenGL context exposes no function table.");
+    qCritical() << error;
+    SetLastError(error);
+    return false;
+  }
 
   // Store OpenGL functions instance
   functions_->glBlendFunc(GL_ONE, GL_ZERO);
 
   // Set up framebuffer used for various things
   functions_->glGenFramebuffers(1, &framebuffer_);
+  valid_ = true;
+  return true;
 }
 
 void OpenGLRenderer::DestroyInternal()
 {
-  if (context_) {
+  if (context_ && functions_) {
     GL_PREAMBLE;
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    DestroyCudaFramePool();
+    for (cudaGraphicsResource_t resource : cuda_graphics_resources_) {
+      cudaGraphicsUnregisterResource(resource);
+    }
+    cuda_graphics_resources_.clear();
+#endif
+
+    DestroyNativeSurfacePool();
+
+    DestroyIOSurfaceScratchTextures();
+
+    DestroyUploadPboRing();
 
     // Delete framebuffer
     functions_->glDeleteFramebuffers(1, &framebuffer_);
@@ -249,13 +316,1020 @@ void OpenGLRenderer::DestroyNativeTexture(QVariant texture)
   GLuint t = texture.value<GLuint>();
 
   if (t > 0) {
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    auto resource = cuda_graphics_resources_.find(t);
+    if (resource != cuda_graphics_resources_.end()) {
+      cudaGraphicsUnregisterResource(resource.value());
+      cuda_graphics_resources_.erase(resource);
+    }
+#endif
     functions_->glDeleteTextures(1, &t);
   }
 }
 
-QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
+void OpenGLRenderer::DestroyTexture(Texture *texture)
 {
-  GL_PREAMBLE;
+  if (texture) {
+    const GLuint tid = texture->id().value<GLuint>();
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+    if (ReleaseCudaPoolTexture(tid)) {
+      return;
+    }
+#endif
+    if (ReleaseNativeSurfacePoolTexture(tid)) {
+      return;
+    }
+  }
+  Renderer::DestroyTexture(texture);
+}
+
+#if defined(OLIVE_ENABLE_CUDA_NVDEC)
+int OpenGLRenderer::AcquireCudaPoolSlot(int width, int height, PixelFormat format)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+
+  if (width <= 0 || height <= 0 || width > kCudaFramePoolMaxWidth || height > kCudaFramePoolMaxHeight) {
+    qWarning() << "[CUDA-GL-Pool] Requested dimensions exceed bounding box:" << width << "x" << height;
+    return -1;
+  }
+
+  // 1. Exact match pass: find a free slot with identical resolution *and* precision
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    auto &slot = cuda_frame_pool_[i];
+    if (!slot.in_use && slot.width == width && slot.height == height && slot.format == format
+        && slot.gl_tex_id != 0 && slot.cuda_resource != nullptr) {
+      if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
+        return -1;
+      }
+      return static_cast<int>(i);
+    }
+  }
+
+  // 2. Reuse pass: resize an existing idle slot
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    auto &slot = cuda_frame_pool_[i];
+    if (!slot.in_use) {
+      if (!AllocateOrResizePoolSlot(slot, width, height, format)) {
+        return -1;
+      }
+      if (!MarkCudaSlotBorrowed(static_cast<int>(i))) {
+        return -1;
+      }
+      return static_cast<int>(i);
+    }
+  }
+
+  // 3. Growth pass: append a new slot if under capacity
+  if (static_cast<int>(cuda_frame_pool_.size()) < kCudaFramePoolCapacity) {
+    CudaGLPoolSlot new_slot;
+    if (AllocateOrResizePoolSlot(new_slot, width, height, format)) {
+      cuda_frame_pool_.push_back(new_slot);
+      int new_index = static_cast<int>(cuda_frame_pool_.size() - 1);
+      if (!MarkCudaSlotBorrowed(new_index)) {
+        return -1;
+      }
+      return new_index;
+    }
+  }
+
+  if (!cuda_pool_capacity_warned_) {
+    cuda_pool_capacity_warned_ = true;
+    qWarning() << "[CUDA-GL-Pool] Pool capacity reached (" << cuda_frame_pool_.size() << "slots all in use)";
+  }
+  return -1;
+}
+
+bool OpenGLRenderer::AllocateOrResizePoolSlot(CudaGLPoolSlot &slot, int width, int height, PixelFormat format)
+{
+  if (slot.cuda_resource) {
+    cudaGraphicsUnregisterResource(slot.cuda_resource);
+    slot.cuda_resource = nullptr;
+  }
+  if (slot.gl_tex_id) {
+    functions_->glDeleteTextures(1, &slot.gl_tex_id);
+    slot.gl_tex_id = 0;
+  }
+
+  // Patch 0027: 8-bit SDR streams keep the cheap GL_RGBA8 slot; 10-bit (P010) streams are
+  // promoted to GL_RGBA16F so the extra two bits survive instead of being truncated.
+  GLint internal_format = GL_RGBA8;
+  GLenum upload_type = GL_UNSIGNED_BYTE;
+  if (format == PixelFormat::F16 || format == PixelFormat::F32) {
+    internal_format = GL_RGBA16F;
+    upload_type = GL_HALF_FLOAT;
+  }
+
+  functions_->glGenTextures(1, &slot.gl_tex_id);
+  functions_->glBindTexture(GL_TEXTURE_2D, slot.gl_tex_id);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  functions_->glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
+  functions_->glBindTexture(GL_TEXTURE_2D, 0);
+
+  const cudaError_t reg_err = cudaGraphicsGLRegisterImage(&slot.cuda_resource,
+                                                          slot.gl_tex_id,
+                                                          GL_TEXTURE_2D,
+                                                          cudaGraphicsRegisterFlagsSurfaceLoadStore);
+  if (reg_err != cudaSuccess) {
+    if (!cuda_pool_registration_failed_) {
+      cuda_pool_registration_failed_ = true;
+      qWarning() << "[CUDA-GL-Pool] Failed to register texture with CUDA:" << cudaGetErrorString(reg_err)
+                 << "- if this is a hybrid-GPU laptop, the OpenGL context may be on the iGPU while"
+                 << "CUDA/NVDEC is on the NVIDIA GPU (CUDA-GL interop cannot work across GPUs)."
+                 << "Use the GPU session selection to move GL onto the NVIDIA GPU, or pick a"
+                 << "different backend in the HAL backend dialog."
+                 << "(This will not be repeated for every frame.)";
+    }
+    if (slot.gl_tex_id) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    return false;
+  }
+
+  cuda_pool_registration_failed_ = false;
+
+  slot.width = width;
+  slot.height = height;
+  slot.format = format;
+  return true;
+}
+
+int OpenGLRenderer::MarkCudaSlotBorrowed(int slot_index)
+{
+  // Caller must hold cuda_pool_mutex_. Returns false if the slot was already checked out,
+  // which would indicate pool bookkeeping corruption.
+  if (slot_index < 0 || slot_index >= static_cast<int>(cuda_frame_pool_.size())) {
+    return false;
+  }
+  CudaGLPoolSlot &slot = cuda_frame_pool_[slot_index];
+  if (slot.in_use) {
+    qCritical() << "[CUDA-GL-Pool] Slot" << slot_index << "borrowed while already in use"
+                << "- pool bookkeeping corruption";
+    return false;
+  }
+  slot.in_use = true;
+  cuda_borrowed_count_++;
+  cuda_in_use_count_++;
+  // The pool is serving frames again, so the next saturation is worth reporting anew.
+  cuda_pool_capacity_warned_ = false;
+  return true;
+}
+
+int OpenGLRenderer::ReleaseCudaPoolSlotInternal(int slot_index)
+{
+  // Caller must hold cuda_pool_mutex_. Single choke point for returning a slot to the pool.
+  // This is the double-release tripwire: a slot released while already free means two owners
+  // believed they held it. Assertions are unusable here (Release builds define NDEBUG), so the
+  // detector reports through qCritical and refuses the release rather than corrupting the pool.
+  if (slot_index < 0 || slot_index >= static_cast<int>(cuda_frame_pool_.size())) {
+    return false;
+  }
+
+  CudaGLPoolSlot &slot = cuda_frame_pool_[slot_index];
+  if (!slot.in_use) {
+    qCritical() << "[CUDA-GL-Pool] DOUBLE RELEASE on slot" << slot_index
+                << "(tex" << slot.gl_tex_id << ") - ignoring to preserve pool integrity";
+    return false;
+  }
+
+  slot.in_use = false;
+  cuda_returned_count_++;
+  cuda_in_use_count_--;
+
+  if (cuda_borrowed_count_ != cuda_returned_count_ + cuda_in_use_count_) {
+    qCritical() << "[CUDA-GL-Pool] Ledger invariant violated: borrowed"
+                << cuda_borrowed_count_ << "!= returned" << cuda_returned_count_
+                << "+ in_use" << cuda_in_use_count_;
+  }
+
+  return true;
+}
+
+void OpenGLRenderer::ReleaseCudaPoolSlot(int slot_index)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+  ReleaseCudaPoolSlotInternal(slot_index);
+}
+
+bool OpenGLRenderer::ReleaseCudaPoolTexture(GLuint tid)
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+
+  // Probe semantics: return true only if this texture belongs to our pool. A miss is the
+  // ordinary path for every non-pooled texture, so it must stay silent and side-effect free.
+  for (size_t i = 0; i < cuda_frame_pool_.size(); ++i) {
+    if (cuda_frame_pool_[i].gl_tex_id == tid) {
+      ReleaseCudaPoolSlotInternal(static_cast<int>(i));
+      return true;
+    }
+  }
+  return false;
+}
+
+void OpenGLRenderer::DestroyCudaFramePool()
+{
+  QMutexLocker locker(&cuda_pool_mutex_);
+
+  // Teardown checkpoint: outstanding borrows here mean textures outlived the pool.
+  if (cuda_in_use_count_ != 0) {
+    qWarning() << "[CUDA-GL-Pool] Destroying pool with" << cuda_in_use_count_
+               << "slot(s) still checked out";
+  }
+
+  for (auto &slot : cuda_frame_pool_) {
+    if (slot.cuda_resource) {
+      cudaGraphicsUnregisterResource(slot.cuda_resource);
+      slot.cuda_resource = nullptr;
+    }
+    if (slot.gl_tex_id) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    slot.in_use = false;
+  }
+  cuda_frame_pool_.clear();
+
+  // Pool is gone, so the ledger restarts from zero.
+  cuda_borrowed_count_ = 0;
+  cuda_returned_count_ = 0;
+  cuda_in_use_count_ = 0;
+}
+
+TexturePtr OpenGLRenderer::CreateTextureFromCudaFrame(const VideoParams &params, const AVFrame *frame)
+{
+  if (!frame || frame->format != AV_PIX_FMT_CUDA || !frame->hw_frames_ctx || params.is_3d()) {
+    return nullptr;
+  }
+
+  // cudaGraphicsGLRegisterImage/Map require the texture's GL context to be current on this thread.
+  // Without it the interop calls are undefined behaviour and crash, so fall back to the CPU path.
+  QOpenGLContext *current_context = QOpenGLContext::currentContext();
+  if (current_context != context_) {
+    static bool context_warning_emitted = false;
+    if (!context_warning_emitted) {
+      context_warning_emitted = true;
+      qWarning() << "[CUDA-GL] Renderer context is not current on this thread; falling back to"
+                 << "software frame transfer. current:" << current_context << "expected:" << context_;
+    }
+    return nullptr;
+  }
+
+  const auto *frames_context = reinterpret_cast<const AVHWFramesContext*>(frame->hw_frames_ctx->data);
+  if (!frames_context || (frames_context->sw_format != AV_PIX_FMT_NV12 && frames_context->sw_format != AV_PIX_FMT_P010)) {
+    return nullptr;
+  }
+
+  // Patch 0027: 10-bit P010 sources get a GL_RGBA16F slot and the full-precision kernel so
+  // the two extra bits are preserved instead of being truncated at the kernel exit.
+  const bool is_10bit = (frames_context->sw_format == AV_PIX_FMT_P010);
+  const PixelFormat slot_format = is_10bit ? PixelFormat::F16 : PixelFormat::U8;
+
+  // Divider-aware preview: allocate and convert at the preview size, not the full frame size.
+  // Before this, the CUDA surface, pool slot and kernel all used frame->width/height while the
+  // returned Texture only *claimed* a smaller effective size - the compositor downscaled later,
+  // but NVDEC post-processing and VRAM were still paid at full resolution.
+  const PreviewScaleDimensions scale =
+      ComputePreviewScaleDimensions(frame->width, frame->height, params.divider());
+  if (scale.width <= 0 || scale.height <= 0) {
+    return nullptr;
+  }
+
+  if (!cuda_scaled_preview_announced_ && params.divider() > 1) {
+    cuda_scaled_preview_announced_ = true;
+    qInfo() << "[CUDA-NVDEC HAL] Divider-aware preview active:"
+            << scale.source_width << "x" << scale.source_height << "->"
+            << scale.width << "x" << scale.height
+            << "(divider" << params.divider() << "); surface and kernel use the preview size";
+  }
+
+  if (!cuda_color_metadata_announced_) {
+    cuda_color_metadata_announced_ = true;
+    qInfo() << "[CUDA-NVDEC HAL] Frame colour metadata:"
+            << scale.source_width << "x" << scale.source_height
+            << "bits" << (is_10bit ? 10 : 8)
+            << "range" << (frame->color_range == AVCOL_RANGE_JPEG ? "full" : "limited")
+            << "matrix" << frame->colorspace
+            << "transfer" << frame->color_trc;
+  }
+
+  const int slot_index = AcquireCudaPoolSlot(scale.width, scale.height, slot_format);
+  if (slot_index < 0) {
+    return nullptr;
+  }
+
+  cudaGraphicsResource_t resource = cuda_frame_pool_[slot_index].cuda_resource;
+  const GLuint texture_id = cuda_frame_pool_[slot_index].gl_tex_id;
+
+  cudaError_t error = cudaGraphicsMapResources(1, &resource, 0);
+  if (error != cudaSuccess) {
+    qWarning() << "[CUDA-GL] Texture map failed:" << cudaGetErrorString(error);
+    ReleaseCudaPoolSlot(slot_index);
+    return nullptr;
+  }
+
+  cudaArray_t mapped_array = nullptr;
+  error = cudaGraphicsSubResourceGetMappedArray(&mapped_array, resource, 0, 0);
+  cudaSurfaceObject_t surface = 0;
+  if (error == cudaSuccess) {
+    cudaResourceDesc resource_description{};
+    resource_description.resType = cudaResourceTypeArray;
+    resource_description.res.array.array = mapped_array;
+    error = cudaCreateSurfaceObject(&surface, &resource_description);
+  }
+
+  if (error == cudaSuccess) {
+    if (is_10bit) {
+      error = OliveLaunchP010ToRgba16fScaledSurface(
+          reinterpret_cast<const uint16_t*>(frame->data[0]),
+          frame->linesize[0],
+          reinterpret_cast<const uint16_t*>(frame->data[1]),
+          frame->linesize[1],
+          surface,
+          frame->width,
+          frame->height,
+          scale.width,
+          scale.height,
+          frame->colorspace,
+          frame->color_range == AVCOL_RANGE_JPEG);
+    } else {
+      error = OliveLaunchNv12ToRgbaScaledSurface(frame->data[0],
+                                                 frame->linesize[0],
+                                                 frame->data[1],
+                                                 frame->linesize[1],
+                                                 surface,
+                                                 frame->width,
+                                                 frame->height,
+                                                 scale.width,
+                                                 scale.height,
+                                                 frame->colorspace,
+                                                 frame->color_range == AVCOL_RANGE_JPEG);
+    }
+  }
+  if (error == cudaSuccess) {
+    error = cudaDeviceSynchronize();
+  }
+  if (surface) {
+    cudaDestroySurfaceObject(surface);
+  }
+
+  const cudaError_t unmap_error = cudaGraphicsUnmapResources(1, &resource, 0);
+  if (error == cudaSuccess) {
+    error = unmap_error;
+  }
+  if (error != cudaSuccess) {
+    qWarning() << "[CUDA-GL] NV12 texture conversion failed:" << cudaGetErrorString(error);
+    ReleaseCudaPoolSlot(slot_index);
+    return nullptr;
+  }
+
+  // Return Texture with this as renderer so IsDummy() is false and Texture::~Texture() routes to DestroyTexture.
+  // The texture's effective size must equal the surface we just wrote (the preview size), so derive
+  // it from the frame and divider rather than trusting a possibly stale params width/height.
+  VideoParams texture_params = params;
+  texture_params.set_width(frame->width);
+  texture_params.set_height(frame->height);
+  texture_params.set_divider(std::max(1, params.divider()));
+  if (is_10bit) {
+    texture_params.set_format(PixelFormat::F16);
+  }
+  return std::make_shared<Texture>(this, QVariant::fromValue(texture_id), texture_params);
+}
+#endif
+
+int OpenGLRenderer::AcquireNativeSurfaceSlot(int width, int height, GLenum target, PixelFormat format,
+                                             GLuint* out_texture_id)
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+  if (width <= 0 || height <= 0) return -1;
+
+  size_t chosen = 0;
+  bool found = false;
+
+  for (size_t i = 0; i < native_surface_pool_.size(); ++i) {
+    auto &slot = native_surface_pool_[i];
+    if (!slot.in_use && slot.width == width && slot.height == height && slot.format == format) {
+      chosen = i;
+      found = true;
+      break;
+    }
+  }
+
+  // Patch 0050: internal-format selection mirrors AllocateOrResizePoolSlot (patch 0027):
+  // 8-bit YUV lands in the cheap GL_RGBA8 slot; 10-bit (P010) promotes to GL_RGBA16F so
+  // the two extra bits survive. A slot allocated for one format is never rebound to another.
+  GLint internal_format = GL_RGBA8;
+  GLenum upload_type = GL_UNSIGNED_BYTE;
+  if (format == PixelFormat::F16 || format == PixelFormat::F32) {
+    internal_format = GL_RGBA16F;
+    upload_type = GL_HALF_FLOAT;
+  }
+
+  if (!found) {
+    for (size_t i = 0; i < native_surface_pool_.size(); ++i) {
+      auto &slot = native_surface_pool_[i];
+      if (!slot.in_use) {
+        if (slot.gl_tex_id) {
+          functions_->glDeleteTextures(1, &slot.gl_tex_id);
+          slot.gl_tex_id = 0;
+        }
+        functions_->glGenTextures(1, &slot.gl_tex_id);
+        functions_->glBindTexture(target, slot.gl_tex_id);
+        functions_->glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        functions_->glTexImage2D(target, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
+        functions_->glBindTexture(target, 0);
+        slot.width = width;
+        slot.height = height;
+        slot.format = format;
+        slot.in_use = true;
+        chosen = i;
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found && static_cast<int>(native_surface_pool_.size()) < kNativeSurfacePoolCapacity) {
+    NativeSurfacePoolSlot new_slot;
+    functions_->glGenTextures(1, &new_slot.gl_tex_id);
+    functions_->glBindTexture(target, new_slot.gl_tex_id);
+    functions_->glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    functions_->glTexImage2D(target, 0, internal_format, width, height, 0, GL_RGBA, upload_type, nullptr);
+    functions_->glBindTexture(target, 0);
+    new_slot.width = width;
+    new_slot.height = height;
+    // F-3 fix (HAL/Phase6-8 review): the newly created slot must record its pixel format,
+    // otherwise the match at the top of this function (slot.format == format) can never hit
+    // it and every 16-bit borrow would allocate a fresh slot instead of reusing this one.
+    new_slot.format = format;
+    new_slot.in_use = true;
+    native_surface_pool_.push_back(new_slot);
+    chosen = native_surface_pool_.size() - 1;
+    found = true;
+  }
+
+  if (!found) return -1;
+
+  // Emit the texture id while still holding the lock (CR-13: callers must not read the pool vector
+  // outside the mutex).
+  if (out_texture_id) {
+    *out_texture_id = native_surface_pool_[chosen].gl_tex_id;
+  }
+
+  // Ledger bookkeeping, aligned with the CUDA pool's double-release guard (CR-12).
+  native_borrowed_count_++;
+  native_in_use_count_++;
+
+  return static_cast<int>(chosen);
+}
+
+bool OpenGLRenderer::ReleaseNativeSurfacePoolTexture(GLuint tid)
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+
+  for (auto &slot : native_surface_pool_) {
+    if (slot.gl_tex_id == tid) {
+      // Double-release tripwire, mirroring ReleaseCudaPoolSlotInternal (CR-08 / CR-12).
+      if (!slot.in_use) {
+        qCritical() << "[NativeSurface-Pool] DOUBLE RELEASE on texture" << tid
+                    << "- ignoring to preserve pool integrity";
+        return false;
+      }
+      slot.in_use = false;
+      native_returned_count_++;
+      native_in_use_count_--;
+      if (native_borrowed_count_ != native_returned_count_ + native_in_use_count_) {
+        qCritical() << "[NativeSurface-Pool] Ledger invariant violated: borrowed"
+                    << native_borrowed_count_ << "!= returned" << native_returned_count_
+                    << "+ in_use" << native_in_use_count_;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+void OpenGLRenderer::DestroyNativeSurfacePool()
+{
+  QMutexLocker locker(&native_surface_pool_mutex_);
+
+  if (native_in_use_count_ != 0) {
+    qWarning() << "[NativeSurface-Pool] Destroying pool with" << native_in_use_count_
+               << "slot(s) still checked out";
+  }
+
+  for (auto &slot : native_surface_pool_) {
+    if (slot.gl_tex_id && context_) {
+      functions_->glDeleteTextures(1, &slot.gl_tex_id);
+      slot.gl_tex_id = 0;
+    }
+    slot.in_use = false;
+  }
+  native_surface_pool_.clear();
+
+  native_borrowed_count_ = 0;
+  native_returned_count_ = 0;
+  native_in_use_count_ = 0;
+}
+
+extern const char* kVaapiYuvToRgbFrag;
+
+OpenGLRenderer::IOSurfaceScratchTexture*
+OpenGLRenderer::AcquireIOSurfaceScratchTexture(int width, int height, int bits_per_pixel)
+{
+#if !defined(__APPLE__)
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+  return nullptr;
+#else
+  if (!functions_ || width <= 0 || height <= 0) {
+    return nullptr;
+  }
+
+  if (bits_per_pixel != 8 && bits_per_pixel != 10) {
+    bits_per_pixel = 8;
+  }
+
+  ++iosurface_scratch_clock_;
+
+  // Exact hit: keep the same planes for steady-state playback of this size.
+  for (IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+    if (entry.width == width && entry.height == height
+        && entry.bits_per_pixel == bits_per_pixel) {
+      entry.last_used = iosurface_scratch_clock_;
+      return &entry;
+    }
+  }
+
+  const int64_t required_bytes = IOSurfaceScratchBytes(width, height, bits_per_pixel);
+
+  std::vector<ScratchCacheEntryInfo> cache_info;
+  cache_info.reserve(iosurface_scratch_pool_.size());
+  for (const IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+    cache_info.push_back({entry.bytes, entry.last_used});
+  }
+
+  std::vector<int> evictions = PlanScratchCacheEvictions(
+      cache_info, required_bytes, kIOSurfaceScratchDefaultBudgetBytes,
+      kIOSurfaceScratchDefaultMaxEntries);
+
+  // Erase from the back so earlier indices remain valid. The selected scratch planes are not
+  // referenced by any returned texture: they are only sampled while compositing this frame.
+  std::sort(evictions.begin(), evictions.end(), [](int lhs, int rhs) { return lhs > rhs; });
+  for (int index : evictions) {
+    IOSurfaceScratchTexture& entry = iosurface_scratch_pool_[index];
+    if (entry.y) {
+      functions_->glDeleteTextures(1, &entry.y);
+    }
+    if (entry.uv) {
+      functions_->glDeleteTextures(1, &entry.uv);
+    }
+    iosurface_scratch_pool_.erase(iosurface_scratch_pool_.begin() + index);
+  }
+
+  const int chroma_width = (width + 1) / 2;
+  const int chroma_height = (height + 1) / 2;
+  const GLint y_internal = (bits_per_pixel > 8) ? GL_R16 : GL_R8;
+  const GLint uv_internal = (bits_per_pixel > 8) ? GL_RG16 : GL_RG8;
+  const GLenum upload_type = (bits_per_pixel > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+
+  GLint previous_texture = 0;
+  functions_->glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+
+  auto create_plane = [&](GLuint* texture, GLint internal_format, GLenum format,
+                          int plane_width, int plane_height) {
+    functions_->glGenTextures(1, texture);
+    functions_->glBindTexture(GL_TEXTURE_2D, *texture);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    functions_->glTexImage2D(GL_TEXTURE_2D, 0, internal_format, plane_width, plane_height,
+                             0, format, upload_type, nullptr);
+  };
+
+  IOSurfaceScratchTexture entry;
+  entry.width = width;
+  entry.height = height;
+  entry.bits_per_pixel = bits_per_pixel;
+  entry.bytes = required_bytes;
+
+  create_plane(&entry.y, y_internal, GL_RED, width, height);
+  create_plane(&entry.uv, uv_internal, GL_RG, chroma_width, chroma_height);
+
+  functions_->glBindTexture(GL_TEXTURE_2D, previous_texture);
+
+  if (!entry.y || !entry.uv) {
+    if (entry.y) {
+      functions_->glDeleteTextures(1, &entry.y);
+    }
+    if (entry.uv) {
+      functions_->glDeleteTextures(1, &entry.uv);
+    }
+    return nullptr;
+  }
+
+  entry.last_used = iosurface_scratch_clock_;
+  iosurface_scratch_pool_.push_back(entry);
+
+  // Only fires when a new size enters the cache, not per frame. This is the point a tester can
+  // watch to confirm that switching between known clip sizes reuses planes instead of rebuilding.
+  qInfo() << "[VideoToolbox-Pool] Cached new IOSurface scratch set"
+          << width << "x" << height << "bits" << bits_per_pixel
+          << "(" << iosurface_scratch_pool_.size() << "set(s) retained)";
+
+  return &iosurface_scratch_pool_.back();
+#endif
+}
+
+void OpenGLRenderer::DestroyIOSurfaceScratchTextures()
+{
+  if (functions_) {
+    for (IOSurfaceScratchTexture& entry : iosurface_scratch_pool_) {
+      if (entry.y) {
+        functions_->glDeleteTextures(1, &entry.y);
+        entry.y = 0;
+      }
+      if (entry.uv) {
+        functions_->glDeleteTextures(1, &entry.uv);
+        entry.uv = 0;
+      }
+    }
+  }
+  iosurface_scratch_pool_.clear();
+  iosurface_scratch_clock_ = 0;
+}
+
+TexturePtr OpenGLRenderer::CompositeTextureFromYuvTextures(const VideoParams &params,
+                                                           GLuint y_tex, GLuint uv_tex,
+                                                           int width, int height,
+                                                           int bits_per_pixel, bool full_range,
+                                                           float yuv_crv, float yuv_cbu,
+                                                           float yuv_cgu, float yuv_cgv)
+{
+  if (!y_tex || !uv_tex || width <= 0 || height <= 0) {
+    return nullptr;
+  }
+
+  // Compile once per renderer process. This is the same shader the VA-API path uses; both
+  // backends expose a normalized R8/R16 luma plane plus a packed RG8/RG16 chroma plane.
+  static QVariant yuv_shader;
+  if (yuv_shader.isNull()) {
+    yuv_shader = CreateNativeShader(ShaderCode(QString::fromUtf8(kVaapiYuvToRgbFrag)));
+    if (yuv_shader.isNull()) {
+      qCritical() << "[HAL] Failed to compile two-plane YUV->RGB shader";
+      return nullptr;
+    }
+  }
+
+  VideoParams dst_params = params;
+  dst_params.set_width(width);
+  dst_params.set_height(height);
+  if (bits_per_pixel > 8) {
+    dst_params.set_format(PixelFormat::F16);
+  }
+  dst_params.set_channel_count(VideoParams::kRGBAChannelCount);
+
+  TexturePtr dst = CreateTexture(dst_params);
+  if (!dst) {
+    qWarning() << "[HAL] Failed to allocate YUV composite destination texture";
+    return nullptr;
+  }
+
+  VideoParams y_params = dst_params;
+  y_params.set_format((bits_per_pixel > 8) ? PixelFormat::U16 : PixelFormat::U8);
+  y_params.set_channel_count(1);
+
+  VideoParams uv_params = y_params;
+  uv_params.set_width((width + 1) / 2);
+  uv_params.set_height((height + 1) / 2);
+  uv_params.set_channel_count(2);
+
+  // Non-owning views: the caller retains ownership of the plane textures so the VideoToolbox
+  // scratch planes can survive across frames and the VA-API EGLImage textures can be released
+  // on its existing cleanup path.
+  TexturePtr y_view = std::make_shared<Texture>(nullptr, QVariant::fromValue(y_tex), y_params);
+  TexturePtr uv_view = std::make_shared<Texture>(nullptr, QVariant::fromValue(uv_tex), uv_params);
+
+  ShaderJob job;
+  job.Insert(QStringLiteral("ove_y_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(y_view)));
+  job.Insert(QStringLiteral("ove_uv_tex"), NodeValue(NodeValue::kTexture, QVariant::fromValue(uv_view)));
+  job.Insert(QStringLiteral("bits_per_pixel"), NodeValue(NodeValue::kInt, bits_per_pixel));
+  job.Insert(QStringLiteral("full_range"), NodeValue(NodeValue::kBoolean, full_range));
+  job.Insert(QStringLiteral("yuv_crv"), NodeValue(NodeValue::kFloat, yuv_crv));
+  job.Insert(QStringLiteral("yuv_cbu"), NodeValue(NodeValue::kFloat, yuv_cbu));
+  job.Insert(QStringLiteral("yuv_cgu"), NodeValue(NodeValue::kFloat, yuv_cgu));
+  job.Insert(QStringLiteral("yuv_cgv"), NodeValue(NodeValue::kFloat, yuv_cgv));
+
+  QMatrix4x4 identity;
+  job.Insert(QStringLiteral("ove_mvpmat"), NodeValue(NodeValue::kMatrix, identity));
+
+  BlitToTexture(yuv_shader, job, dst.get(), false);
+
+  return dst;
+}
+
+TexturePtr OpenGLRenderer::CreateTextureFromIOSurface(const VideoParams &params, void* iosurface,
+                                                      int width, int height, int bits_per_pixel,
+                                                      bool full_range, float yuv_crv,
+                                                      float yuv_cbu, float yuv_cgu,
+                                                      float yuv_cgv)
+{
+#if !defined(__APPLE__)
+  Q_UNUSED(params);
+  Q_UNUSED(iosurface);
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+  Q_UNUSED(full_range);
+  Q_UNUSED(yuv_crv);
+  Q_UNUSED(yuv_cbu);
+  Q_UNUSED(yuv_cgu);
+  Q_UNUSED(yuv_cgv);
+  return nullptr;
+#else
+  if (!iosurface || width <= 0 || height <= 0 || !functions_) return nullptr;
+
+  if (bits_per_pixel != 8 && bits_per_pixel != 10) {
+    bits_per_pixel = 8;
+  }
+
+  CGLContextObj cgl_ctx = CGLGetCurrentContext();
+  if (!cgl_ctx) return nullptr;
+
+  IOSurfaceScratchTexture* scratch = AcquireIOSurfaceScratchTexture(width, height, bits_per_pixel);
+  if (!scratch || !scratch->y || !scratch->uv) {
+    return nullptr;
+  }
+
+  const int chroma_width = (width + 1) / 2;
+  const int chroma_height = (height + 1) / 2;
+  const GLint y_internal = (bits_per_pixel > 8) ? GL_R16 : GL_R8;
+  const GLint uv_internal = (bits_per_pixel > 8) ? GL_RG16 : GL_RG8;
+  const GLenum upload_type = (bits_per_pixel > 8) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+
+  // VideoToolbox produces bi-planar NV12/P010 CVPixelBuffers. CGLTexImageIOSurface2D can
+  // import one plane at a time, so bind Y and interleaved CbCr as separate RECTANGLE textures.
+  // The previous single-pass GL_RGBA/BGRA import returned kCGLBadValue (10008) for these
+  // surfaces and forced every frame through swscale on the CPU.
+  GLuint y_rect = 0;
+  GLuint uv_rect = 0;
+  auto import_plane = [&](GLuint* texture, GLint internal_format, GLenum format,
+                          int plane_width, int plane_height, int plane_index) {
+    functions_->glGenTextures(1, texture);
+    functions_->glBindTexture(GL_TEXTURE_RECTANGLE, *texture);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    functions_->glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    CGLError err = CGLTexImageIOSurface2D(cgl_ctx,
+                                         GL_TEXTURE_RECTANGLE,
+                                         internal_format,
+                                         plane_width,
+                                         plane_height,
+                                         format,
+                                         upload_type,
+                                         reinterpret_cast<IOSurfaceRef>(iosurface),
+                                         plane_index);
+    functions_->glBindTexture(GL_TEXTURE_RECTANGLE, 0);
+    return err;
+  };
+
+  CGLError y_error = import_plane(&y_rect, y_internal, GL_RED, width, height, 0);
+  CGLError uv_error = import_plane(&uv_rect, uv_internal, GL_RG, chroma_width, chroma_height, 1);
+  if (y_error != kCGLNoError || uv_error != kCGLNoError) {
+    qWarning() << "[VideoToolbox-Pool] CGLTexImageIOSurface2D plane import failed:"
+               << "Y" << y_error << "UV" << uv_error
+               << "size" << width << "x" << height
+               << "bits" << bits_per_pixel;
+    if (y_rect) functions_->glDeleteTextures(1, &y_rect);
+    if (uv_rect) functions_->glDeleteTextures(1, &uv_rect);
+    return nullptr;
+  }
+
+  auto blit_plane = [&](GLuint source, GLuint destination, int plane_width, int plane_height) {
+    auto* xf = context_->extraFunctions();
+    if (!xf) return false;
+
+    GLint previous_read = 0;
+    GLint previous_draw = 0;
+    functions_->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous_read);
+    functions_->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previous_draw);
+
+    GLuint fbo[2] = {0, 0};
+    xf->glGenFramebuffers(2, fbo);
+    xf->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[0]);
+    xf->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_RECTANGLE, source, 0);
+    xf->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[1]);
+    xf->glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, destination, 0);
+
+    const GLenum read_status = xf->glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+    const GLenum draw_status = xf->glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    const bool complete = (read_status == GL_FRAMEBUFFER_COMPLETE
+                           && draw_status == GL_FRAMEBUFFER_COMPLETE);
+    if (complete) {
+      xf->glBlitFramebuffer(0, 0, plane_width, plane_height,
+                            0, 0, plane_width, plane_height,
+                            GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    } else {
+      qWarning() << "[VideoToolbox-Pool] IOSurface plane FBO incomplete:"
+                 << Qt::hex << read_status << draw_status << Qt::dec;
+    }
+
+    xf->glBindFramebuffer(GL_READ_FRAMEBUFFER, previous_read);
+    xf->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previous_draw);
+    xf->glDeleteFramebuffers(2, fbo);
+    return complete;
+  };
+
+  const bool y_copied = blit_plane(y_rect, scratch->y, width, height);
+  const bool uv_copied = blit_plane(uv_rect, scratch->uv, chroma_width, chroma_height);
+
+  functions_->glDeleteTextures(1, &y_rect);
+  functions_->glDeleteTextures(1, &uv_rect);
+
+  if (!y_copied || !uv_copied) {
+    return nullptr;
+  }
+
+  return CompositeTextureFromYuvTextures(params, scratch->y, scratch->uv,
+                                         width, height, bits_per_pixel, full_range,
+                                         yuv_crv, yuv_cbu, yuv_cgu, yuv_cgv);
+#endif
+}
+
+// Patch 0050 (item #5), corrected by the HAL/Phase6-8 review (F-1): fragment shader for
+// the two-plane VA-API import composite. Mirrors :/shaders/yuv2rgb.frag, but takes a
+// single packed-UV texture (GL_RG8/GL_RG16 from a GR88/GR32/GR1616 EGLImage) instead of
+// separate U and V planes.
+//
+// The luma/chroma textures arrive as UNORM (GL_R8/R16, GL_RG8/RG16), so the GL hardware
+// has already normalised *every* depth to [0,1]. A 10-bit sample stored MSB-aligned in a
+// 16-bit container (val16 = val10 << 6) reads back as s = val10*64/65535 ~= val10/1023,
+// i.e. the normalised 10-bit domain. There is therefore NO integer-domain rescale: the
+// pre-fix `yuv *= 65535/64` applied the domain transform a second time and produced
+// ~1024x over-bright output (the review's F-1). Limited range is expanded per bit depth
+// so the 10-bit black level sits at 64/1023 and white at 940/1023, matching the CPU
+// YUV->RGB path and Tier 1 (CUDA).
+const char* kVaapiYuvToRgbFrag = R"(
+
+uniform sampler2D ove_y_tex;
+uniform sampler2D ove_uv_tex;
+
+uniform int bits_per_pixel;
+uniform bool full_range;
+
+uniform float yuv_crv;
+uniform float yuv_cgu;
+uniform float yuv_cgv;
+uniform float yuv_cbu;
+
+in vec2 ove_texcoord;
+out vec4 frag_color;
+
+void main()
+{
+  vec3 yuv;
+  yuv.r = texture(ove_y_tex, ove_texcoord).r;
+  vec2 uv = texture(ove_uv_tex, ove_texcoord).rg;
+  yuv.g = uv.r;
+  yuv.b = uv.g;
+
+  // The UNORM samples are already normalised to [0,1]; only the limited-range expansion
+  // differs per bit depth. Chroma is recentred on the mid code value of the depth.
+  float luma_black;
+  float luma_scale;
+  if (bits_per_pixel == 8) {
+    luma_black = 16.0/255.0;    // limited-range black (16 of 255)
+    luma_scale = 255.0/219.0;   // 16..235 -> 0..1
+    yuv.gb -= (128.0/255.0);
+  } else if (bits_per_pixel == 10) {
+    luma_black = 64.0/1023.0;   // limited-range black (64 of 1023)
+    luma_scale = 1023.0/876.0;  // 64..940 -> 0..1
+    yuv.gb -= (512.0/1023.0);
+  } else if (bits_per_pixel == 12) {
+    luma_black = 256.0/4095.0;  // limited-range black (256 of 4095)
+    luma_scale = 4095.0/3504.0; // 256..3760 -> 0..1
+    yuv.gb -= (2048.0/4095.0);
+  } else {
+    luma_black = 0.0;
+    luma_scale = 1.0;
+  }
+
+  // Limited-range luma -> full range (undone below when the source is full range).
+  yuv.r = (yuv.r - luma_black) * luma_scale;
+
+  vec4 rgba;
+  rgba.r = yuv.r + yuv_crv * yuv.b;
+  rgba.g = yuv.r - yuv_cgu * yuv.g - yuv_cgv * yuv.b;
+  rgba.b = yuv.r + yuv_cbu * yuv.g;
+
+  if (full_range) {
+    rgba.rgb = rgba.rgb / luma_scale + luma_black;
+  }
+
+  rgba.a = 1.0;
+  frag_color = rgba;
+}
+
+)";
+
+TexturePtr OpenGLRenderer::CompositeTextureFromVaapiPlanes(const VideoParams &params,
+                                                           void* egl_image_y, void* egl_image_uv,
+                                                           int width, int height,
+                                                           int bits_per_pixel, bool full_range,
+                                                           float yuv_crv, float yuv_cbu,
+                                                           float yuv_cgu, float yuv_cgv)
+{
+#if !defined(__linux__)
+  Q_UNUSED(params);
+  Q_UNUSED(egl_image_y);
+  Q_UNUSED(egl_image_uv);
+  Q_UNUSED(width);
+  Q_UNUSED(height);
+  Q_UNUSED(bits_per_pixel);
+  Q_UNUSED(full_range);
+  Q_UNUSED(yuv_crv);
+  Q_UNUSED(yuv_cbu);
+  Q_UNUSED(yuv_cgu);
+  Q_UNUSED(yuv_cgv);
+  return nullptr;
+#else
+  if (!egl_image_y || !egl_image_uv || width <= 0 || height <= 0) return nullptr;
+
+  // Resolve pointers per-call (CR-11: a static cache would freeze nullptrs if the first
+  // call had no current GL context).
+  QOpenGLContext* ctx = QOpenGLContext::currentContext();
+  if (!ctx) {
+    qWarning() << "[VAAPI-HAL] No current OpenGL context while compositing VA-API planes";
+    return nullptr;
+  }
+  typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC_)(unsigned int, void*);
+  auto pfn_glEGLImageTargetTexture2DOES = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC_>(
+      ctx->getProcAddress("glEGLImageTargetTexture2DOES"));
+  if (!pfn_glEGLImageTargetTexture2DOES) {
+    qWarning() << "[VAAPI-HAL] glEGLImageTargetTexture2DOES not available; cannot composite planes";
+    return nullptr;
+  }
+
+  // Scratch textures bound to the two EGLImages. Created per call and deleted below -
+  // they are views over driver-owned memory, never stored.
+  GLuint y_tex = 0, uv_tex = 0;
+  functions_->glGenTextures(1, &y_tex);
+  functions_->glBindTexture(GL_TEXTURE_2D, y_tex);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_y);
+
+  functions_->glGenTextures(1, &uv_tex);
+  functions_->glBindTexture(GL_TEXTURE_2D, uv_tex);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  functions_->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_uv);
+  functions_->glBindTexture(GL_TEXTURE_2D, 0);
+  if (GLenum err = functions_->glGetError(); err != GL_NO_ERROR) {
+    qWarning() << "[VAAPI-HAL] EGLImage plane binding failed, GL error 0x" << Qt::hex << err << Qt::dec;
+    functions_->glDeleteTextures(1, &y_tex);
+    functions_->glDeleteTextures(1, &uv_tex);
+    return nullptr;
+  }
+
+  // Destination and YUV composite are shared with the VideoToolbox path; the helper creates
+  // the pooled RGBA8/RGBA16F target and runs the two-plane shader.
+  TexturePtr dst = CompositeTextureFromYuvTextures(params, y_tex, uv_tex,
+                                                   width, height, bits_per_pixel,
+                                                   full_range, yuv_crv, yuv_cbu,
+                                                   yuv_cgu, yuv_cgv);
+
+  functions_->glDeleteTextures(1, &y_tex);
+  functions_->glDeleteTextures(1, &uv_tex);
+
+  if (!dst) {
+    qWarning() << "[VAAPI-HAL] Failed to composite VA-API planes into pool texture";
+    return nullptr;
+  }
+
+  return dst;
+#endif
+}
+
+QVariant OpenGLRenderer::CreateNativeShader(ShaderCode code)
+{  GL_PREAMBLE;
 
   PRINT_GL_ERRORS;
 
@@ -312,7 +1386,15 @@ void OpenGLRenderer::UploadToTexture(const QVariant &handle, const VideoParams &
 
   functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize);
 
-  {
+  // Phase 6 (patch 0026): stream the frame through the async PBO ring when possible.
+  // On failure we transparently fall back to the original client-memory upload.
+  bool uploaded = false;
+
+  if (!is_3d) {
+    uploaded = UploadToTextureViaPbo(p, data, linesize);
+  }
+
+  if (!uploaded) {
     PRINT_GL_ERRORS;
 
     if (!is_3d) {
@@ -331,6 +1413,125 @@ void OpenGLRenderer::UploadToTexture(const QVariant &handle, const VideoParams &
   functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
   functions_->glBindTexture(tex_type, current_tex);
+}
+
+bool OpenGLRenderer::UploadToTextureViaPbo(const VideoParams &params, const void *data, int linesize)
+{
+  if (!data || !context_) {
+    return false;
+  }
+
+  QOpenGLExtraFunctions* xf = context_->extraFunctions();
+  if (!xf) {
+    return false;
+  }
+
+  const int bytes_per_pixel = params.GetBytesPerPixel();
+  const int width = params.effective_width();
+  const int height = params.effective_height();
+
+  if (bytes_per_pixel <= 0 || width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const GLsizeiptr payload = static_cast<GLsizeiptr>(width) * bytes_per_pixel * height;
+  const int source_row_pixels = (linesize > 0) ? linesize : width;
+
+  // Ping-pong across the ring: we fill the next PBO while the GPU may still be
+  // draining the slot used by the previous frame.
+  const int slot = upload_pbo_index_;
+  upload_pbo_index_ = (upload_pbo_index_ + 1) % kUploadPboRingSize;
+
+  if (upload_pbos_[slot] == 0) {
+    xf->glGenBuffers(1, &upload_pbos_[slot]);
+    if (upload_pbos_[slot] == 0) {
+      return false;
+    }
+  }
+
+  bool profiled = qEnvironmentVariableIsSet("OLIVE_PBO_PROFILE");
+  QElapsedTimer timer;
+  if (profiled) {
+    timer.start();
+  }
+
+  xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[slot]);
+
+  // Orphan the store every frame: a fresh backing allocation means the driver never
+  // has to stall waiting for the previous frame's DMA before handing us a pointer.
+  xf->glBufferData(GL_PIXEL_UNPACK_BUFFER, payload, nullptr, GL_STREAM_DRAW);
+
+  void* mapped = xf->glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, payload,
+                                      GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+  if (!mapped) {
+    xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    return false;
+  }
+
+  const size_t dst_stride = static_cast<size_t>(width) * bytes_per_pixel;
+  if (source_row_pixels == width) {
+    std::memcpy(mapped, data, static_cast<size_t>(payload));
+  } else {
+    const size_t src_stride = static_cast<size_t>(source_row_pixels) * bytes_per_pixel;
+    const unsigned char* src = static_cast<const unsigned char*>(data);
+    unsigned char* dst = static_cast<unsigned char*>(mapped);
+    for (int y = 0; y < height; ++y) {
+      std::memcpy(dst + static_cast<size_t>(y) * dst_stride,
+                  src + static_cast<size_t>(y) * src_stride,
+                  dst_stride);
+    }
+  }
+
+  xf->glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
+  // The PBO holds tightly packed rows, so the effective row length is the frame width
+  // and no alignment padding applies (unlike the caller's possibly padded source).
+  GLint prev_alignment = 4;
+  functions_->glGetIntegerv(GL_UNPACK_ALIGNMENT, &prev_alignment);
+  functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, width);
+  functions_->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+  {
+    PRINT_GL_ERRORS;
+    functions_->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                                GetPixelFormat(params.channel_count()), GetPixelType(params.format()),
+                                nullptr);
+  }
+
+  functions_->glPixelStorei(GL_UNPACK_ALIGNMENT, prev_alignment);
+  functions_->glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize);
+
+  xf->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+  if (profiled) {
+    static qint64 total_ns = 0;
+    static int frame_count = 0;
+    total_ns += timer.nsecsElapsed();
+    ++frame_count;
+    if (frame_count % 240 == 0) {
+      qInfo() << "[PBO-Async] streaming upload main-thread cost avg"
+              << static_cast<double>(total_ns) / 1000.0 / frame_count << "us over"
+              << frame_count << "frames";
+    }
+  }
+
+  return true;
+}
+
+void OpenGLRenderer::DestroyUploadPboRing()
+{
+  if (!functions_) {
+    return;
+  }
+
+  for (int i = 0; i < kUploadPboRingSize; ++i) {
+    if (upload_pbos_[i] != 0) {
+      functions_->glDeleteBuffers(1, &upload_pbos_[i]);
+      upload_pbos_[i] = 0;
+    }
+  }
+
+  upload_pbo_index_ = 0;
 }
 
 void OpenGLRenderer::DownloadFromTexture(const QVariant &id, const VideoParams &p, void *data, int linesize)
@@ -610,6 +1811,17 @@ void OpenGLRenderer::Blit(QVariant s, ShaderJob job, Texture *destination, Video
       functions_->glUniform1i(iteration_location, iteration);
     }
 
+    if (iteration > 0) {
+      // If this is not the first iteration, replace the iterative texture with the one we
+      // drew into in the previous iteration (which was output_tex, now held in input_tex after swap)
+      const QString &iterative_input = job.GetIterativeInput();
+      functions_->glActiveTexture(GL_TEXTURE0 + texture_index_map.value(iterative_input));
+      functions_->glBindTexture(GL_TEXTURE_2D, input_tex->id().value<GLuint>());
+
+      // At this time, we only support iterating 2D textures
+      PrepareInputTexture(GL_TEXTURE_2D, job.GetInterpolation(iterative_input));
+    }
+
     // Replace iterative input
     if (iteration == real_iteration_count-1) {
       // This is the last iteration, draw to the destination
@@ -630,25 +1842,14 @@ void OpenGLRenderer::Blit(QVariant s, ShaderJob job, Texture *destination, Video
       AttachTextureAsDestination(output_tex->id());
     }
 
-    if (iteration > 0) {
-      // If this is not the first iteration, replace the iterative texture with the one we
-      // last drew
-      const QString &iterative_input = job.GetIterativeInput();
-      functions_->glActiveTexture(GL_TEXTURE0 + texture_index_map.value(iterative_input));
-      functions_->glBindTexture(GL_TEXTURE_2D, input_tex->id().value<GLuint>());
-
-      // At this time, we only support iterating 2D textures
-      PrepareInputTexture(GL_TEXTURE_2D, job.GetInterpolation(iterative_input));
-    }
-
-    // Swap so that the next iteration, the texture we draw now will be the input texture next
-    std::swap(output_tex, input_tex);
-
     // Blit this texture through this shader
     {
       PRINT_GL_ERRORS;
       functions_->glDrawArrays(GL_TRIANGLES, 0, blit_vertices.size() / 3);
     }
+
+    // Swap so that the next iteration, the texture we drew now will be the input texture next
+    std::swap(output_tex, input_tex);
   }
 
   if (destination) {
@@ -799,17 +2000,29 @@ void OpenGLRenderer::ClearDestinationInternal(double r, double g, double b, doub
   functions_->glClear(GL_COLOR_BUFFER_BIT);
 }
 
+int OpenGLRenderer::GetGpuShaderLanguage() const
+{
+  // ARCHITECTURAL NOTE:
+  // The GLES branches (GLSL_ES_3_0 and #version 300 es) serve as an architectural fallback stub.
+  // The active product baseline enforces Desktop OpenGL 3.2 Core (see main.cpp).
+  if (context_ && context_->isOpenGLES()) {
+    return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_ES_3_0);
+  }
+  return static_cast<int>(OCIO::GPU_LANGUAGE_GLSL_1_3);
+}
+
 GLuint OpenGLRenderer::CompileShader(GLenum type, const QString &code)
 {
-  static const QString shader_preamble =
-      // Use appropriate GL 3.2 shader header
-      QStringLiteral("#version 150\n\n"
-                     "precision highp float;\n\n");
-
   QString complete_code;
 
   if (!code.startsWith(QStringLiteral("#version"))) {
-    complete_code = shader_preamble;
+    if (context_ && context_->isOpenGLES()) {
+      // OpenGL ES 3.x fallback stub (requires dedicated verification if GLES-only targets are re-enabled)
+      complete_code = QStringLiteral("#version 300 es\n\nprecision highp float;\n\n");
+    } else {
+      // Desktop OpenGL 3.2 Core Profile (#version 150 without illegal ES precision qualifiers)
+      complete_code = QStringLiteral("#version 150\n\n");
+    }
   }
 
   if (code.isEmpty()) {

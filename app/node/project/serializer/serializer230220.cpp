@@ -190,11 +190,19 @@ ProjectSerializer230220::LoadData ProjectSerializer230220::Load(Project *project
             } else if (attr.name() == QStringLiteral("ptr")) {
               ptr = attr.value().toULongLong();
             } else if (attr.name() == QStringLiteral("items")) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
               QVector<QStringRef> l = attr.value().split(',');
               items.reserve(l.size());
               for (const QStringRef &s : l) {
                 items.append(s.toULongLong());
               }
+#else
+              auto l = attr.value().split(',');
+              items.reserve(l.size());
+              for (const QStringView &s : l) {
+                items.append(s.toULongLong());
+              }
+#endif
             }
           }
 

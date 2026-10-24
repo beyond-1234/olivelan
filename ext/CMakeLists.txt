@@ -17,5 +17,8 @@
 add_subdirectory(core EXCLUDE_FROM_ALL)
 
 set(KDDockWidgets_STATIC ON CACHE INTERNAL "Force KDDockWidgets to build statically")
-set(KDDockWidgets_QT6 ${BUILD_QT6} CACHE INTERNAL "Conform KDDockWidgets' Qt 6 setting to ours")
+set(KDDockWidgets_QT6 ON CACHE INTERNAL "Force KDDockWidgets to build with Qt 6")
+# KDDockWidgets 2.x is split into frontends; Olive only uses the QtWidgets one. Pinning it
+# explicitly also guarantees Platform::frontendTypes() resolves to a single frontend.
+set(KDDockWidgets_FRONTENDS qtwidgets CACHE INTERNAL "Only build the QtWidgets frontend")
 add_subdirectory(KDDockWidgets EXCLUDE_FROM_ALL)

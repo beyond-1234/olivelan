@@ -44,9 +44,25 @@ public:
 
   virtual bool Init() = 0;
 
+  /**
+   * @brief True once the backend has a usable native context/functions.
+   *
+   * Consumers must not issue GL calls while this is false.
+   */
+  bool IsValid() const { return valid_; }
+
+  /**
+   * @brief Human-readable reason for the most recent initialization failure.
+   *
+   * Empty when initialization has not failed. The render thread copies this into the
+   * RenderManager status before stopping, so the UI can explain the failure instead of
+   * showing only a blank viewer.
+   */
+  QString GetLastError() const { return last_error_; }
+
   TexturePtr CreateTexture(const VideoParams& params, const void *data = nullptr, int linesize = 0);
 
-  void DestroyTexture(Texture *texture);
+  virtual void DestroyTexture(Texture *texture);
 
   void BlitToTexture(QVariant shader,
                      olive::ShaderJob job,
@@ -82,7 +98,7 @@ public:
 
   virtual void PostDestroy() = 0;
 
-  virtual void PostInit() = 0;
+  virtual bool PostInit() = 0;
 
   virtual void ClearDestination(olive::Texture *texture = nullptr, double r = 0.0, double g = 0.0, double b = 0.0, double a = 1.0) = 0;
 
@@ -98,7 +114,17 @@ public:
 
   virtual Color GetPixelFromTexture(olive::Texture *texture, const QPointF &pt) = 0;
 
+  virtual int GetGpuShaderLanguage() const = 0;
+
 protected:
+  /**
+   * @brief Store a failure reason for the RenderManager/UI status.
+   *
+   * Subclasses call this before returning false from Init()/PostInit(). It is intentionally
+   * protected so callers cannot manufacture a failure state without a real backend error.
+   */
+  void SetLastError(const QString& error) { last_error_ = error; }
+
   virtual void Blit(QVariant shader,
                     olive::ShaderJob job,
                     olive::Texture* destination,
@@ -111,6 +137,11 @@ protected:
 
   virtual void DestroyInternal() = 0;
 
+protected:
+  bool valid_ = false;
+
+  QString last_error_;
+
 private:
   struct ColorContext {
     struct LUT {
@@ -122,8 +153,13 @@ private:
     QVariant compiled_shader;
     QVector<LUT> lut3d_textures;
     QVector<LUT> lut1d_textures;
+    qint64 last_accessed{0};
 
   };
+
+  void ClearColorCache();
+
+  static const int MAX_COLOR_CACHE_ENTRIES = 32;
 
   TexturePtr CreateTextureFromNativeHandle(const QVariant &v, const VideoParams &params);
 

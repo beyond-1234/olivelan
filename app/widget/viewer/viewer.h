@@ -23,6 +23,7 @@
 
 #include <QFile>
 #include <QLabel>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTimer>
@@ -37,6 +38,8 @@
 #include "viewersizer.h"
 #include "viewerwindow.h"
 #include "widget/playbackcontrols/playbackcontrols.h"
+#include <QImage>
+
 #include "widget/timebased/timebasedwidget.h"
 #include "widget/timelinewidget/timelinewidget.h"
 
@@ -71,6 +74,23 @@ public:
   void TogglePlayPause();
 
   bool IsPlaying() const;
+
+  /**
+   * @brief Patch 0103: number of frames that completed a buffer swap during the last playback.
+   *
+   * `ResetFPSTimer()` (called when playback actually starts) clears both counters. The hidden
+   * --autoplay benchmark reads them before Pause(), because pausing may reset the display timer.
+   */
+  int GetPresentedFrameCount() const;
+
+  int GetSkippedFrameCount() const;
+
+  /**
+   * @brief Hidden frame-dump/readback test hook.
+   *
+   * Grabs the current viewer OpenGL framebuffer after playback has been paused.
+   */
+  QImage GrabFrame();
 
   /**
    * @brief Enable or disable the color management menu
@@ -203,8 +223,15 @@ protected:
   virtual void ScaleChangedEvent(const double& s) override;
 
   virtual void resizeEvent(QResizeEvent *event) override;
+  virtual void showEvent(QShowEvent *event) override;
+
+  void PositionFloatingControls();
 
   PlaybackControls* controls_;
+
+  bool floating_controls_;
+  bool floating_controls_animated_;
+  QPropertyAnimation* floating_controls_animation_;
 
   ViewerDisplayWidget* display_widget() const
   {
