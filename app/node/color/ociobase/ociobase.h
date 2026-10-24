@@ -50,6 +50,8 @@ protected:
 
   void set_processor(ColorProcessorPtr p) { processor_ = p; }
 
+  virtual bool PassThroughWhenMissingColorProcessor() const { return false; }
+
 private:
   ColorManager *manager_;
 

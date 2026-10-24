@@ -45,6 +45,16 @@ MainStatusBar::MainStatusBar(QWidget *parent) :
   renderer_failure_->setPalette(failure_palette);
   addPermanentWidget(renderer_failure_);
 
+  color_config_failure_ = new QLabel(this);
+  color_config_failure_->setObjectName(QStringLiteral("colorConfigFailureStatus"));
+  color_config_failure_->setVisible(false);
+  color_config_failure_->setTextFormat(Qt::PlainText);
+  color_config_failure_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  QPalette color_palette = color_config_failure_->palette();
+  color_palette.setColor(QPalette::WindowText, QColor(230, 140, 40));
+  color_config_failure_->setPalette(color_palette);
+  addPermanentWidget(color_config_failure_);
+
   bar_ = new QProgressBar();
   addPermanentWidget(bar_);
 
@@ -75,6 +85,28 @@ void MainStatusBar::ClearRendererFailure()
     renderer_failure_->clear();
     renderer_failure_->setToolTip(QString());
     renderer_failure_->setVisible(false);
+  }
+}
+
+void MainStatusBar::SetColorConfigFailure(const QString& filename, const QString& reason)
+{
+  if (!color_config_failure_) {
+    return;
+  }
+
+  color_config_failure_->setText(tr("OCIO Fallback (Default Config)"));
+  QString tip = tr("Failed to load external OpenColorIO configuration:\n%1\nReason: %2\nThe project has fallen back to the built-in default configuration.")
+                    .arg(filename, reason);
+  color_config_failure_->setToolTip(tip);
+  color_config_failure_->setVisible(true);
+}
+
+void MainStatusBar::ClearColorConfigFailure()
+{
+  if (color_config_failure_) {
+    color_config_failure_->clear();
+    color_config_failure_->setToolTip(QString());
+    color_config_failure_->setVisible(false);
   }
 }
 

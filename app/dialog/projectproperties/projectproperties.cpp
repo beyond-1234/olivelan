@@ -92,7 +92,7 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
 
     ocio_filename_->setText(working_project_->color_manager()->GetConfigFilename());
 
-    connect(ocio_filename_, &QLineEdit::textChanged, this, &ProjectPropertiesDialog::OCIOFilenameUpdated);
+    connect(ocio_filename_, &QLineEdit::editingFinished, this, &ProjectPropertiesDialog::OCIOFilenameUpdated);
     OCIOFilenameUpdated();
 
     tabs->addTab(color_group, tr("Color Management"));
@@ -145,7 +145,10 @@ ProjectPropertiesDialog::ProjectPropertiesDialog(Project* p, QWidget *parent) :
 
 void ProjectPropertiesDialog::accept()
 {
-  if (!ocio_config_is_valid_) {
+  const QString new_ocio_file = ocio_filename_->text().trimmed();
+  const bool ocio_changed = (working_project_->color_manager()->GetConfigFilename() != new_ocio_file);
+
+  if (ocio_changed && !ocio_config_is_valid_) {
     QMessageBox mb(this);
     mb.setWindowModality(Qt::WindowModal);
     mb.setIcon(QMessageBox::Critical);
@@ -183,7 +186,6 @@ void ProjectPropertiesDialog::accept()
 
   // This should ripple changes throughout the graph/cache that the color config has changed, and
   // therefore should be done after the cache path is changed
-  const QString new_ocio_file = ocio_filename_->text().trimmed();
   if (working_project_->color_manager()->GetConfigFilename() != new_ocio_file) {
     working_project_->color_manager()->SetConfigFilename(new_ocio_file);
   }
@@ -222,6 +224,7 @@ void ProjectPropertiesDialog::BrowseForOCIOConfig()
       tr("OpenColorIO Configurations (*.ocio);;All Files (*)"));
   if (!fn.isEmpty()) {
     ocio_filename_->setText(fn);
+    OCIOFilenameUpdated();
   }
 }
 
@@ -236,13 +239,7 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
     if (fn.isEmpty()) {
       c = ColorManagerOCIO::GetDefaultConfig();
     } else {
-      QString resolved = fn;
-      if (QFileInfo(resolved).isRelative() && working_project_ && !working_project_->filename().isEmpty()) {
-        const QString candidate = QFileInfo(working_project_->filename()).dir().filePath(resolved);
-        if (QFileInfo::exists(candidate)) {
-          resolved = candidate;
-        }
-      }
+      const QString resolved = OCIOUtils::ResolveProjectRelativePath(working_project_, fn);
       if (!QFileInfo::exists(resolved)) {
         throw OCIO::Exception(QString("File does not exist: %1").arg(fn).toUtf8().constData());
       }

@@ -153,8 +153,13 @@ private:
     QVariant compiled_shader;
     QVector<LUT> lut3d_textures;
     QVector<LUT> lut1d_textures;
+    qint64 last_accessed{0};
 
   };
+
+  void ClearColorCache();
+
+  static const int MAX_COLOR_CACHE_ENTRIES = 32;
 
   TexturePtr CreateTextureFromNativeHandle(const QVariant &v, const VideoParams &params);
 

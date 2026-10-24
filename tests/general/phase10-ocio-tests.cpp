@@ -335,6 +335,15 @@ OLIVE_ADD_TEST(ExternalOcioConfigLoading)
   OLIVE_ASSERT(cs_list.contains(QStringLiteral("CustomTestSpace")));
   OLIVE_ASSERT(cs_list.contains(QStringLiteral("RawRef")));
 
+  // Relative path resolution when project filename is set
+  p.set_filename(temp_dir.filePath(QStringLiteral("test_project.ove")));
+  cm->SetConfigFilename(QStringLiteral("custom_test.ocio"));
+  bool ok_rel = cm->UpdateConfigFromFilename();
+  OLIVE_ASSERT(ok_rel);
+  OLIVE_ASSERT(cm->IsCustomConfig());
+  OLIVE_ASSERT(!cm->HasError());
+  OLIVE_ASSERT(cm->ListAvailableColorspaces().contains(QStringLiteral("CustomTestSpace")));
+
   // Verify ColorProcessor converts via the custom matrix transform
   ColorProcessorPtr proc = ColorProcessor::Create(cm, QStringLiteral("CustomTestSpace"), QStringLiteral("RawRef"));
   OLIVE_ASSERT(proc != nullptr);
@@ -434,7 +443,18 @@ OLIVE_ADD_TEST(OCIOFileTransformNodeTesting)
     return __LINE__;
   }
 
+  // Test inverse direction on the .cube LUT
+  lut_node->SetStandardValue(OCIOFileTransformNode::kDirectionInput, static_cast<int>(ColorProcessor::kInverse));
+  ColorProcessorPtr inv_proc = lut_node->processor();
+  OLIVE_ASSERT(inv_proc != nullptr);
+  Color c_inv_out = inv_proc->ConvertColor(c_out);
+  if (std::abs(c_inv_out.red() - c_in.red()) > 0.01 || std::abs(c_inv_out.green() - c_in.green()) > 0.01 || std::abs(c_inv_out.blue() - c_in.blue()) > 0.01) {
+    std::cout << " - .cube LUT inverse transform failed: " << c_inv_out.red() << " " << c_inv_out.green() << " " << c_inv_out.blue();
+    return __LINE__;
+  }
+
   // 3. Test .spi1d LUT
+  lut_node->SetStandardValue(OCIOFileTransformNode::kDirectionInput, static_cast<int>(ColorProcessor::kNormal));
   QString spi1d_path = QStringLiteral(OLIVE_TEST_SOURCE_DIR "/app/render/ocioconf/luts/rec709_to_linear.spi1d");
   OLIVE_ASSERT(QFile::exists(spi1d_path));
   lut_node->SetStandardValue(OCIOFileTransformNode::kFileInput, spi1d_path);
@@ -518,6 +538,24 @@ OLIVE_ADD_TEST(AcesColorSpaceCompliance)
   Color red_lin = acescg_to_lin->ConvertColor(red_aces);
   if (std::abs(red_lin.red() - 1.705) > 0.02 || red_lin.green() >= 0.0 || red_lin.blue() >= 0.0) {
     std::cout << " - ACEScg AP1 red primary transform math mismatch: " << red_lin.red() << " " << red_lin.green() << " " << red_lin.blue();
+    return __LINE__;
+  }
+
+  // Saturated color and roundtrip test: ACEScg -> Linear -> ACEScg
+  Color sat_aces(0.2f, 0.8f, 0.1f, 1.0f);
+  Color sat_lin = acescg_to_lin->ConvertColor(sat_aces);
+  OLIVE_ASSERT(std::isfinite(sat_lin.red()) && std::isfinite(sat_lin.green()) && std::isfinite(sat_lin.blue()));
+
+  ColorProcessorPtr lin_to_acescg = ColorProcessor::Create(
+      manager,
+      QStringLiteral("Linear"),
+      QStringLiteral("ACEScg"));
+  OLIVE_ASSERT(lin_to_acescg != nullptr);
+  Color back_aces = lin_to_acescg->ConvertColor(sat_lin);
+  if (std::abs(back_aces.red() - sat_aces.red()) > 0.005 ||
+      std::abs(back_aces.green() - sat_aces.green()) > 0.005 ||
+      std::abs(back_aces.blue() - sat_aces.blue()) > 0.005) {
+    std::cout << " - ACEScg <-> Linear roundtrip failed: " << back_aces.red() << " " << back_aces.green() << " " << back_aces.blue();
     return __LINE__;
   }
 

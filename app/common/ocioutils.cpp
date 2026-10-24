@@ -20,10 +20,36 @@
 
 #include "ocioutils.h"
 
+#include <QFileInfo>
+#include <QDir>
+#include "node/project.h"
+
 #include <OpenColorIO/OpenColorIO.h>
 namespace OCIO = OCIO_NAMESPACE;
 
 namespace olive {
+
+QString OCIOUtils::ResolveProjectRelativePath(const Project* project, const QString& path)
+{
+  const QString trimmed = path.trimmed();
+  if (trimmed.isEmpty()) {
+    return QString();
+  }
+
+  if (QFileInfo(trimmed).isAbsolute()) {
+    return trimmed;
+  }
+
+  // Relative path: resolve against project directory if project is saved to disk
+  if (project && !project->filename().isEmpty()) {
+    const QString candidate = QFileInfo(project->filename()).dir().filePath(trimmed);
+    if (QFileInfo::exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return trimmed;
+}
 
 // Patch 0038: OCIO-free role names (see ocioutils.h). Kept in sync with the
 // `roles:` block of app/render/ocioconf/config.ocio.

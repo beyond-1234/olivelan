@@ -52,6 +52,19 @@ public:
     directory_mode_ = e;
   }
 
+  void SetError(bool has_error, const QString& tooltip = QString())
+  {
+    if (has_error) {
+      line_edit_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
+      if (!tooltip.isEmpty()) {
+        line_edit_->setToolTip(tooltip);
+      }
+    } else {
+      LineEditChanged(line_edit_->text());
+      line_edit_->setToolTip(QString());
+    }
+  }
+
 signals:
   void FilenameChanged(const QString& filename);
 

@@ -27,6 +27,9 @@
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QSurfaceFormat>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QTextStream>
 
 #include "common/ociobridge.h"
 #include "node/color/colormanager/colormanager.h"
@@ -321,6 +324,109 @@ OLIVE_ADD_TEST(ColorManagedGpuMatchesCpu)
     if (std::abs(slog_output[0] - static_cast<float>(cpu_lin.red())) > 0.005f) {
       std::cout << " - S-Log3 GPU pixel output " << slog_output[0]
                 << " differs from CPU output " << cpu_lin.red();
+      return __LINE__;
+    }
+  }
+
+  // 7. .cube FileTransform GPU 3D texture and pixel match test
+  {
+    QTemporaryDir temp_dir;
+    OLIVE_ASSERT(temp_dir.isValid());
+    QString cube_path = temp_dir.filePath(QStringLiteral("gpu_test_lut.cube"));
+    {
+      QFile f(cube_path);
+      OLIVE_ASSERT(f.open(QIODevice::WriteOnly | QIODevice::Text));
+      QTextStream out(&f);
+      out << "TITLE \"Invert Red\"\n"
+          << "LUT_3D_SIZE 2\n"
+          << "1 0 0\n"
+          << "0 0 0\n"
+          << "1 1 0\n"
+          << "0 1 0\n"
+          << "1 0 1\n"
+          << "0 0 1\n"
+          << "1 1 1\n"
+          << "0 1 1\n";
+    }
+
+    auto ocio_config = ColorManagerOCIO::GetConfig(project.color_manager());
+    auto file_transform = OCIO::FileTransform::Create();
+    file_transform->setSrc(cube_path.toUtf8().constData());
+    file_transform->setDirection(OCIO::TRANSFORM_DIR_FORWARD);
+    file_transform->setInterpolation(OCIO::INTERP_LINEAR);
+
+    auto ocio_proc = ocio_config->getProcessor(file_transform);
+    OLIVE_ASSERT(ocio_proc != nullptr);
+
+    // Verify 3D texture dimensions from GpuShaderDesc
+    auto shader_desc = OCIO::GpuShaderDesc::CreateShaderDesc();
+    shader_desc->setLanguage(OCIO::GPU_LANGUAGE_GLSL_1_2);
+    shader_desc->setFunctionName("OCIO_Test_Cube");
+    auto gpu_proc = ocio_proc->getDefaultGPUProcessor();
+    OLIVE_ASSERT(gpu_proc != nullptr);
+    gpu_proc->extractGpuShaderInfo(shader_desc);
+    if (shader_desc->getNum3DTextures() != 1) {
+      std::cout << " - Expected 1 3D texture from .cube FileTransform, got " << shader_desc->getNum3DTextures();
+      return __LINE__;
+    }
+    const char* tname = nullptr;
+    const char* sname = nullptr;
+    unsigned int edge_len = 0;
+    OCIO::Interpolation interp = OCIO::INTERP_LINEAR;
+    shader_desc->get3DTexture(0, tname, sname, edge_len, interp);
+    if (edge_len != 2) {
+      std::cout << " - Expected edge_len 2 from 2x2x2 .cube, got " << edge_len;
+      return __LINE__;
+    }
+
+    ColorProcessorPtr lut_proc = ColorProcessorOCIO::Create(ocio_proc);
+    OLIVE_ASSERT(lut_proc != nullptr);
+
+    const float lut_in[4] = {0.0f, 1.0f, 0.5f, 1.0f};
+    TexturePtr lut_src = renderer.CreateTexture(params, lut_in);
+    TexturePtr lut_dst = renderer.CreateTexture(params);
+    ColorTransformJob lut_job;
+    lut_job.SetColorProcessor(lut_proc);
+    lut_job.SetInputTexture(lut_src);
+    renderer.BlitColorManaged(lut_job, lut_dst.get());
+
+    float lut_out[4] = {0, 0, 0, 0};
+    renderer.DownloadFromTexture(lut_dst->id(), params, lut_out, sizeof(float) * 4);
+    Color lut_cpu = lut_proc->ConvertColor(Color(0.0, 1.0, 0.5, 1.0));
+    if (std::abs(double(lut_out[0]) - lut_cpu.red()) > 0.02 ||
+        std::abs(double(lut_out[1]) - lut_cpu.green()) > 0.02 ||
+        std::abs(double(lut_out[2]) - lut_cpu.blue()) > 0.02) {
+      std::cout << " - .cube GPU output (" << lut_out[0] << "," << lut_out[1] << "," << lut_out[2]
+                << ") differs from CPU reference (" << lut_cpu.red() << "," << lut_cpu.green() << "," << lut_cpu.blue() << ")";
+      return __LINE__;
+    }
+  }
+
+  // 8. ACEScg -> sRGB display view GPU pixel output vs CPU reference
+  {
+    ColorTransform acescg_disp(QStringLiteral("sRGB"), QStringLiteral("sRGB OETF"), QString());
+    ColorProcessorPtr acescg_proc = ColorProcessor::Create(
+        project.color_manager(),
+        QStringLiteral("ACEScg"),
+        acescg_disp);
+    OLIVE_ASSERT(acescg_proc != nullptr);
+
+    const float aces_in[4] = {0.3f, 0.6f, 0.1f, 1.0f};
+    TexturePtr aces_src = renderer.CreateTexture(params, aces_in);
+    TexturePtr aces_dst = renderer.CreateTexture(params);
+    ColorTransformJob aces_job;
+    aces_job.SetColorProcessor(acescg_proc);
+    aces_job.SetInputTexture(aces_src);
+    renderer.BlitColorManaged(aces_job, aces_dst.get());
+
+    float aces_out[4] = {0, 0, 0, 0};
+    renderer.DownloadFromTexture(aces_dst->id(), params, aces_out, sizeof(float) * 4);
+    Color aces_cpu = acescg_proc->ConvertColor(Color(0.3, 0.6, 0.1, 1.0));
+    if (std::abs(double(aces_out[0]) - aces_cpu.red()) > 0.02 ||
+        std::abs(double(aces_out[1]) - aces_cpu.green()) > 0.02 ||
+        std::abs(double(aces_out[2]) - aces_cpu.blue()) > 0.02) {
+      std::cout << " - ACEScg GPU output (" << aces_out[0] << "," << aces_out[1] << "," << aces_out[2]
+                << ") differs from CPU reference (" << aces_cpu.red() << "," << aces_cpu.green() << "," << aces_cpu.blue() << ")";
       return __LINE__;
     }
   }

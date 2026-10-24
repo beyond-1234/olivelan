@@ -1806,6 +1806,61 @@ To remedy this, please do one of the following:
     </message>
 </context>
 <context>
+    <name>olive::OCIOFileTransformNode</name>
+    <message>
+        <source>LUT (OpenColorIO)</source>
+        <translation>LUT 调色滤镜 (OpenColorIO)</translation>
+    </message>
+    <message>
+        <source>Applies a 1D or 3D LUT (.cube, .spi1d, .spi3d, etc.) using OpenColorIO.</source>
+        <translation>使用 OpenColorIO 应用 1D 或 3D LUT (.cube, .spi1d, .spi3d 等格式)。</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>LUT 文件</translation>
+    </message>
+    <message>
+        <source>Direction</source>
+        <translation>方向</translation>
+    </message>
+    <message>
+        <source>Forward</source>
+        <translation>正向</translation>
+    </message>
+    <message>
+        <source>Inverse</source>
+        <translation>反向</translation>
+    </message>
+    <message>
+        <source>Interpolation</source>
+        <translation>插值模式</translation>
+    </message>
+    <message>
+        <source>Default / Auto</source>
+        <translation>默认 / 自动</translation>
+    </message>
+    <message>
+        <source>Linear</source>
+        <translation>线性插值</translation>
+    </message>
+    <message>
+        <source>Tetrahedral</source>
+        <translation>四面体插值</translation>
+    </message>
+    <message>
+        <source>Nearest</source>
+        <translation>最邻近插值</translation>
+    </message>
+    <message>
+        <source>Best</source>
+        <translation>最佳质量</translation>
+    </message>
+</context>
+<context>
     <name>olive::DropShadowFilter</name>
     <message>
         <source>Texture</source>

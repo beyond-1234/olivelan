@@ -528,6 +528,11 @@ void MainWindow::SetProject(Project *p)
   }
 
   if (project_) {
+    if (project_->color_manager() && status_bar_) {
+      disconnect(project_->color_manager(), &ColorManager::ConfigLoadFailed, status_bar_, &MainStatusBar::SetColorConfigFailure);
+      disconnect(project_->color_manager(), &ColorManager::ConfigChanged, status_bar_, &MainStatusBar::ClearColorConfigFailure);
+    }
+
     // Clear all data
     param_panel_->SetContexts(QVector<Node*>());
     node_panel_->SetContexts(QVector<Node*>());
@@ -562,6 +567,20 @@ void MainWindow::SetProject(Project *p)
 
   if (project_) {
     project_panel_->setFocus();
+
+    if (project_->color_manager() && status_bar_) {
+      connect(project_->color_manager(), &ColorManager::ConfigLoadFailed, status_bar_, &MainStatusBar::SetColorConfigFailure);
+      connect(project_->color_manager(), &ColorManager::ConfigChanged, status_bar_, &MainStatusBar::ClearColorConfigFailure);
+
+      if (project_->color_manager()->HasError()) {
+        status_bar_->SetColorConfigFailure(project_->color_manager()->GetConfigFilename(),
+                                           project_->color_manager()->GetLastError());
+      } else {
+        status_bar_->ClearColorConfigFailure();
+      }
+    }
+  } else if (status_bar_) {
+    status_bar_->ClearColorConfigFailure();
   }
 }
 

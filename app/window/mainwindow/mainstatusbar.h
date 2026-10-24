@@ -53,6 +53,10 @@ public:
 
   void ClearRendererFailure();
 
+  void SetColorConfigFailure(const QString& filename, const QString& reason);
+
+  void ClearColorConfigFailure();
+
 signals:
   void DoubleClicked();
 
@@ -72,6 +76,8 @@ private:
   QProgressBar* bar_;
 
   QLabel* renderer_failure_;
+
+  QLabel* color_config_failure_;
 
   Task* connected_task_;
 

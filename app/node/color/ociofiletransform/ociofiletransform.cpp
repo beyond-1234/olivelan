@@ -1,10 +1,12 @@
 #include "ociofiletransform.h"
 
 #include <QFileInfo>
+#include <QDateTime>
 #include <QDir>
 #include <QDebug>
 
 #include "common/ociobridge.h"
+#include "common/ocioutils.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/project.h"
 
@@ -95,33 +97,41 @@ void OCIOFileTransformNode::ConfigChanged()
 void OCIOFileTransformNode::GenerateProcessor()
 {
   if (!manager()) {
+    last_error_.clear();
+    SetInputProperty(kFileInput, QStringLiteral("error"), QString());
     set_processor(nullptr);
     return;
   }
 
   const QString raw_path = GetFile().trimmed();
   if (raw_path.isEmpty()) {
+    last_error_.clear();
+    last_file_mtime_ = 0;
+    last_file_size_ = 0;
+    SetInputProperty(kFileInput, QStringLiteral("error"), QString());
     set_processor(nullptr);
     return;
   }
 
-  QString resolved_path = raw_path;
-  if (QFileInfo(resolved_path).isRelative() && project() && !project()->filename().isEmpty()) {
-    const QString candidate = QFileInfo(project()->filename()).dir().filePath(resolved_path);
-    if (QFileInfo::exists(candidate)) {
-      resolved_path = candidate;
-    }
-  }
+  const QString resolved_path = OCIOUtils::ResolveProjectRelativePath(project(), raw_path);
 
-  if (!QFileInfo::exists(resolved_path)) {
-    qWarning() << "[OCIOFileTransform] LUT file does not exist:" << raw_path;
+  QFileInfo fi(resolved_path);
+  if (!fi.exists()) {
+    last_error_ = tr("LUT file does not exist: %1").arg(raw_path);
+    qWarning() << "[OCIOFileTransform]" << last_error_;
+    SetInputProperty(kFileInput, QStringLiteral("error"), last_error_);
     set_processor(nullptr);
     return;
   }
+
+  last_file_mtime_ = fi.lastModified().toMSecsSinceEpoch();
+  last_file_size_ = fi.size();
 
   try {
     auto ocio_config = ColorManagerOCIO::GetConfig(manager());
     if (!ocio_config) {
+      last_error_ = tr("No active OpenColorIO configuration.");
+      SetInputProperty(kFileInput, QStringLiteral("error"), last_error_);
       set_processor(nullptr);
       return;
     }
@@ -155,13 +165,19 @@ void OCIOFileTransformNode::GenerateProcessor()
 
     auto ocio_processor = ocio_config->getProcessor(file_transform);
     if (!ocio_processor) {
+      last_error_ = tr("OpenColorIO failed to create processor for LUT: %1").arg(raw_path);
+      SetInputProperty(kFileInput, QStringLiteral("error"), last_error_);
       set_processor(nullptr);
       return;
     }
 
+    last_error_.clear();
+    SetInputProperty(kFileInput, QStringLiteral("error"), QString());
     set_processor(ColorProcessorOCIO::Create(ocio_processor));
   } catch (const OCIO::Exception &e) {
-    qWarning() << "[OCIOFileTransform] Failed to load LUT" << raw_path << ":" << e.what();
+    last_error_ = QString::fromUtf8(e.what());
+    qWarning() << "[OCIOFileTransform] Failed to load LUT" << raw_path << ":" << last_error_;
+    SetInputProperty(kFileInput, QStringLiteral("error"), last_error_);
     set_processor(nullptr);
   }
 }

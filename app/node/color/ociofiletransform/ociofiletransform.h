@@ -38,11 +38,20 @@ public:
   static const QString kDirectionInput;
   static const QString kInterpolationInput;
 
+  virtual bool PassThroughWhenMissingColorProcessor() const override { return true; }
+
+  QString GetLastError() const { return last_error_; }
+  bool HasError() const { return !last_error_.isEmpty(); }
+
 protected slots:
   virtual void ConfigChanged() override;
 
 private:
   void GenerateProcessor();
+
+  QString last_error_;
+  qint64 last_file_mtime_{0};
+  qint64 last_file_size_{0};
 };
 
 } // namespace olive

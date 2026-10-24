@@ -143,7 +143,7 @@ void Renderer::Destroy()
     default_shader_.clear();
   }
 
-  color_cache_.clear();
+  ClearColorCache();
 
   if (!interlace_texture_.isNull()) {
     DestroyNativeShader(interlace_texture_);
@@ -156,6 +156,17 @@ void Renderer::Destroy()
   texture_cache_.clear();
 
   DestroyInternal();
+}
+
+void Renderer::ClearColorCache()
+{
+  QMutexLocker locker(&color_cache_mutex_);
+  for (auto it = color_cache_.begin(); it != color_cache_.end(); ++it) {
+    if (!it.value().compiled_shader.isNull()) {
+      DestroyNativeShader(it.value().compiled_shader);
+    }
+  }
+  color_cache_.clear();
 }
 
 TexturePtr Renderer::CreateTextureFromNativeHandle(const QVariant &v, const VideoParams &params)
@@ -188,6 +199,7 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
 
   if (color_cache_.contains(proc_id)) {
     GetColorStats().shader_cache_hits.fetch_add(1, std::memory_order_relaxed);
+    color_cache_[proc_id].last_accessed = QDateTime::currentMSecsSinceEpoch();
     color_ctx = color_cache_.value(proc_id);
     return true;
   } else {
@@ -302,6 +314,27 @@ bool Renderer::GetColorContext(const ColorTransformJob &color_job, Renderer::Col
     }
 
 
+
+    color_ctx.last_accessed = QDateTime::currentMSecsSinceEpoch();
+
+    if (color_cache_.size() >= MAX_COLOR_CACHE_ENTRIES) {
+      QString oldest_key;
+      qint64 oldest_time = std::numeric_limits<qint64>::max();
+      for (auto it = color_cache_.constBegin(); it != color_cache_.constEnd(); ++it) {
+        if (it.value().last_accessed < oldest_time) {
+          oldest_time = it.value().last_accessed;
+          oldest_key = it.key();
+        }
+      }
+      if (!oldest_key.isEmpty()) {
+        auto evicted = color_cache_.take(oldest_key);
+        if (!evicted.compiled_shader.isNull()) {
+          DestroyNativeShader(evicted.compiled_shader);
+        }
+        evicted.lut3d_textures.clear();
+        evicted.lut1d_textures.clear();
+      }
+    }
 
     color_cache_.insert(proc_id, color_ctx);
 

@@ -27,9 +27,12 @@
 
 namespace olive {
 
+class Project;
+
 class OCIOUtils
 {
 public:
+  static QString ResolveProjectRelativePath(const Project* project, const QString& path);
   /**
    * @brief Map an Olive PixelFormat to an OpenColorIO bit-depth code.
    *
