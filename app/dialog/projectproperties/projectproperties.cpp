@@ -189,7 +189,10 @@ void ProjectPropertiesDialog::accept()
   if (working_project_->color_manager()->GetConfigFilename() != new_ocio_file) {
     working_project_->color_manager()->SetConfigFilename(new_ocio_file);
   }
-  if (working_project_->color_manager()->GetDefaultInputColorSpace() != default_input_colorspace_->currentText()) {
+  // An unreadable configuration leaves the combo box empty. Writing that empty string back would
+  // erase the project's default input color space, so only apply a real selection.
+  if (default_input_colorspace_->count() > 0
+      && working_project_->color_manager()->GetDefaultInputColorSpace() != default_input_colorspace_->currentText()) {
     working_project_->color_manager()->SetDefaultInputColorSpace(default_input_colorspace_->currentText());
   }
   if (working_project_->GetColorReferenceSpace() != reference_space_->currentData().toString()) {
@@ -268,6 +271,17 @@ void ProjectPropertiesDialog::OCIOFilenameUpdated()
     ocio_config_is_valid_ = false;
     ocio_filename_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
     ocio_config_error_ = QString::fromUtf8(e.what());
+
+    // The requested configuration cannot be read, but the project keeps rendering with the
+    // configuration that is currently active. Show that one instead of leaving the combo empty,
+    // which would neither reflect the effective color management nor be safe to write back.
+    foreach (const QString& cs, working_project_->color_manager()->ListAvailableColorspaces()) {
+      default_input_colorspace_->addItem(cs);
+
+      if (cs == working_project_->color_manager()->GetDefaultInputColorSpace()) {
+        default_input_colorspace_->setCurrentIndex(default_input_colorspace_->count() - 1);
+      }
+    }
   }
 }
 

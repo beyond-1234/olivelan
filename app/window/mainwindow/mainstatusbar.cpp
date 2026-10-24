@@ -94,8 +94,8 @@ void MainStatusBar::SetColorConfigFailure(const QString& filename, const QString
     return;
   }
 
-  color_config_failure_->setText(tr("OCIO Fallback (Default Config)"));
-  QString tip = tr("Failed to load external OpenColorIO configuration:\n%1\nReason: %2\nThe project has fallen back to the built-in default configuration.")
+  color_config_failure_->setText(tr("OCIO Config Error"));
+  QString tip = tr("Failed to load external OpenColorIO configuration:\n%1\nReason: %2\nRendering continues with the last configuration that loaded successfully.")
                     .arg(filename, reason);
   color_config_failure_->setToolTip(tip);
   color_config_failure_->setVisible(true);

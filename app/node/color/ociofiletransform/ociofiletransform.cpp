@@ -1,8 +1,6 @@
 #include "ociofiletransform.h"
 
 #include <QFileInfo>
-#include <QDateTime>
-#include <QDir>
 #include <QDebug>
 
 #include "common/ociobridge.h"
@@ -106,8 +104,6 @@ void OCIOFileTransformNode::GenerateProcessor()
   const QString raw_path = GetFile().trimmed();
   if (raw_path.isEmpty()) {
     last_error_.clear();
-    last_file_mtime_ = 0;
-    last_file_size_ = 0;
     SetInputProperty(kFileInput, QStringLiteral("error"), QString());
     set_processor(nullptr);
     return;
@@ -115,17 +111,13 @@ void OCIOFileTransformNode::GenerateProcessor()
 
   const QString resolved_path = OCIOUtils::ResolveProjectRelativePath(project(), raw_path);
 
-  QFileInfo fi(resolved_path);
-  if (!fi.exists()) {
+  if (!QFileInfo::exists(resolved_path)) {
     last_error_ = tr("LUT file does not exist: %1").arg(raw_path);
     qWarning() << "[OCIOFileTransform]" << last_error_;
     SetInputProperty(kFileInput, QStringLiteral("error"), last_error_);
     set_processor(nullptr);
     return;
   }
-
-  last_file_mtime_ = fi.lastModified().toMSecsSinceEpoch();
-  last_file_size_ = fi.size();
 
   try {
     auto ocio_config = ColorManagerOCIO::GetConfig(manager());

@@ -86,6 +86,9 @@ public:
 
   bool HasError() const;
 
+  // Reflects the configuration currently in effect, not the outcome of the last attempt: a failed
+  // load keeps the previously active configuration, so this stays true if that one came from a
+  // file.
   bool IsCustomConfig() const;
 
 signals:

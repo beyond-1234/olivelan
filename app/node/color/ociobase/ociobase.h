@@ -57,6 +57,10 @@ private:
 
   ColorProcessorPtr processor_;
 
+  // Value() is const but runs on render threads; a per-node flag keeps the warning attributable
+  // to this node (the previous function-local static was shared process-wide).
+  mutable bool warned_missing_processor_ = false;
+
 };
 
 }

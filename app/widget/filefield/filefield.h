@@ -54,6 +54,8 @@ public:
 
   void SetError(bool has_error, const QString& tooltip = QString())
   {
+    has_error_ = has_error;
+
     if (has_error) {
       line_edit_->setStyleSheet(QStringLiteral("QLineEdit {color: red;}"));
       if (!tooltip.isEmpty()) {
@@ -74,6 +76,8 @@ private:
   QPushButton* browse_btn_;
 
   bool directory_mode_;
+
+  bool has_error_ = false;
 
 private slots:
   void BrowseBtnClicked();

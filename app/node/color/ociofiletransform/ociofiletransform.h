@@ -50,8 +50,6 @@ private:
   void GenerateProcessor();
 
   QString last_error_;
-  qint64 last_file_mtime_{0};
-  qint64 last_file_size_{0};
 };
 
 } // namespace olive

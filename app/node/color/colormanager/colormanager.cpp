@@ -385,7 +385,6 @@ bool ColorManager::UpdateConfigFromFilename()
   if (!QFileInfo::exists(resolved_path)) {
     impl_->last_error = tr("OpenColorIO configuration file does not exist: %1").arg(config_filename);
     qWarning() << "[ColorManager]" << impl_->last_error;
-    impl_->is_custom_config = false;
     if (!impl_->config) {
       impl_->config = ColorManagerOCIO::GetDefaultConfig();
     }
@@ -418,7 +417,6 @@ bool ColorManager::UpdateConfigFromFilename()
   } catch (const OCIO::Exception& e) {
     impl_->last_error = QString::fromUtf8(e.what());
     qWarning() << "[ColorManager] Failed to load OpenColorIO config" << config_filename << ":" << impl_->last_error;
-    impl_->is_custom_config = false;
     if (!impl_->config) {
       impl_->config = ColorManagerOCIO::GetDefaultConfig();
     }
