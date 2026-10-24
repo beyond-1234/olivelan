@@ -23,6 +23,7 @@
   NVIDIA CUDA-GL 互操作（`cudaGraphicsGLRegisterImage`）深度绑定于 NVIDIA 专有闭源驱动和同卡同上下文。开源 NVK 目前不支持 CUDA 运行时。
 - **处理方式**：
   安装官方专有驱动（驱动版本 ≥ 535）及 CUDA 12.4 运行库；系统会自动激活 Tier 1 链路。
+  *(详细硬件分流机制与规避机理参见 [02-hal-zero-copy-pipeline.md §4](02-hal-zero-copy-pipeline.md#4-深度复盘linux-硬件直通的四大致命陷阱与避坑规范))*。
 
 ### 2.2 多解码器实例时的线程调度防欠载
 - **排查指南**：
