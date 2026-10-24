@@ -83,7 +83,10 @@ public:
   DisplayServer GetDisplayServer() const { return display_server_; }
   const std::string& GetPrimaryGpuName() const { return primary_gpu_name_; }
   size_t GetTotalVramMb() const { return total_vram_mb_; }
-  const std::vector<GpuDeviceInfo>& GetDetectedDevices() const { return detected_devices_; }
+  std::vector<GpuDeviceInfo> GetDetectedDevices() const {
+    std::lock_guard<std::mutex> lock(probe_mutex_);
+    return detected_devices_;
+  }
 
   /**
    * @brief Patch 0080 (Phase 9): a DRM connector that currently reports "connected", and the GPU
@@ -98,7 +101,10 @@ public:
     GpuVendor gpu{GpuVendor::Unknown};
   };
 
-  const std::vector<DisplayConnection>& GetConnectedDisplays() const { return connected_displays_; }
+  std::vector<DisplayConnection> GetConnectedDisplays() const {
+    std::lock_guard<std::mutex> lock(probe_mutex_);
+    return connected_displays_;
+  }
 
   /// @brief True when a currently connected display is driven by a GPU of this vendor.
   bool HasConnectedDisplayOn(GpuVendor vendor) const;
@@ -233,6 +239,7 @@ private:
   // Patch 0091 (P2-9): decoder threads record the vendor while other decoders and the UI read it.
   // std::string assignment is not atomic; guard every access to the three fields above.
   mutable std::mutex gl_vendor_mutex_;
+  mutable std::mutex probe_mutex_;
   bool has_nvdec_support_{false};
   bool has_vaapi_dmabuf_support_{false};
   // Patch 0094: bit 0 = at least one real import succeeded, bit 1 = at least one failed.

@@ -3,6 +3,9 @@
 
 #include <QDialog>
 
+class QTreeWidget;
+class QLabel;
+
 namespace olive {
 
 /**
@@ -17,6 +20,15 @@ class HALStatusDialog : public QDialog {
   Q_OBJECT
 public:
   explicit HALStatusDialog(QWidget* parent = nullptr);
+
+private slots:
+  void PopulateStatus();
+
+private:
+  QTreeWidget* tiers_{nullptr};
+  QLabel* expected_{nullptr};
+  QLabel* forced_label_{nullptr};
+  QLabel* selected_label_{nullptr};
 };
 
 } // namespace olive

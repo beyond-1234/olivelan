@@ -66,6 +66,7 @@ GpuEnvironmentProbe::GpuEnvironmentProbe()
 
 void GpuEnvironmentProbe::Refresh()
 {
+  std::lock_guard<std::mutex> lock(probe_mutex_);
   detected_devices_.clear();
   DetectDisplayServer();
   DetectGpuTopology();
@@ -77,6 +78,7 @@ void GpuEnvironmentProbe::Refresh()
 
 bool GpuEnvironmentProbe::HasConnectedDisplayOn(GpuVendor vendor) const
 {
+  std::lock_guard<std::mutex> lock(probe_mutex_);
   for (const auto& display : connected_displays_) {
     if (display.gpu == vendor) {
       return true;

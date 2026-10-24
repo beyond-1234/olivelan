@@ -346,15 +346,23 @@ endif()
 
 # Generate Git hash
 set(PROJECT_LONG_VERSION ${PROJECT_VERSION})
-if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
-  find_package(Git)
-  if(GIT_FOUND)
+find_package(Git QUIET)
+if(GIT_FOUND)
+  if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
     execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       OUTPUT_VARIABLE GIT_HASH
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+  elseif(EXISTS "${CMAKE_SOURCE_DIR}/../.git")
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
+      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/.."
+      OUTPUT_VARIABLE GIT_HASH
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  endif()
 
+  if(GIT_HASH)
     set(PROJECT_LONG_VERSION ${PROJECT_VERSION}-${GIT_HASH})
   endif()
 endif()

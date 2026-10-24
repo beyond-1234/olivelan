@@ -25,9 +25,11 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QPalette>
+#include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "codec/hal/gpu_environment_probe.h"
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
 
@@ -37,12 +39,7 @@ HALStatusDialog::HALStatusDialog(QWidget* parent) :
   QDialog(parent)
 {
   setWindowTitle(tr("HAL Status"));
-  setMinimumSize(760, 380);
-
-  // Do not Refresh() here: this panel can be opened during playback, while decoder threads are
-  // reading the probe. The probe is populated at startup and its runtime fields (VA-API import
-  // status) update atomically; re-running device detection from the GUI would race those readers.
-  const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
+  setMinimumSize(760, 420);
 
   auto* layout = new QVBoxLayout(this);
 
@@ -51,66 +48,91 @@ HALStatusDialog::HALStatusDialog(QWidget* parent) :
          "Tier 2 is verified per stream and Tier 3 is always the final fallback."),
       this));
   auto* device_note = new QLabel(
-      tr("Device information is a startup snapshot. After hot-plugging a GPU or switching "
-         "the display session, restart Olive to re-detect devices; VA-API import status "
-         "continues to update at runtime."),
+      tr("Device information is periodically snapshotted. Click Refresh to re-probe "
+         "hardware topology (thread-safe); VA-API import status updates dynamically."),
       this);
   device_note->setWordWrap(true);
   layout->addWidget(device_note);
 
-  auto* tiers = new QTreeWidget(this);
-  tiers->setColumnCount(3);
-  tiers->setHeaderLabels({tr("Tier"), tr("Status"), tr("Reason")});
-  tiers->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-  tiers->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-  tiers->header()->setStretchLastSection(true);
-  tiers->setRootIsDecorated(false);
+  tiers_ = new QTreeWidget(this);
+  tiers_->setColumnCount(3);
+  tiers_->setHeaderLabels({tr("Tier"), tr("Status"), tr("Reason")});
+  tiers_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+  tiers_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  tiers_->header()->setStretchLastSection(true);
+  tiers_->setRootIsDecorated(false);
+  layout->addWidget(tiers_);
 
+  expected_ = new QLabel(this);
+  expected_->setWordWrap(true);
+  layout->addWidget(expected_);
+
+  forced_label_ = new QLabel(this);
+  forced_label_->setWordWrap(true);
+  layout->addWidget(forced_label_);
+
+  selected_label_ = new QLabel(this);
+  selected_label_->setWordWrap(true);
+  layout->addWidget(selected_label_);
+
+  PopulateStatus();
+
+  auto* buttons = new QDialogButtonBox(this);
+  auto* refresh_btn = buttons->addButton(tr("Refresh"), QDialogButtonBox::ActionRole);
+  buttons->addButton(QDialogButtonBox::Close);
+  connect(refresh_btn, &QPushButton::clicked, this, &HALStatusDialog::PopulateStatus);
+  connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+  layout->addWidget(buttons);
+}
+
+void HALStatusDialog::PopulateStatus()
+{
+  if (!tiers_) {
+    return;
+  }
+
+  // Probe refresh is protected by probe_mutex_
+  GpuEnvironmentProbe::Instance().Refresh();
+
+  const GpuSessionAdvisor::Assessment assessment = GpuSessionAdvisor::Assess();
+
+  tiers_->clear();
   const QVector<GpuSessionAdvisor::TierStatus> statuses = GpuSessionAdvisor::DescribeTiers(assessment);
   for (const GpuSessionAdvisor::TierStatus& status : statuses) {
-    auto* item = new QTreeWidgetItem(tiers);
+    auto* item = new QTreeWidgetItem(tiers_);
     item->setText(0, tr("Tier %1 - %2").arg(status.tier).arg(status.backend));
     item->setText(1, status.state);
     item->setText(2, status.reason);
     item->setToolTip(2, status.reason);
 
     if (!status.available) {
-      QPalette palette = tiers->palette();
+      QPalette palette = tiers_->palette();
       palette.setColor(QPalette::Text, QColor(190, 90, 90));
       item->setForeground(1, palette.text());
     }
   }
-  tiers->resizeColumnToContents(0);
-  layout->addWidget(tiers);
+  tiers_->resizeColumnToContents(0);
 
-  auto* expected = new QLabel(
-      tr("Expected routing: %1").arg(GpuSessionAdvisor::DescribeEffectivePath(assessment)),
-      this);
-  expected->setWordWrap(true);
-  layout->addWidget(expected);
+  if (expected_) {
+    expected_->setText(tr("Expected routing: %1").arg(GpuSessionAdvisor::DescribeEffectivePath(assessment)));
+  }
 
   const QString forced = HardwarePipelineFactory::GetForcedBackend();
-  auto* forced_label = new QLabel(
-      forced.isEmpty() || forced == QStringLiteral("auto")
-          ? tr("Forced backend: automatic routing")
-          : tr("Forced backend: %1 (this process only)").arg(forced),
-      this);
-  forced_label->setWordWrap(true);
-  layout->addWidget(forced_label);
+  if (forced_label_) {
+    forced_label_->setText(
+        forced.isEmpty() || forced == QStringLiteral("auto")
+            ? tr("Forced backend: automatic routing")
+            : tr("Forced backend: %1 (this process only)").arg(forced));
+  }
 
   const int selected_tier = HardwarePipelineFactory::GetLastSelectedTier();
   const QString selected_backend = HardwarePipelineFactory::GetLastSelectedBackend();
-  auto* selected_label = new QLabel(
-      selected_tier > 0
-          ? tr("Last frame selected: Tier %1 - %2").arg(selected_tier).arg(selected_backend)
-          : tr("Last frame selected: no frame has selected a backend yet."),
-      this);
-  selected_label->setWordWrap(true);
-  layout->addWidget(selected_label);
-
-  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-  connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-  layout->addWidget(buttons);
+  if (selected_label_) {
+    selected_label_->setText(
+        selected_tier > 0
+            ? tr("Last frame selected: Tier %1 - %2").arg(selected_tier).arg(selected_backend)
+            : tr("Last frame selected: no frame has selected a backend yet."));
+  }
 }
 
 } // namespace olive

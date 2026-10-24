@@ -124,4 +124,51 @@ OLIVE_ADD_TEST(LegacySerializersRemoved)
   OLIVE_TEST_END;
 }
 
+OLIVE_ADD_TEST(CurrentProjectSaveLoadRoundTrip)
+{
+  ProjectSerializer::Initialize();
+  ColorManager::SetUpDefaultConfig();
+
+  QTemporaryDir temp_dir;
+  OLIVE_ASSERT(temp_dir.isValid());
+  QString proj_file = temp_dir.filePath(QStringLiteral("roundtrip_test.ove"));
+
+  // 1. Create project, configure settings, save to file
+  {
+    Project p;
+    p.set_filename(proj_file);
+    p.SetSetting(QStringLiteral("custom_test_key"), QStringLiteral("custom_test_val"));
+    p.color_manager()->SetDefaultInputColorSpace(QStringLiteral("sRGB OETF"));
+
+    QFile f(proj_file);
+    OLIVE_ASSERT(f.open(QIODevice::WriteOnly));
+    QXmlStreamWriter writer(&f);
+    writer.setAutoFormatting(true);
+
+    ProjectSerializer::SaveData save_data(ProjectSerializer::kProject, &p, proj_file);
+    ProjectSerializer::Result res = ProjectSerializer::Save(&writer, save_data);
+    OLIVE_ASSERT(res.code() == ProjectSerializer::kSuccess);
+    f.close();
+  }
+
+  // 2. Load the project back from XML file
+  {
+    QFile f(proj_file);
+    OLIVE_ASSERT(f.open(QIODevice::ReadOnly));
+    QXmlStreamReader reader(&f);
+
+    Project loaded_p;
+    loaded_p.set_filename(proj_file);
+    ProjectSerializer::Result r = ProjectSerializer::Load(&loaded_p, &reader, ProjectSerializer::kProject);
+    OLIVE_ASSERT(r.code() == ProjectSerializer::kSuccess);
+
+    OLIVE_ASSERT(loaded_p.GetSetting(QStringLiteral("custom_test_key")) == QStringLiteral("custom_test_val"));
+    OLIVE_ASSERT(loaded_p.color_manager()->GetDefaultInputColorSpace() == QStringLiteral("sRGB OETF"));
+  }
+
+  ProjectSerializer::Destroy();
+
+  OLIVE_TEST_END;
 }
+
+} // namespace olive
