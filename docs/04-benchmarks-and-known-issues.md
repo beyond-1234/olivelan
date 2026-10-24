@@ -42,6 +42,6 @@
 
 以下条目属于待实机 GPU 签字的持续验证项：
 
-- [ ] **Linux Tier 1 签字**：在配备 RTX 30/40 系显卡的 Linux 宿主机上，跑通 `verify_zero_copy.sh`（核验 `hardware_frames > 0` 且 `cpu_readback_frames = 0`）；
+- [ ] **Linux Tier 1 签字**：在配备 RTX 30/40 系显卡的 Linux 宿主机上，跑通 `scripts/verify/verify_zero_copy.sh`（核验 `hardware_frames > 0` 且 `cpu_readback_frames = 0`）；
 - [ ] **Linux Tier 2 签字**：在 AMD Radeon 780M / Intel 锐炬集显的 Linux 宿主机上，验证 VA-API DMA-BUF 原生 EGL 直通；
 - [ ] **工程往返实测**：多轨 230220 包含数十个剪辑块与复杂 OCIO LUT 的真实长周期工程保存与导出回归。

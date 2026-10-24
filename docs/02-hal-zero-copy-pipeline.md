@@ -130,7 +130,7 @@ Linux 下的视频呈现与硬解直通受 **显示服务器（Wayland vs X11）
 
 为了避免“日志报成功，后台偷偷在回读”的假读数，OliveLan 建立了多维度的独立交叉验证体系：
 
-1. **`verify_zero_copy.sh` 遥测拦截**：
+1. **`scripts/verify/verify_zero_copy.sh` 遥测拦截**：
    - 通过进程级探针，持续监控硬件帧生产数（`hardware_frames`）与主机回读数（`cpu_readback_frames`）。验收合格标准：`hardware_frames > 0` 且 `cpu_readback_frames == 0`。
 2. **底层符号拦截器 (`readback_shim`)**：
    - 通过 `LD_PRELOAD` 劫持 FFmpeg 的 `av_hwframe_transfer_data`，任何悄悄跨 PCIe 搬移显存的动作都会触发计数断言。
