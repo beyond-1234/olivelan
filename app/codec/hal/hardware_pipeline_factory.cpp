@@ -4,7 +4,6 @@
 #include "cuda_nvdec_pipeline.h"
 #include "vaapi_dmabuf_pipeline.h"
 #include "videotoolbox_pipeline.h"
-#include "d3d11_interop_pipeline.h"
 #include "reinforced_software_pipeline.h"
 #include "render/opengl/openglrenderer.h"
 
