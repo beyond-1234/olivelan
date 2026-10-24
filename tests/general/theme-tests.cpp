@@ -195,7 +195,7 @@ OLIVE_ADD_TEST(ThemeTokenRegistry)
 
   registry->ResetToDefaults();
   OLIVE_ASSERT(registry->GetColor(QStringLiteral("color.accent.primary"))
-               == QColor(0x00, 0x78, 0xD4));
+               == QColor(0x00, 0xC4, 0xCC));
   OLIVE_TEST_END;
 }
 
