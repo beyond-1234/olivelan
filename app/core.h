@@ -38,6 +38,7 @@
 namespace olive {
 
 class MainWindow;
+class SplashScreen;
 
 /**
  * @brief The main central Olive application instance
@@ -104,6 +105,16 @@ public:
       autoplay_seconds_ = seconds;
     }
 
+    SplashScreen* splash_screen() const
+    {
+      return splash_screen_;
+    }
+
+    void set_splash_screen(SplashScreen* s)
+    {
+      splash_screen_ = s;
+    }
+
     const QString& startup_language() const
     {
       return startup_language_;
@@ -136,6 +147,8 @@ public:
     bool run_fullscreen_;
 
     bool crash_;
+
+    SplashScreen* splash_screen_{nullptr};
 
   };
 

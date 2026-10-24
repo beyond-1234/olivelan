@@ -18,6 +18,8 @@ add_subdirectory(mainwindow)
 
 set(OLIVE_SOURCES
   ${OLIVE_SOURCES}
+  window/splash/splashscreen.h
+  window/splash/splashscreen.cpp
   PARENT_SCOPE
 )
 

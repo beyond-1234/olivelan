@@ -52,6 +52,7 @@
 #include "dialog/sequence/sequence.h"
 #include "dialog/task/task.h"
 #include "dialog/preferences/preferences.h"
+#include "window/splash/splashscreen.h"
 #include "node/color/colormanager/colormanager.h"
 #include "node/factory.h"
 #include "node/nodeundo.h"
@@ -132,6 +133,9 @@ void Core::Start()
   // Load application config
   Config::Load();
 
+  SplashScreen* splash = core_params_.splash_screen();
+  if (splash) splash->SetStatus(tr("Initializing application core..."), 15);
+
   // Set locale based on either startup arg, config, or auto-detect
   SetStartupLocale();
 
@@ -141,12 +145,14 @@ void Core::Start()
   // Set up node factory/library
   NodeFactory::Initialize();
 
+  if (splash) splash->SetStatus(tr("Initializing OpenColorIO 2.5.1 color management..."), 35);
   // Set up color manager's default config
   ColorManager::SetUpDefaultConfig();
 
   // Initialize task manager
   TaskManager::CreateInstance();
 
+  if (splash) splash->SetStatus(tr("Setting up background render & frame pipeline..."), 55);
   // Initialize ConformManager
   ConformManager::CreateInstance();
 
@@ -167,8 +173,14 @@ void Core::Start()
 
   switch (core_params_.run_mode()) {
   case CoreParams::kRunNormal:
+    if (splash) splash->SetStatus(tr("Building workspace layout and panels..."), 80);
     // Start GUI
     StartGUI(core_params_.fullscreen());
+
+    if (splash) {
+      splash->SetStatus(tr("Ready"), 100);
+      splash->Finish(main_window_);
+    }
 
     // If we have a startup
     QMetaObject::invokeMethod(this, "OpenStartupProject", Qt::QueuedConnection);

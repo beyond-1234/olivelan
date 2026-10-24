@@ -49,6 +49,7 @@ extern "C" {
 #include "codec/hal/hardware_pipeline_factory.h"
 #include "config/config.h"
 #include "dialog/hal/halbackenddialog.h"
+#include "window/splash/splashscreen.h"
 #include "node/project/serializer/serializer.h"
 #include "bootstrap/graphicsfallback.h"
 #include "version.h"
@@ -490,6 +491,15 @@ int main(int argc, char *argv[])
     qWarning() << "Failed to initialize Crashpad handler";
   }
 #endif // USE_CRASHPAD
+
+  // Launch modern Adobe-style splash screen in normal GUI mode
+  std::unique_ptr<olive::SplashScreen> splash;
+  if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
+      && dynamic_cast<QApplication*>(a.get())) {
+    splash = std::make_unique<olive::SplashScreen>();
+    splash->show();
+    startup_params.set_splash_screen(splash.get());
+  }
 
   // Start core
   olive::Core c(startup_params);

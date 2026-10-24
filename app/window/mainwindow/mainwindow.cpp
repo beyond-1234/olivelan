@@ -707,16 +707,8 @@ void MainWindow::TimelinePanelSelectionChanged(const QVector<Block *> &blocks)
 
 void MainWindow::ShowWelcomeDialog()
 {
-  if (OLIVE_CONFIG("ShowWelcomeDialog").toBool()) {
-    // Shown non-modally on purpose. An application-modal dialog launched around startup competes
-    // for activation with the panels that are being opened while the project/layout settles; on
-    // Wayland (KWin) that makes the main window and the dialog bounce activation back and forth,
-    // with the main window looking frozen/blank. A non-modal welcome dialog can't do that.
-    AboutDialog *ad = new AboutDialog(true, this);
-    ad->setAttribute(Qt::WA_DeleteOnClose);
-    ad->show();
-    ad->raise();
-  }
+  // Deprecated in Olivelan in favor of modern Adobe-style startup splash screen.
+  // The welcome modal dialog is disabled to prevent startup workspace competition.
 }
 
 void MainWindow::ShowGpuSessionDialogIfNeeded()
