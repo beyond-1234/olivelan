@@ -1,9 +1,6 @@
 # CMake artifacts
 /build*/
 
-# Doxygen
-/docs/
-
 # Visual Studio (Code)
 .localhistory/
 .history/
