@@ -604,6 +604,7 @@ void MainWindow::closeEvent(QCloseEvent *e)
   SaveCustomShortcuts();
 
   QMainWindow::closeEvent(e);
+
 }
 
 void MainWindow::StatusBarDoubleClicked()

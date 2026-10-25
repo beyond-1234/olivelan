@@ -359,6 +359,7 @@ int main(int argc, char *argv[])
       app_font.setFamilies(ui_families);
     }
     QApplication::setFont(app_font);
+    QGuiApplication::setQuitOnLastWindowClosed(true);
 
     // KDDockWidgets 2.x requires a frontend to be selected before any MainWindow/DockWidget is
     // created. Olive only links the QtWidgets frontend (see ext/CMakeLists.txt).
@@ -429,17 +430,23 @@ int main(int argc, char *argv[])
   }
 
   // Start core
-  olive::Core c(startup_params);
+  int ret = 0;
+  {
+    olive::Core c(startup_params);
 
-  c.Start();
+    c.Start();
 
-  // Surface a previous crash (if any) once the main window exists. Never uploads anything.
-  olive::CrashHandler::ShowPendingCrashReport(c.main_window());
+    // If splash was closed, release unique_ptr ownership before event loop ends
+    splash.reset();
 
-  int ret = a->exec();
+    // Surface a previous crash (if any) once the main window exists. Never uploads anything.
+    olive::CrashHandler::ShowPendingCrashReport(c.main_window());
 
-  // Clear core memory
-  c.Stop();
+    ret = a->exec();
+
+    // Clear core memory
+    c.Stop();
+  }
 
   olive::CrashHandler::MarkCleanShutdown();
 

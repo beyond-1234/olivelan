@@ -1152,15 +1152,19 @@ void Core::SetStartupLocale()
   QString use_locale = OLIVE_CONFIG("Language").toString();
 
   if (use_locale.isEmpty()) {
-    // Treat Chinese (zh_CN) as primary default language
-    use_locale = QStringLiteral("zh_CN");
+    // If user has not explicitly configured a language, respect the host system's primary locale.
+    // e.g. "en_US" for English systems, "zh_CN" for Chinese systems.
+    const QString sys_lang = QLocale::system().name();
+    if (sys_lang.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)) {
+      use_locale = QStringLiteral("zh_CN");
+    } else {
+      use_locale = QStringLiteral("en_US");
+    }
   }
 
   if (!SetLanguage(use_locale)) {
-    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it; falling back to zh_CN/en_US";
-    if (!SetLanguage(QStringLiteral("zh_CN"))) {
-      SetLanguage(QStringLiteral("en_US"));
-    }
+    qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it; falling back to en_US";
+    SetLanguage(QStringLiteral("en_US"));
   }
 }
 

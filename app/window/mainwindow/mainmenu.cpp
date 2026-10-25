@@ -66,6 +66,7 @@ MainMenu::MainMenu(MainWindow *parent) :
   file_project_properties_item_ = file_menu_->AddItem("projectproperties", Core::instance(), &Core::DialogProjectPropertiesShow, tr("Shift+F10"));
   file_menu_->addSeparator();
   file_exit_item_ = file_menu_->AddItem("exit", parent, &MainWindow::close);
+  file_exit_item_->setMenuRole(QAction::QuitRole);
 
   //
   // EDIT MENU
@@ -281,6 +282,7 @@ MainMenu::MainMenu(MainWindow *parent) :
   tools_menu_->addSeparator();
 
   tools_preferences_item_ = tools_menu_->AddItem("prefs", Core::instance(), &Core::DialogPreferencesShow, tr("Ctrl+,"));
+  tools_preferences_item_->setMenuRole(QAction::PreferencesRole);
 
 #ifndef NDEBUG
   tools_magic_item_ = tools_menu_->AddItem("magic", Core::instance(), &Core::SetMagic);
@@ -297,6 +299,7 @@ MainMenu::MainMenu(MainWindow *parent) :
   help_feedback_item_ = help_menu_->AddItem("feedback", this, &MainMenu::HelpFeedbackTriggered);
   help_menu_->addSeparator();
   help_about_item_ = help_menu_->AddItem("about", Core::instance(), &Core::DialogAboutShow);
+  help_about_item_->setMenuRole(QAction::AboutRole);
 
   connect(Core::instance(), &Core::OpenRecentListChanged, this, &MainMenu::RepopulateOpenRecent);
   PopulateOpenRecent();

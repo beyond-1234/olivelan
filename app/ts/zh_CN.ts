@@ -7833,4 +7833,69 @@ Please check your audio preferences and try again.</source>
         <translation>规划中——尚未实现；实际使用 Tier 3</translation>
     </message>
 </context>
+
+<context>
+    <name>CrashHandler</name>
+    <message>
+        <source>Olivelan Crash Report</source>
+        <translation>Olivelan 崩溃报告</translation>
+    </message>
+    <message>
+        <source>Olivelan did not shut down correctly.</source>
+        <translation>Olivelan 上次未能正常退出。</translation>
+    </message>
+    <message>
+        <source>A crash report was written locally.
+
+Log file:
+%1
+
+You can attach the log file to a bug report if you would like help.</source>
+        <translation>已在本地生成崩溃记录文件。
+
+日志文件位置：
+%1
+
+如果需要排查帮助，您可以将该日志文件附在 Issue 缺陷报告中。</translation>
+    </message>
+    <message>
+        <source>Open Log Folder</source>
+        <translation>打开日志所在文件夹</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
+    <name>olive::SplashScreen</name>
+    <message>
+        <source>Starting Olivelan...</source>
+        <translation>正在启动 Olivelan...</translation>
+    </message>
+</context>
+<context>
+    <name>Core</name>
+    <message>
+        <source>Initializing application core...</source>
+        <translation>正在初始化应用程序核心...</translation>
+    </message>
+    <message>
+        <source>Initializing OpenColorIO 2.5.1 color management...</source>
+        <translation>正在载入 OpenColorIO 2.5.1 色彩管理引擎...</translation>
+    </message>
+    <message>
+        <source>Setting up background render &amp; frame pipeline...</source>
+        <translation>正在初始化后台渲染与帧池管线...</translation>
+    </message>
+    <message>
+        <source>Building workspace layout and panels...</source>
+        <translation>正在构建工作区界面与面板布局...</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>就绪</translation>
+    </message>
+</context>
+
 </TS>

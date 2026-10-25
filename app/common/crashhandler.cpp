@@ -230,27 +230,22 @@ void CrashHandler::ShowPendingCrashReport(QWidget *parent)
 
   QFile crash_file(crash_path);
   const bool has_crash_file = crash_file.exists();
-  const bool unclean_shutdown = QFile::exists(session_path);
 
-  if (!has_crash_file && !unclean_shutdown) {
+  // Only pop up the crash dialog if a REAL fatal signal or core dump occurred.
+  // A missing/unclean session.lock alone is too aggressive (e.g. normal restarts, window close events).
+  if (!has_crash_file) {
+    // If there is an orphaned session lock from previous instance, silently remove it.
+    QFile::remove(session_path);
     return;
   }
 
   QString details;
-  if (has_crash_file && crash_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+  if (crash_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     details = QString::fromUtf8(crash_file.readAll()).trimmed();
     crash_file.close();
   }
   if (details.isEmpty()) {
-    details = QStringLiteral("reason=terminated without a clean shutdown");
-  }
-
-  if (unclean_shutdown) {
-    QFile marker(session_path);
-    if (marker.open(QIODevice::ReadOnly | QIODevice::Text)) {
-      details += QStringLiteral("\nprevious_session=") + QString::fromUtf8(marker.readAll()).trimmed();
-      marker.close();
-    }
+    details = QStringLiteral("reason=fatal crash signal intercepted");
   }
 
   const QString log_path = LogFilePath();
@@ -260,7 +255,7 @@ void CrashHandler::ShowPendingCrashReport(QWidget *parent)
   box.setWindowTitle(QCoreApplication::translate("CrashHandler", "Olivelan Crash Report"));
   box.setText(QCoreApplication::translate("CrashHandler", "Olivelan did not shut down correctly."));
   box.setInformativeText(QCoreApplication::translate("CrashHandler",
-                                "A crash report was written locally. Nothing has been uploaded.\n\n"
+                                "A crash report was written locally.\n\n"
                                 "Log file:\n%1\n\n"
                                 "You can attach the log file to a bug report if you would like help.").arg(log_path));
   box.setDetailedText(details);
