@@ -172,7 +172,7 @@ ExportDialog::ExportDialog(ViewerOutput *viewer_node, bool stills_only_mode, QWi
     int opt_row = 0;
 
     export_bkg_box_ = new QCheckBox(tr("Run In Background"));
-    export_bkg_box_->setToolTip(tr("Exporting in the background allows you to continue using Olive while "
+    export_bkg_box_->setToolTip(tr("Exporting in the background allows you to continue using Olivelan while "
                                    "exporting, but may result in slower export speeds, and may"
                                    "severely impact editing and playback performance."));
     options_layout->addWidget(export_bkg_box_, opt_row, 0);
@@ -327,7 +327,7 @@ void ExportDialog::StartExport()
   QDir dest_dir(file_info.path());
   if (!FileFunctions::DirectoryIsValid(dest_dir)) {
     QtUtils::MsgBox(this, QMessageBox::Critical, tr("Failed to create output directory"),
-                        tr("The intended output directory doesn't exist and Olive couldn't create it. "
+                        tr("The intended output directory doesn't exist and Olivelan couldn't create it. "
                                          "Please choose a different filename."));
     return;
   }

@@ -2,6 +2,13 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
+    <name>AddTool</name>
+    <message>
+        <source>Added Clip</source>
+        <translation>添加片段</translation>
+    </message>
+</context>
+<context>
     <name>AudioParams</name>
     <message>
         <source>%1 Hz</source>
@@ -99,31 +106,37 @@
         <translation>保存设置时出错</translation>
     </message>
     <message>
-        <source>Failed to save application settings. The application may lack write permissions to this location.</source>
-        <translation type="obsolete">无法保存应用程序设置。应用程序可能没有对此位置的写入权限。</translation>
-    </message>
-    <message>
         <source>Failed to save application settings. The application may lack write permissions for this location.</source>
-        <translation>未能保存应用程序设置。应用程序可能缺少此位置的写入权限.</translation>
+        <translation>未能保存应用程序设置。应用程序可能缺少该位置的写入权限。</translation>
     </message>
 </context>
 <context>
-    <name>Footage</name>
+    <name>CrashHandler</name>
     <message>
-        <source>%1 FPS</source>
-        <translation type="obsolete">%1 FPS</translation>
+        <source>Olivelan Crash Report</source>
+        <translation>Olivelan 崩溃报告</translation>
     </message>
     <message>
-        <source>%1 Hz</source>
-        <translation type="obsolete">%1 Hz</translation>
+        <source>Olivelan did not shut down correctly.</source>
+        <translation>Olivelan 上次未能正常退出。</translation>
     </message>
     <message>
-        <source>Filename: %1</source>
-        <translation type="obsolete">文件名：%1</translation>
+        <source>A crash report was written locally.
+
+Log file:
+%1
+
+You can attach the log file to a bug report if you would like help.</source>
+        <translation>已在本地生成崩溃记录文件。
+
+日志文件位置：
+%1
+
+如果需要排查帮助，您可以将该日志文件附在 Issue 缺陷报告中。</translation>
     </message>
     <message>
-        <source>This footage is not valid for use</source>
-        <translation type="obsolete">此素材不能用</translation>
+        <source>Open Log Folder</source>
+        <translation>打开日志所在文件夹</translation>
     </message>
 </context>
 <context>
@@ -148,23 +161,9 @@
         <source>Set Parameters Manually</source>
         <translation>手动设置参数</translation>
     </message>
-</context>
-<context>
-    <name>MoveItemCommand</name>
     <message>
-        <source>Move Item</source>
-        <translation type="obsolete">移动项</translation>
-    </message>
-</context>
-<context>
-    <name>NodeCopyPasteWidget</name>
-    <message>
-        <source>Error pasting nodes</source>
-        <translation type="obsolete">粘贴节点时出错</translation>
-    </message>
-    <message>
-        <source>Failed to paste nodes: %1</source>
-        <translation type="obsolete">无法粘贴节点：%1</translation>
+        <source>Dropped Footage Into Sequence</source>
+        <translation>将素材拖入序列</translation>
     </message>
 </context>
 <context>
@@ -256,6 +255,10 @@
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
+    <message>
+        <source>Binary</source>
+        <translation>二进制</translation>
+    </message>
 </context>
 <context>
     <name>NodeViewContext</name>
@@ -273,6 +276,13 @@
     <message>
         <source>Output</source>
         <translation>输出</translation>
+    </message>
+</context>
+<context>
+    <name>PointerTool</name>
+    <message>
+        <source>Moved Clips</source>
+        <translation>移动片段</translation>
     </message>
 </context>
 <context>
@@ -303,6 +313,13 @@
     </message>
 </context>
 <context>
+    <name>QObject</name>
+    <message>
+        <source>Unknown</source>
+        <translation>未知</translation>
+    </message>
+</context>
+<context>
     <name>RatioDialog</name>
     <message>
         <source>Enter custom ratio (e.g. &quot;4:3&quot;, &quot;16/9&quot;, etc.):</source>
@@ -318,17 +335,17 @@
     </message>
 </context>
 <context>
-    <name>RenameItemCommand</name>
+    <name>RazorTool</name>
     <message>
-        <source>Rename Item</source>
-        <translation type="obsolete">重命名项</translation>
+        <source>Split Clips</source>
+        <translation>分割片段</translation>
     </message>
 </context>
 <context>
-    <name>Sequence</name>
+    <name>RippleTool</name>
     <message>
-        <source>%1 FPS</source>
-        <translation type="obsolete">%1 FPS</translation>
+        <source>Rippled Clips</source>
+        <translation>波纹移动片段</translation>
     </message>
 </context>
 <context>
@@ -339,37 +356,10 @@
     </message>
 </context>
 <context>
-    <name>Stream</name>
+    <name>SlipTool</name>
     <message>
-        <source>%1: Audio - %2 Channels, %3Hz</source>
-        <translation type="obsolete">%1：音频 - %2 声道，%3Hz</translation>
-    </message>
-    <message>
-        <source>%1: Unknown</source>
-        <translation type="obsolete">%1：未知</translation>
-    </message>
-    <message>
-        <source>%1: Image - %2x%3</source>
-        <translation type="obsolete">%1：图像 - %2x%3</translation>
-    </message>
-    <message>
-        <source>%1: Video - %2x%3</source>
-        <translation type="obsolete">%1：视频 - %2x%3</translation>
-    </message>
-</context>
-<context>
-    <name>TimelineViewBlockItem</name>
-    <message>
-        <source>%1
-
-In: %2
-Out: %3
-Length: %4</source>
-        <translation type="obsolete">%1
-
-入: %2
-出: %3
-长度: %4</translation>
+        <source>Slipped %1 Clip(s)</source>
+        <translation>滑移 %1 个片段</translation>
     </message>
 </context>
 <context>
@@ -405,6 +395,13 @@ Length: %4</source>
     <message>
         <source>Subtitle</source>
         <translation>字幕</translation>
+    </message>
+</context>
+<context>
+    <name>TransitionTool</name>
+    <message>
+        <source>Created Transition</source>
+        <translation>创建转场</translation>
     </message>
 </context>
 <context>
@@ -508,39 +505,97 @@ Length: %4</source>
         <translation>在启动时打开的项目</translation>
     </message>
     <message>
-        <source>Launch with debug console</source>
-        <translation>使用调试控制台启动</translation>
+        <source>No project filename set to decompress</source>
+        <translation>未指定要解压的项目文件</translation>
     </message>
     <message>
-        <source>Your computer&apos;s graphics driver does not appear to support framebuffers. This most likely means either your graphics driver is not up-to-date or your graphics card is too old to run Olive.
+        <source>Failed to open file &quot;%1&quot;</source>
+        <translation>无法打开文件“%1”</translation>
+    </message>
+    <message>
+        <source>Decompressing project...</source>
+        <translation>正在解压项目...</translation>
+    </message>
+    <message>
+        <source>Failed to decompress, project may be corrupt</source>
+        <translation>解压失败，项目可能已损坏</translation>
+    </message>
+    <message>
+        <source>Outputting to file &quot;%1&quot;</source>
+        <translation>正在输出到文件“%1”</translation>
+    </message>
+    <message>
+        <source>Failed to open output file &quot;%1&quot;</source>
+        <translation>无法打开输出文件“%1”</translation>
+    </message>
+    <message>
+        <source>Decompressed successfully</source>
+        <translation>解压成功</translation>
+    </message>
+    <message>
+        <source>Decompress project file (No GUI)</source>
+        <translation>解压项目文件（无图形界面）</translation>
+    </message>
+    <message>
+        <source>Force a HAL decode backend for this session (auto|cuda|videotoolbox|vaapi|software)</source>
+        <translation>为本次会话强制指定 HAL 解码后端（auto|cuda|videotoolbox|vaapi|software）</translation>
+    </message>
+    <message>
+        <source>backend</source>
+        <translation>后端</translation>
+    </message>
+    <message>
+        <source>Show the HAL backend selection dialog with probe results on startup</source>
+        <translation>启动时显示 HAL 后端选择对话框及探测结果</translation>
+    </message>
+    <message>
+        <source>Olivelan could not create an OpenGL context. The viewer cannot start.
 
-Please update your graphics driver to the latest version and try again.
+%1
 
-Current driver information: %1 %2 %3</source>
-        <translation>计算机的图形驱动程序似乎不支持帧缓冲区。这很可能意味着您的图形驱动程序不是最新的，或者您的图形卡太旧，无法运行Olive。
+Try an X11/XWayland session or install/update the GPU driver. The diagnostics log contains more details.</source>
+        <translation>Olivelan 无法创建 OpenGL 上下文，查看器无法启动。
 
-请将图形驱动程序更新到最新版本，然后重试。
+%1
 
-当前驱动程序信息：%1 %2 %3</translation>
+请尝试使用 X11/XWayland 会话，或安装/更新显卡驱动。诊断日志中包含更多信息。</translation>
+    </message>
+    <message>
+        <source>OpenGL unavailable</source>
+        <translation>OpenGL 不可用</translation>
     </message>
 </context>
 <context>
-    <name>olive</name>
+    <name>olive::AV1Section</name>
     <message>
-        <source>Center:</source>
-        <translation>居中:</translation>
+        <source>Preset:</source>
+        <translation>预设：</translation>
     </message>
     <message>
-        <source>Bezier</source>
-        <translation>贝塞尔曲线</translation>
+        <source>This parameter governs the efficiency/encode-time trade-off.
+Lower presets will result in an output with better quality for a given file size, but will take longer to encode.
+Higher presets can result in a very fast encode, but will make some compromises on visual quality for a given crf value.</source>
+        <translation>此参数用于权衡编码效率与编码耗时。
+较低的预设可在相同文件大小下获得更好的画质，但编码时间更长。
+较高的预设编码速度很快，但在给定 CRF 值时会牺牲部分画质。</translation>
     </message>
     <message>
-        <source>In:</source>
-        <translation>入：</translation>
+        <source>Compression Method:</source>
+        <translation>压缩方式：</translation>
     </message>
     <message>
-        <source>Out:</source>
-        <translation>出：</translation>
+        <source>This parameter governs the quality/size trade-off.
+Higher CRF values will result in a final output that takes less space, but begins to lose detail.
+Lower CRF values retain more detail at the cost of larger file sizes.
+The possible range of CRF in SVT-AV1 is 1-63.</source>
+        <translation>此参数用于权衡画质与文件大小。
+CRF 值越高，输出文件越小，但细节开始丢失。
+CRF 值越低，保留的细节越多，文件也越大。
+SVT-AV1 的 CRF 取值范围为 1-63。</translation>
+    </message>
+    <message>
+        <source>Constant Rate Factor</source>
+        <translation>恒定速率因子</translation>
     </message>
 </context>
 <context>
@@ -550,28 +605,8 @@ Current driver information: %1 %2 %3</source>
         <translation>关于 %1</translation>
     </message>
     <message>
-        <source>Olive is a non-linear video editor. This software is free and protected by the GNU GPL.</source>
-        <translation type="obsolete">Olive 是免费的非线性视频编辑器。此应用程序基于 GNU 通用公共许可证（GNU GPL）条款发布。</translation>
-    </message>
-    <message>
-        <source>Olive Team is obliged to inform users that Olive source code is available for download from its website.</source>
-        <translation type="obsolete">Olive 团队有义务告知用户可以从官网下载 Olive 的源码。翻译者已尝试用通俗易明的方式进行翻译，希望大家使用愉快。请支持自由开源软件，谢谢。</translation>
-    </message>
-    <message>
         <source>Welcome to %1</source>
         <translation>欢迎来到  %1</translation>
-    </message>
-    <message>
-        <source>Olive is a free open source non-linear video editor. This software is licensed under the GNU GPL Version 3.</source>
-        <translation>Olive是免费开源非线性视频编辑器.此软件在GNU GPL3下获得许可。</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Olive relies on support from the community to continue its development.&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Olive的发展依靠社区的支持&lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>Olive wouldn&apos;t be possible without the support of gracious donations from the following people.</source>
-        <translation>如果没有以下人士的慷慨捐赠，Olive不可能发展。</translation>
     </message>
     <message>
         <source>&lt;html&gt;%1 If you like this project, please consider making a &lt;a href=&apos;https://olivevideoeditor.org/donate.php&apos;&gt;one-time donation&lt;/a&gt; or &lt;a href=&apos;https://www.patreon.com/olivevideoeditor&apos;&gt;pledging monthly&lt;/a&gt; to support its development.&lt;/html&gt;</source>
@@ -581,27 +616,24 @@ Current driver information: %1 %2 %3</source>
         <source>Don&apos;t show this message again</source>
         <translation>不再显示信息</translation>
     </message>
+    <message>
+        <source>Olivelan is a free open source non-linear video editor. This software is licensed under the GNU GPL Version 3.</source>
+        <translation>Olivelan 是一款自由开源的非线性视频编辑器。本软件基于 GNU GPL 第 3 版授权。</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Olivelan relies on support from the community to continue its development.&lt;/b&gt;</source>
+        <translation>&lt;b&gt;Olivelan 的开发依赖社区的支持。&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Olivelan wouldn&apos;t be possible without the support of gracious donations from the following people.</source>
+        <translation>如果没有以下人士的慷慨捐赠，就不会有 Olivelan。</translation>
+    </message>
 </context>
 <context>
     <name>olive::ActionSearch</name>
     <message>
         <source>Search for action...</source>
         <translation>操作搜索...</translation>
-    </message>
-</context>
-<context>
-    <name>olive::AudioInput</name>
-    <message>
-        <source>Audio Input</source>
-        <translation type="obsolete">音频输入</translation>
-    </message>
-    <message>
-        <source>Audio</source>
-        <translation type="obsolete">音频</translation>
-    </message>
-    <message>
-        <source>Import an audio footage stream.</source>
-        <translation type="obsolete">导入音频素材流。</translation>
     </message>
 </context>
 <context>
@@ -630,22 +662,33 @@ Current driver information: %1 %2 %3</source>
     </message>
 </context>
 <context>
+    <name>olive::BezierWidget</name>
+    <message>
+        <source>Center:</source>
+        <translation>中心：</translation>
+    </message>
+    <message>
+        <source>Bezier</source>
+        <translation>贝塞尔</translation>
+    </message>
+    <message>
+        <source>In:</source>
+        <translation>入：</translation>
+    </message>
+    <message>
+        <source>Out:</source>
+        <translation>出：</translation>
+    </message>
+</context>
+<context>
     <name>olive::Block</name>
     <message>
         <source>Length</source>
         <translation>长度</translation>
     </message>
     <message>
-        <source>Media In</source>
-        <translation type="obsolete">媒体输入</translation>
-    </message>
-    <message>
         <source>Enabled</source>
         <translation>已启用</translation>
-    </message>
-    <message>
-        <source>Speed</source>
-        <translation type="obsolete">速度</translation>
     </message>
 </context>
 <context>
@@ -842,7 +885,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Media In</source>
-        <translation>媒体输入</translation>
+        <translation>媒体入点</translation>
     </message>
     <message>
         <source>Speed</source>
@@ -877,7 +920,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Maroon</source>
-        <translation>紫褐色</translation>
+        <translation>栗色</translation>
     </message>
     <message>
         <source>Orange</source>
@@ -893,11 +936,11 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Olive</source>
-        <translation>橄榄</translation>
+        <translation>橄榄色</translation>
     </message>
     <message>
         <source>Lime</source>
-        <translation>石灰</translation>
+        <translation>青柠色</translation>
     </message>
     <message>
         <source>Green</source>
@@ -909,7 +952,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Teal</source>
-        <translation>青色</translation>
+        <translation>蓝绿色</translation>
     </message>
     <message>
         <source>Blue</source>
@@ -947,11 +990,11 @@ Current driver information: %1 %2 %3</source>
     <name>olive::ColorDifferenceKeyNode</name>
     <message>
         <source>Color Difference Key</source>
-        <translation>色差键</translation>
+        <translation>色差抠像</translation>
     </message>
     <message>
         <source>A simple color key based on the distance of one color from other colors.</source>
-        <translation>基于一种颜色与其他颜色的距离的简单颜色键.</translation>
+        <translation>根据一种颜色与其他颜色的距离进行简单抠像。</translation>
     </message>
     <message>
         <source>Input</source>
@@ -959,15 +1002,15 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Garbage Matte</source>
-        <translation>垃圾遮片</translation>
+        <translation>垃圾遮罩</translation>
     </message>
     <message>
         <source>Core Matte</source>
-        <translation>核心遮片</translation>
+        <translation>核心遮罩</translation>
     </message>
     <message>
         <source>Key Color</source>
-        <translation>基本色调</translation>
+        <translation>键控颜色</translation>
     </message>
     <message>
         <source>Green</source>
@@ -1000,36 +1043,8 @@ Current driver information: %1 %2 %3</source>
 <context>
     <name>olive::ColorManager</name>
     <message>
-        <source>Configuration</source>
-        <translation>配置</translation>
-    </message>
-    <message>
-        <source>Default Input</source>
-        <translation>默认输入</translation>
-    </message>
-    <message>
-        <source>Reference Space</source>
-        <translation>参考空间</translation>
-    </message>
-    <message>
-        <source>Scene Linear</source>
-        <translation>场景线性</translation>
-    </message>
-    <message>
-        <source>Compositing Log</source>
-        <translation>合成日志</translation>
-    </message>
-    <message>
-        <source>(built-in)</source>
-        <translation>内置</translation>
-    </message>
-    <message>
-        <source>Color Manager</source>
-        <translation>色彩管理</translation>
-    </message>
-    <message>
-        <source>Color management configuration for project.</source>
-        <translation>项目色彩配置.</translation>
+        <source>OpenColorIO configuration file does not exist: %1</source>
+        <translation>OpenColorIO 配置文件不存在：%1</translation>
     </message>
 </context>
 <context>
@@ -1094,7 +1109,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Web</source>
-        <translation>网络</translation>
+        <translation>Web</translation>
     </message>
     <message>
         <source>(Invalid)</source>
@@ -1121,6 +1136,13 @@ Current driver information: %1 %2 %3</source>
     </message>
 </context>
 <context>
+    <name>olive::ConfigDialogBase</name>
+    <message>
+        <source>Set Configuration</source>
+        <translation>设置配置</translation>
+    </message>
+</context>
+<context>
     <name>olive::ConformTask</name>
     <message>
         <source>Conforming Audio %1:%2</source>
@@ -1139,7 +1161,7 @@ Current driver information: %1 %2 %3</source>
     </message>
     <message>
         <source>Nothing to import</source>
-        <translation>没有可导出的内容</translation>
+        <translation>没有可导入的内容</translation>
     </message>
     <message>
         <source>Importing...</source>
@@ -1198,34 +1220,6 @@ Current driver information: %1 %2 %3</source>
         <translation>指定的项目不存在</translation>
     </message>
     <message>
-        <source>Project contains no sequences, nothing to export</source>
-        <translation type="obsolete">项目不包含任何序列，没有可导出的内容</translation>
-    </message>
-    <message>
-        <source>This project has multiple sequences. Which do you wish to export?</source>
-        <translation type="obsolete">此项目有多个序列。您要导出哪一个？</translation>
-    </message>
-    <message>
-        <source>Enter number (or %1 to cancel): </source>
-        <translation type="obsolete">输入数字 (或%1来取消): </translation>
-    </message>
-    <message>
-        <source>Invalid sequence number</source>
-        <translation type="obsolete">无效序列数字</translation>
-    </message>
-    <message>
-        <source>Export succeeded</source>
-        <translation type="obsolete">导出成功</translation>
-    </message>
-    <message>
-        <source>Export failed: %1</source>
-        <translation type="obsolete">导出失败：%1</translation>
-    </message>
-    <message>
-        <source>Project failed to load: %1</source>
-        <translation type="obsolete">项目无法加载：%1</translation>
-    </message>
-    <message>
         <source>Failed to open startup file</source>
         <translation>无法打开启动文件</translation>
     </message>
@@ -1242,10 +1236,6 @@ Current driver information: %1 %2 %3</source>
         <translation>本构建未使用 OpenTimelineIO 编译，所以无法打开 OpenTimelineIO 文件。</translation>
     </message>
     <message>
-        <source>Save Project</source>
-        <translation type="obsolete">保存项目</translation>
-    </message>
-    <message>
         <source>Error</source>
         <translation>错误</translation>
     </message>
@@ -1260,10 +1250,6 @@ Make sure a sequence is loaded and it has a connected Viewer node.</source>
         <translation>未检测到有效的序列。
 
 请确保序列已加载并连接到查看器节点。</translation>
-    </message>
-    <message>
-        <source>Olive Project</source>
-        <translation>Olive 项目</translation>
     </message>
     <message>
         <source>OpenTimelineIO</source>
@@ -1310,16 +1296,8 @@ Make sure a sequence is loaded and it has a connected Viewer node.</source>
         <translation>保存</translation>
     </message>
     <message>
-        <source>Save All</source>
-        <translation>全部保存</translation>
-    </message>
-    <message>
         <source>Don&apos;t Save</source>
         <translation>不保存</translation>
-    </message>
-    <message>
-        <source>Don&apos;t Save All</source>
-        <translation>全部不保存</translation>
     </message>
     <message>
         <source>Failed to cache sequence</source>
@@ -1355,7 +1333,7 @@ Make sure a sequence is loaded and it has a connected Viewer node.</source>
     </message>
     <message>
         <source>This project has not yet been saved, therefore there is no last saved state to revert to.</source>
-        <translation>此项目尚未保存，因此没有要恢复到的上次保存状态.</translation>
+        <translation>此项目尚未保存，因此没有可恢复的上次保存状态。</translation>
     </message>
     <message>
         <source>The project &quot;%1&quot; is already open. By re-opening it, the project will revert to its last saved state. Any unsaved changes will be lost. Do you wish to continue?</source>
@@ -1370,24 +1348,12 @@ Make sure a sequence is loaded and it has a connected Viewer node.</source>
         <translation>自动恢复错误</translation>
     </message>
     <message>
-        <source>Failed to save auto-recovery to &quot;%1&quot;. Olive may not have permission to this directory.</source>
-        <translation>无法将自动恢复保存到“%1”。Olive可能没有此目录的权限。</translation>
-    </message>
-    <message>
         <source>Saved to &quot;%1&quot; successfully</source>
         <translation>已成功保存到“%1”</translation>
     </message>
     <message>
-        <source>Olive Project (Uncompressed XML)</source>
-        <translation>Olive项目（未压缩的XML）</translation>
-    </message>
-    <message>
         <source>All Supported Projects</source>
         <translation>所有支持的项目</translation>
-    </message>
-    <message>
-        <source>The following projects had unsaved changes when Olive forcefully quit. Would you like to load them?</source>
-        <translation>当Olive强制退出时，以下项目有未保存的更改。是否要加载它们？</translation>
     </message>
     <message>
         <source>Found auto-recoveries but failed to load the auto-recovery index. Auto-recover projects will have to be opened manually.
@@ -1405,24 +1371,72 @@ Your recoverable projects are still available at: %1</source>
         <translation>磁盘缓存已满</translation>
     </message>
     <message>
-        <source>The disk cache is currently full and Olive is having to delete old frames to keep it within the limits set in the Disk preferences. This will result in SIGNIFICANTLY reduced cache performance.
+        <source>Initializing application core...</source>
+        <translation>正在初始化应用核心...</translation>
+    </message>
+    <message>
+        <source>Initializing OpenColorIO 2.5.1 color management...</source>
+        <translation>正在初始化 OpenColorIO 2.5.1 色彩管理...</translation>
+    </message>
+    <message>
+        <source>Setting up background render &amp; frame pipeline...</source>
+        <translation>正在配置后台渲染与帧管线...</translation>
+    </message>
+    <message>
+        <source>Building workspace layout and panels...</source>
+        <translation>正在构建工作区布局与面板...</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>准备就绪</translation>
+    </message>
+    <message>
+        <source>Created New Folder</source>
+        <translation>新建文件夹</translation>
+    </message>
+    <message>
+        <source>Created New Sequence</source>
+        <translation>新建序列</translation>
+    </message>
+    <message>
+        <source>Imported %1 File(s)</source>
+        <translation>导入了 %1 个文件</translation>
+    </message>
+    <message>
+        <source>Renamed %1 Node(s)</source>
+        <translation>重命名了 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Failed to save auto-recovery to &quot;%1&quot;. Olivelan may not have permission to this directory.</source>
+        <translation>无法将自动恢复保存到“%1”。Olivelan 可能没有该目录的写入权限。</translation>
+    </message>
+    <message>
+        <source>Olivelan Project</source>
+        <translation>Olivelan 项目</translation>
+    </message>
+    <message>
+        <source>Olivelan Project (Uncompressed XML)</source>
+        <translation>Olivelan 项目（未压缩 XML）</translation>
+    </message>
+    <message>
+        <source>The following projects had unsaved changes when Olivelan forcefully quit. Would you like to load them?</source>
+        <translation>以下项目在 Olivelan 被强制退出时还有未保存的更改。要加载它们吗？</translation>
+    </message>
+    <message>
+        <source>The disk cache is currently full and Olivelan is having to delete old frames to keep it within the limits set in the Disk preferences. This will result in SIGNIFICANTLY reduced cache performance.
 
 To remedy this, please do one of the following:
 
 1. Manually clear the disk cache in Disk preferences.
 2. Increase the maximum disk cache size in Disk preferences.
 3. Reduce usage of the disk cache (e.g. disable auto-cache or only cache specific sections of your sequence).</source>
-        <translation>磁盘缓存当前已满，Olive必须删除旧帧以将其保持在磁盘首选项中设置的限制范围内。这将导致缓存性能显著降低。
+        <translation>磁盘缓存已满，Olivelan 正在删除旧帧以维持在磁盘首选项中设置的上限。这将显著降低缓存性能。
 
+要解决此问题，请执行以下任一操作：
 
-要解决此问题，请执行以下操作之一：
-
-
-1.手动清除磁盘首选项中的磁盘缓存。
-
-2.在磁盘首选项中增加最大磁盘缓存大小。
-
-3.减少磁盘缓存的使用（例如，禁用自动缓存或仅缓存序列的特定部分）。</translation>
+1. 在磁盘首选项中手动清除磁盘缓存。
+2. 在磁盘首选项中增大磁盘缓存上限。
+3. 减少磁盘缓存的使用（例如关闭自动缓存，或只缓存序列的特定区段）。</translation>
     </message>
 </context>
 <context>
@@ -1457,7 +1471,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Distort the image by dragging the corners.</source>
-        <translation>通过拖动角来扭曲图像.</translation>
+        <translation>通过拖动角点来扭曲图像。</translation>
     </message>
 </context>
 <context>
@@ -1528,6 +1542,10 @@ To remedy this, please do one of the following:
         <source>Reset Zoom</source>
         <translation>重置缩放</translation>
     </message>
+    <message>
+        <source>Moved Keyframe Bezier Control Point</source>
+        <translation>移动关键帧贝塞尔控制点</translation>
+    </message>
 </context>
 <context>
     <name>olive::CurveWidget</name>
@@ -1542,6 +1560,10 @@ To remedy this, please do one of the following:
     <message>
         <source>Hold</source>
         <translation>保留</translation>
+    </message>
+    <message>
+        <source>Changed Type of %1 Keyframe(s) to %2</source>
+        <translation>将 %1 个关键帧的类型改为 %2</translation>
     </message>
 </context>
 <context>
@@ -1691,7 +1713,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Converts an image to or from a display color space.</source>
-        <translation>Converts an image to or from a display color space.</translation>
+        <translation>将图像转换到显示色彩空间，或从中转换出来。</translation>
     </message>
     <message>
         <source>Input</source>
@@ -1716,61 +1738,6 @@ To remedy this, please do one of the following:
     <message>
         <source>Inverse</source>
         <translation>反转</translation>
-    </message>
-</context>
-<context>
-    <name>olive::OCIOFileTransformNode</name>
-    <message>
-        <source>LUT (OpenColorIO)</source>
-        <translation>LUT 调色滤镜 (OpenColorIO)</translation>
-    </message>
-    <message>
-        <source>Applies a 1D or 3D LUT (.cube, .spi1d, .spi3d, etc.) using OpenColorIO.</source>
-        <translation>使用 OpenColorIO 应用 1D 或 3D LUT (.cube, .spi1d, .spi3d 等格式)。</translation>
-    </message>
-    <message>
-        <source>Input</source>
-        <translation>输入</translation>
-    </message>
-    <message>
-        <source>File</source>
-        <translation>LUT 文件</translation>
-    </message>
-    <message>
-        <source>Direction</source>
-        <translation>方向</translation>
-    </message>
-    <message>
-        <source>Forward</source>
-        <translation>正向</translation>
-    </message>
-    <message>
-        <source>Inverse</source>
-        <translation>反向</translation>
-    </message>
-    <message>
-        <source>Interpolation</source>
-        <translation>插值模式</translation>
-    </message>
-    <message>
-        <source>Default / Auto</source>
-        <translation>默认 / 自动</translation>
-    </message>
-    <message>
-        <source>Linear</source>
-        <translation>线性插值</translation>
-    </message>
-    <message>
-        <source>Tetrahedral</source>
-        <translation>四面体插值</translation>
-    </message>
-    <message>
-        <source>Nearest</source>
-        <translation>最邻近插值</translation>
-    </message>
-    <message>
-        <source>Best</source>
-        <translation>最佳质量</translation>
     </message>
 </context>
 <context>
@@ -1933,7 +1900,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>PCM (Uncompressed)</source>
-        <translation>PCM (Uncompressed)</translation>
+        <translation>PCM（未压缩）</translation>
     </message>
     <message>
         <source>Unknown</source>
@@ -1967,6 +1934,10 @@ To remedy this, please do one of the following:
         <source>SubRip SRT</source>
         <translation>SubRip SRT</translation>
     </message>
+    <message>
+        <source>AV1</source>
+        <translation>AV1</translation>
+    </message>
 </context>
 <context>
     <name>olive::ExportDialog</name>
@@ -1976,23 +1947,11 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Browse for exported file filename</source>
-        <translation>浏览已导出的文件名</translation>
+        <translation>浏览导出文件路径</translation>
     </message>
     <message>
         <source>Preset:</source>
         <translation>预设：</translation>
-    </message>
-    <message>
-        <source>Same As Source - High Quality</source>
-        <translation type="obsolete">与源相同 - 高质量</translation>
-    </message>
-    <message>
-        <source>Same As Source - Medium Quality</source>
-        <translation type="obsolete">与源相同 - 中等质量</translation>
-    </message>
-    <message>
-        <source>Same As Source - Low Quality</source>
-        <translation type="obsolete">与源相同 - 低质量</translation>
     </message>
     <message>
         <source>Range:</source>
@@ -2008,7 +1967,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Format:</source>
-        <translation>格式:</translation>
+        <translation>格式：</translation>
     </message>
     <message>
         <source>Export Video</source>
@@ -2039,10 +1998,6 @@ To remedy this, please do one of the following:
         <translation>无效的参数</translation>
     </message>
     <message>
-        <source>Both video and audio are disabled. There&apos;s nothing to export.</source>
-        <translation type="obsolete">视频和音频都已禁用。没有可导出的内容。</translation>
-    </message>
-    <message>
         <source>Invalid filename</source>
         <translation>无效文件名</translation>
     </message>
@@ -2053,10 +2008,6 @@ To remedy this, please do one of the following:
     <message>
         <source>Failed to create output directory</source>
         <translation>无法创建输出目录</translation>
-    </message>
-    <message>
-        <source>The intended output directory doesn&apos;t exist and Olive couldn&apos;t create it. Please choose a different filename.</source>
-        <translation>指定的输出目录不存在且 Olive 无法创建它。请选择一个其他的文件名。</translation>
     </message>
     <message>
         <source>Confirm Overwrite</source>
@@ -2087,12 +2038,8 @@ To remedy this, please do one of the following:
         <translation>在后台运行</translation>
     </message>
     <message>
-        <source>Exporting in the background allows you to continue using Olive while exporting, but may result in slower export speeds, and mayseverely impact editing and playback performance.</source>
-        <translation>在后台导出允许您在导出时继续使用Olive，但可能会导致导出速度变慢，并可能严重影响编辑和播放性能。</translation>
-    </message>
-    <message>
         <source>Import Result After Export</source>
-        <translation>Import Result After Export</translation>
+        <translation>导出后导入结果</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -2106,9 +2053,11 @@ To remedy this, please do one of the following:
         <source>Export is set to an image sequence, but the filename does not have a section for digits (formatted as [#####] where the amount of # is the amount of digits).</source>
         <translation>导出设置为图像序列，但文件名没有数字部分（格式为[######]，其中#的数量是数字的数量）。</translation>
     </message>
-    <message>
+    <message numerus="yes">
         <source>Filename doesn&apos;t contain enough digits for the amount of frames this export will need (need %1 for %n frame(s)).</source>
-        <translation>文件名包含的位数不足，无法满足此导出所需的帧数（对于%n帧，需要%1）。</translation>
+        <translation>
+            <numerusform>文件名包含的位数不足，无法满足本次导出所需的帧数（%n 帧需要 %1）。</numerusform>
+        </translation>
     </message>
     <message>
         <source>Default</source>
@@ -2116,7 +2065,15 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Last Used</source>
-        <translation>最后使用的</translation>
+        <translation>上次使用</translation>
+    </message>
+    <message>
+        <source>Exporting in the background allows you to continue using Olivelan while exporting, but may result in slower export speeds, and mayseverely impact editing and playback performance.</source>
+        <translation>后台导出可让您在导出期间继续使用 Olivelan，但导出速度可能变慢，并可能严重影响编辑和播放性能。</translation>
+    </message>
+    <message>
+        <source>The intended output directory doesn&apos;t exist and Olivelan couldn&apos;t create it. Please choose a different filename.</source>
+        <translation>目标输出目录不存在，且 Olivelan 无法创建它。请选择其他文件名。</translation>
     </message>
 </context>
 <context>
@@ -2127,11 +2084,11 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Matroska Video</source>
-        <translation>Matroska Video</translation>
+        <translation>Matroska 视频</translation>
     </message>
     <message>
         <source>MPEG-4 Video</source>
-        <translation>MPEG-4 Video</translation>
+        <translation>MPEG-4 视频</translation>
     </message>
     <message>
         <source>OpenEXR</source>
@@ -2262,10 +2219,6 @@ To remedy this, please do one of the following:
         <translation>无法创建编码器</translation>
     </message>
     <message>
-        <source>Failed to open file</source>
-        <translation type="obsolete">无法打开文件</translation>
-    </message>
-    <message>
         <source>Failed to overwrite &quot;%1&quot;. Export has been saved as &quot;%2&quot; instead.</source>
         <translation>无法覆盖“%1”。导出将被保存为“%2”。</translation>
     </message>
@@ -2281,14 +2234,13 @@ To remedy this, please do one of the following:
         <source>Failed to open subtitle sidecar file: %1</source>
         <translation>无法打开字幕侧边栏文件：%1</translation>
     </message>
+    <message>
+        <source>Invalid OCIO color transform for export</source>
+        <translation>导出的 OCIO 色彩变换无效</translation>
+    </message>
 </context>
 <context>
     <name>olive::ExportVideoTab</name>
-    <message>
-        <source>Basic</source>
-        <translatorcomment>Would &quot;基本&quot; / &quot;基本的&quot; be more appropriate?</translatorcomment>
-        <translation type="obsolete">基本设置</translation>
-    </message>
     <message>
         <source>Width:</source>
         <translation>宽度：</translation>
@@ -2327,7 +2279,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Interlacing:</source>
-        <translation>交错：</translation>
+        <translation>隔行扫描：</translation>
     </message>
     <message>
         <source>Quality:</source>
@@ -2440,6 +2392,10 @@ To remedy this, please do one of the following:
         <source>Failed to create audio frame</source>
         <translation>无法创建音频帧</translation>
     </message>
+    <message>
+        <source>Failed to set audio channel layout</source>
+        <translation>无法设置音频声道布局</translation>
+    </message>
 </context>
 <context>
     <name>olive::FileField</name>
@@ -2486,8 +2442,8 @@ To remedy this, please do one of the following:
         <translation>%1%</translation>
     </message>
     <message>
-        <source>â</source>
-        <translation>♪</translation>
+        <source>∞</source>
+        <translation>∞</translation>
     </message>
 </context>
 <context>
@@ -2502,7 +2458,7 @@ To remedy this, please do one of the following:
     </message>
     <message>
         <source>Organize several items into a single collection.</source>
-        <translation>将多个项目组织成一个集合.</translation>
+        <translation>将多个项目组织成一个集合。</translation>
     </message>
 </context>
 <context>
@@ -2519,9 +2475,11 @@ To remedy this, please do one of the following:
         <source>%1: Video - %2x%3</source>
         <translation>%1：视频 - %2x%3</translation>
     </message>
-    <message>
+    <message numerus="yes">
         <source>%1: Audio - %n Channel(s), %2Hz</source>
-        <translation>%1:音频-%n频道，%2Hz</translation>
+        <translation>
+            <numerusform>%1：音频 - %n 声道，%2Hz</numerusform>
+        </translation>
     </message>
     <message>
         <source>%1: Subtitle</source>
@@ -2575,14 +2533,6 @@ To remedy this, please do one of the following:
         <translation>轨道：</translation>
     </message>
     <message>
-        <source>%1x%2 %3 FPS</source>
-        <translation>%1x%2 %3 FPS</translation>
-    </message>
-    <message>
-        <source>%1 Hz %2 channels</source>
-        <translation>%1 Hz %2 声道</translation>
-    </message>
-    <message>
         <source>Subtitles</source>
         <translation>字幕</translation>
     </message>
@@ -2590,36 +2540,88 @@ To remedy this, please do one of the following:
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
+    <message>
+        <source>Set Footage &quot;%1&quot; Properties</source>
+        <translation>设置素材“%1”的属性</translation>
+    </message>
 </context>
 <context>
     <name>olive::FootageRelinkDialog</name>
     <message>
-        <source>Footage</source>
-        <translation>素材</translation>
+        <source>Missing Media</source>
+        <translation>媒体缺失</translation>
     </message>
     <message>
-        <source>Filename</source>
-        <translation>文件名</translation>
+        <source>The following media files could not be found. Select Folder... scans the chosen folder and its subfolders, matching filenames and relative folder paths. Browse File... replaces only the selected item. A folder match overrides an individual selection; if the folder has no match, the individual selection is kept.</source>
+        <translation>找不到以下媒体文件。“选择文件夹...”会扫描所选文件夹及其子文件夹，并按文件名与相对文件夹路径进行匹配。“浏览文件...”只会替换当前选中的项目。文件夹匹配的优先级高于单项选择；如果该文件夹中找不到匹配项，则保留单项选择。</translation>
     </message>
     <message>
-        <source>Actions</source>
-        <translation>操作</translation>
+        <source>Media</source>
+        <translation>媒体</translation>
     </message>
     <message>
-        <source>Browse</source>
-        <translation>浏览</translation>
+        <source>Status</source>
+        <translation>状态</translation>
     </message>
     <message>
-        <source>Relink Footage</source>
-        <translation>重新链接素材</translation>
+        <source>Select Folder...</source>
+        <translation>选择文件夹...</translation>
     </message>
     <message>
-        <source>Relink &quot;%1&quot;</source>
-        <translation>重新链接 &quot;%1&quot;</translation>
+        <source>Browse File...</source>
+        <translation>浏览文件...</translation>
     </message>
     <message>
-        <source>All Files</source>
-        <translation type="obsolete">全部文件</translation>
+        <source>Apply</source>
+        <translation>应用</translation>
+    </message>
+    <message>
+        <source>(unknown path)</source>
+        <translation>（未知路径）</translation>
+    </message>
+    <message>
+        <source>Found</source>
+        <translation>已找到</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>缺失</translation>
+    </message>
+    <message>
+        <source>Using: %1</source>
+        <translation>正在使用：%1</translation>
+    </message>
+    <message>
+        <source>All %1 file(s) are online.</source>
+        <translation>全部 %1 个文件均可用。</translation>
+    </message>
+    <message>
+        <source>%1 of %2 file(s) are still missing. Use Select Folder... for a recursive match, or select an item and use Browse File....</source>
+        <translation>仍有 %1/%2 个文件缺失。使用“选择文件夹...”进行递归匹配，或选中某个项目后使用“浏览文件...”。</translation>
+    </message>
+    <message>
+        <source>Select Media Folder</source>
+        <translation>选择媒体文件夹</translation>
+    </message>
+    <message>
+        <source>The selected folder cannot be read.</source>
+        <translation>无法读取所选文件夹。</translation>
+    </message>
+    <message>
+        <source>No matching media files were found in &quot;%1&quot; or its subfolders.</source>
+        <translation>在“%1”及其子文件夹中未找到匹配的媒体文件。</translation>
+    </message>
+    <message>
+        <source>Select Media File for &quot;%1&quot;</source>
+        <translation>为“%1”选择媒体文件</translation>
+    </message>
+    <message>
+        <source>All Files (*.*)</source>
+        <translation>所有文件 (*.*)</translation>
+    </message>
+    <message>
+        <source>Relinked Footage</source>
+        <translation>已重新链接素材</translation>
     </message>
 </context>
 <context>
@@ -2672,6 +2674,141 @@ To remedy this, please do one of the following:
     <message>
         <source>Base</source>
         <translation>底色</translation>
+    </message>
+</context>
+<context>
+    <name>olive::GpuSessionDialog</name>
+    <message>
+        <source>GPU Session Selection</source>
+        <translation>GPU 会话选择</translation>
+    </message>
+    <message>
+        <source>Detected display session and GPU topology:</source>
+        <translation>检测到的显示会话与 GPU 拓扑：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Wayland session</source>
+        <translation>Wayland 会话</translation>
+    </message>
+    <message>
+        <source>Xwayland reachable</source>
+        <translation>Xwayland 可达</translation>
+    </message>
+    <message>
+        <source>Configured mode</source>
+        <translation>当前配置模式</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME</source>
+        <translation>Xwayland + PRIME</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>原生</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>GPU</source>
+        <translation>GPU</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Active OpenGL vendor</source>
+        <translation>当前 OpenGL 厂商</translation>
+    </message>
+    <message>
+        <source>Unknown (no live GL context yet)</source>
+        <translation>未知（尚无活动的 GL 上下文）</translation>
+    </message>
+    <message>
+        <source>Decode path on this session</source>
+        <translation>本次会话的解码路径</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Display session</source>
+        <translation>显示会话</translation>
+    </message>
+    <message>
+        <source>Native session (recommended default)</source>
+        <translation>原生会话（推荐默认）</translation>
+    </message>
+    <message>
+        <source>Xwayland + PRIME offload (enables Tier 1 zero-copy)</source>
+        <translation>Xwayland + PRIME 卸载（可启用 Tier 1 零拷贝）</translation>
+    </message>
+    <message>
+        <source>No reachable X display was found on this system.</source>
+        <translation>本机未找到可达的 X 显示。</translation>
+    </message>
+    <message>
+        <source>Recommendation</source>
+        <translation>建议</translation>
+    </message>
+    <message>
+        <source>Don&apos;t ask again</source>
+        <translation>不再提示</translation>
+    </message>
+    <message>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
+    </message>
+    <message>
+        <source>Device available - import not yet verified</source>
+        <translation>设备可用 - 尚未验证导入</translation>
+    </message>
+    <message>
+        <source>Available - EGL import verified</source>
+        <translation>可用 - 已验证 EGL 导入</translation>
+    </message>
+    <message>
+        <source>Degraded - import failed for at least one stream; that stream used CPU readback</source>
+        <translation>降级 - 至少一个视频流导入失败，该流回退到 CPU 回读</translation>
+    </message>
+    <message>
+        <source>Partial - some streams verified, others read back</source>
+        <translation>部分可用 - 部分视频流已验证，其余使用回读</translation>
+    </message>
+    <message>
+        <source>The session preference was saved, but Olivelan could not restart itself. It will take effect the next time you start Olivelan.</source>
+        <translation>会话偏好已保存，但 Olivelan 无法自行重启。它将在下次启动 Olivelan 时生效。</translation>
     </message>
 </context>
 <context>
@@ -2779,6 +2916,295 @@ This setting is equivalent to the `preset` setting in libx264.</source>
     </message>
 </context>
 <context>
+    <name>olive::HALBackendDialog</name>
+    <message>
+        <source>HAL Backend Selection</source>
+        <translation>HAL 后端选择</translation>
+    </message>
+    <message>
+        <source>Detected hardware environment (GpuEnvironmentProbe):</source>
+        <translation>检测到的硬件环境（GpuEnvironmentProbe）：</translation>
+    </message>
+    <message>
+        <source>Item</source>
+        <translation>项目</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Environment</source>
+        <translation>环境</translation>
+    </message>
+    <message>
+        <source>Primary GPU</source>
+        <translation>主 GPU</translation>
+    </message>
+    <message>
+        <source>Vendor</source>
+        <translation>厂商</translation>
+    </message>
+    <message>
+        <source>Total VRAM</source>
+        <translation>显存总量</translation>
+    </message>
+    <message>
+        <source>%1 MB</source>
+        <translation>%1 MB</translation>
+    </message>
+    <message>
+        <source>Display server</source>
+        <translation>显示服务器</translation>
+    </message>
+    <message>
+        <source>Hybrid topology</source>
+        <translation>混合拓扑</translation>
+    </message>
+    <message>
+        <source>Yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>Detected devices</source>
+        <translation>检测到的设备</translation>
+    </message>
+    <message>
+        <source>%1 MB VRAM%2</source>
+        <translation>%1 MB 显存%2</translation>
+    </message>
+    <message>
+        <source>, primary display</source>
+        <translation>，主显示器</translation>
+    </message>
+    <message>
+        <source>Driver</source>
+        <translation>驱动</translation>
+    </message>
+    <message>
+        <source>Backend availability</source>
+        <translation>后端可用性</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Decode capability matrix</source>
+        <translation>解码能力矩阵</translation>
+    </message>
+    <message>
+        <source>HEVC 8-bit</source>
+        <translation>HEVC 8 位</translation>
+    </message>
+    <message>
+        <source>HEVC 10-bit</source>
+        <translation>HEVC 10 位</translation>
+    </message>
+    <message>
+        <source>AV1 8-bit</source>
+        <translation>AV1 8 位</translation>
+    </message>
+    <message>
+        <source>AV1 10-bit</source>
+        <translation>AV1 10 位</translation>
+    </message>
+    <message>
+        <source>Backend to use for this session:</source>
+        <translation>本次会话使用的后端：</translation>
+    </message>
+    <message>
+        <source>Expected path (auto routing): %1</source>
+        <translation>预期路径（自动路由）：%1</translation>
+    </message>
+    <message>
+        <source>The probe marks it unavailable here, so OK will offer a working alternative first.</source>
+        <translation>探测显示它在此处不可用，因此点击“确定”会先提供一个可用的替代方案。</translation>
+    </message>
+    <message>
+        <source>The selection applies to this process only and is not saved. Automatic routing can also be forced without a dialog via -hal-backend &lt;name&gt; or the OLIVE_HAL_BACKEND environment variable.</source>
+        <translation>该选择仅对本次进程生效，不会保存。也可以不用对话框强制自动路由：-hal-backend &lt;name&gt; 或环境变量 OLIVE_HAL_BACKEND。</translation>
+    </message>
+    <message>
+        <source>Backend unavailable</source>
+        <translation>后端不可用</translation>
+    </message>
+    <message>
+        <source>CUDA-NVDEC (Tier 1) cannot work in this session: CUDA-GL interop requires the OpenGL context and CUDA to be on the same NVIDIA GPU, but the current OpenGL context is on &quot;%1&quot;. The frame pool will fail to register its textures and this stream will produce no picture.</source>
+        <translation>CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 NVIDIA GPU，而当前 OpenGL 上下文在“%1”上。帧池将无法注册纹理，该路流不会出画面。</translation>
+    </message>
+    <message>
+        <source>The probe reports that backend &quot;%1&quot; is unavailable on this system.</source>
+        <translation>探测显示后端“%1”在本机不可用。</translation>
+    </message>
+    <message>
+        <source>Use Tier 2 (VA-API hardware decode)</source>
+        <translation>改用 Tier 2（VA-API 硬件解码）</translation>
+    </message>
+    <message>
+        <source>Use Tier 3 (CPU decode)</source>
+        <translation>改用 Tier 3（CPU 解码）</translation>
+    </message>
+    <message>
+        <source>Switch to Xwayland + PRIME</source>
+        <translation>改用 Xwayland + PRIME</translation>
+    </message>
+    <message>
+        <source>Force %1 anyway</source>
+        <translation>仍然强制 %1</translation>
+    </message>
+    <message>
+        <source>Could not restart</source>
+        <translation>无法自动重启</translation>
+    </message>
+    <message>
+        <source>detected unavailable</source>
+        <translation>探测为不可用</translation>
+    </message>
+    <message>
+        <source>Auto (dynamic probe)</source>
+        <translation>自动（动态探测）</translation>
+    </message>
+    <message>
+        <source>the OpenGL context is not on the NVIDIA GPU</source>
+        <translation>OpenGL 上下文不在 NVIDIA GPU 上</translation>
+    </message>
+    <message>
+        <source>Use Tier 2 (VideoToolbox hardware decode)</source>
+        <translation>使用层级 2（VideoToolbox 硬件解码）</translation>
+    </message>
+    <message>
+        <source>Device available - import not yet verified</source>
+        <translation>设备可用 - 尚未验证导入</translation>
+    </message>
+    <message>
+        <source>Available - EGL import verified</source>
+        <translation>可用 - 已验证 EGL 导入</translation>
+    </message>
+    <message>
+        <source>Degraded - import failed for at least one stream; that stream used CPU readback</source>
+        <translation>降级 - 至少一个视频流导入失败，该流回退到 CPU 回读</translation>
+    </message>
+    <message>
+        <source>Partial - some streams verified, others read back</source>
+        <translation>部分可用 - 部分视频流已验证，其余使用回读</translation>
+    </message>
+    <message>
+        <source>H.264</source>
+        <translation>H.264</translation>
+    </message>
+    <message>
+        <source>VP9</source>
+        <translation>VP9</translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation>自动</translation>
+    </message>
+    <message>
+        <source>VA-API device could not be created</source>
+        <translation>无法创建 VA-API 设备</translation>
+    </message>
+    <message>
+        <source>device present; import not yet verified</source>
+        <translation>设备存在；尚未验证导入</translation>
+    </message>
+    <message>
+        <source>EGL import verified</source>
+        <translation>已验证 EGL 导入</translation>
+    </message>
+    <message>
+        <source>at least one stream fell back to CPU readback</source>
+        <translation>至少一个视频流回退到 CPU 回读</translation>
+    </message>
+    <message>
+        <source>some streams verified; others read back</source>
+        <translation>部分视频流已验证，其余使用回读</translation>
+    </message>
+    <message>
+        <source>The session preference was saved, but Olivelan could not restart itself. It will take effect the next time you start Olivelan.</source>
+        <translation>会话偏好已保存，但 Olivelan 无法自行重启。它将在下次启动 Olivelan 时生效。</translation>
+    </message>
+    <message>
+        <source>Will attempt: %1 (forced for this process only). If it fails to initialize, Olivelan falls back to automatic routing.</source>
+        <translation>将尝试：%1（仅对本次进程强制生效）。如果初始化失败，Olivelan 将回退到自动路由。</translation>
+    </message>
+</context>
+<context>
+    <name>olive::HALStatusDialog</name>
+    <message>
+        <source>HAL Status</source>
+        <translation>HAL 状态</translation>
+    </message>
+    <message>
+        <source>Decode path status for this session. Reasons come from the live GPU probe; Tier 2 is verified per stream and Tier 3 is always the final fallback.</source>
+        <translation>本次会话的解码路径状态。原因来自实时 GPU 探测；层级 2 按视频流逐一验证，层级 3 始终是最终回退。</translation>
+    </message>
+    <message>
+        <source>Device information is periodically snapshotted. Click Refresh to re-probe hardware topology (thread-safe); VA-API import status updates dynamically.</source>
+        <translation>设备信息会定期生成快照。点击“刷新”可重新探测硬件拓扑（线程安全）；VA-API 导入状态会动态更新。</translation>
+    </message>
+    <message>
+        <source>Tier</source>
+        <translation>层级</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <source>Reason</source>
+        <translation>原因</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <source>Tier %1 - %2</source>
+        <translation>层级 %1 - %2</translation>
+    </message>
+    <message>
+        <source>Expected routing: %1</source>
+        <translation>预期路由：%1</translation>
+    </message>
+    <message>
+        <source>Forced backend: automatic routing</source>
+        <translation>强制后端：自动路由</translation>
+    </message>
+    <message>
+        <source>Forced backend: %1 (this process only)</source>
+        <translation>强制后端：%1（仅限本次进程）</translation>
+    </message>
+    <message>
+        <source>Last frame selected: Tier %1 - %2</source>
+        <translation>最后一帧选择：层级 %1 - %2</translation>
+    </message>
+    <message>
+        <source>Last frame selected: no frame has selected a backend yet.</source>
+        <translation>最后一帧选择：尚无帧选择后端。</translation>
+    </message>
+</context>
+<context>
+    <name>olive::HistoryPanel</name>
+    <message>
+        <source>History</source>
+        <translation>历史记录</translation>
+    </message>
+</context>
+<context>
     <name>olive::ImageSection</name>
     <message>
         <source>Image Sequence:</source>
@@ -2830,6 +3256,10 @@ This setting is equivalent to the `preset` setting in libx264.</source>
         <source>Bezier</source>
         <translation>贝塞尔曲线</translation>
     </message>
+    <message>
+        <source>Set Keyframe Properties</source>
+        <translation>设置关键帧属性</translation>
+    </message>
 </context>
 <context>
     <name>olive::KeyframeView</name>
@@ -2849,32 +3279,25 @@ This setting is equivalent to the `preset` setting in libx264.</source>
         <source>P&amp;roperties</source>
         <translation>属性(&amp;R)</translation>
     </message>
-</context>
-<context>
-    <name>olive::KeyframeViewBase</name>
     <message>
-        <source>Linear</source>
-        <translation type="obsolete">线性</translation>
+        <source>Deleted %1 Keyframe(s)</source>
+        <translation>删除了 %1 个关键帧</translation>
     </message>
     <message>
-        <source>Bezier</source>
-        <translation type="obsolete">贝塞尔曲线</translation>
+        <source>Pasted %1 Keyframe(s)</source>
+        <translation>粘贴了 %1 个关键帧</translation>
     </message>
     <message>
-        <source>Hold</source>
-        <translation type="obsolete">保留</translation>
+        <source>Moved %1 Keyframe(s)</source>
+        <translation>移动了 %1 个关键帧</translation>
     </message>
     <message>
-        <source>P&amp;roperties</source>
-        <translation type="obsolete">属性(&amp;R)</translation>
+        <source>Set Type of %1 Keyframe(s)</source>
+        <translation>设置了 %1 个关键帧的类型</translation>
     </message>
 </context>
 <context>
     <name>olive::LoadOTIOTask</name>
-    <message>
-        <source>Failed to load OpenTimelineIO from file &quot;%1&quot;</source>
-        <translation type="obsolete">无法从文件 &quot;%1&quot; 加载 OpenTimelineIO</translation>
-    </message>
     <message>
         <source>Unknown OpenTimelineIO root element</source>
         <translation>未知的 OpenTimelineIO 根元素</translation>
@@ -2911,28 +3334,12 @@ OpenTimelineIO错误：
         <translation>另存 &apos;%1&apos; 为(&amp;A)</translation>
     </message>
     <message>
-        <source>Close &apos;%1&apos;</source>
-        <translation>关闭 &apos;%1&apos;</translation>
-    </message>
-    <message>
-        <source>Close All Except &apos;%1&apos;</source>
-        <translation>除‘%1’外关闭所有</translation>
-    </message>
-    <message>
         <source>&amp;Save Project</source>
         <translation>保存项目(&amp;S)</translation>
     </message>
     <message>
         <source>Save Project &amp;As</source>
         <translation>另存项目为(&amp;A)</translation>
-    </message>
-    <message>
-        <source>Close Project</source>
-        <translation>关闭项目</translation>
-    </message>
-    <message>
-        <source>Close All Except Current Project</source>
-        <translation>除当前项目外关闭所有</translation>
     </message>
     <message>
         <source>(None)</source>
@@ -2959,10 +3366,6 @@ OpenTimelineIO错误：
         <translation>清除最近列表(&amp;C)</translation>
     </message>
     <message>
-        <source>Sa&amp;ve All Projects</source>
-        <translation>保存所有项目(&amp;V)</translation>
-    </message>
-    <message>
         <source>&amp;Import...</source>
         <translation>导入(&amp;I)...</translation>
     </message>
@@ -2973,14 +3376,6 @@ OpenTimelineIO错误：
     <message>
         <source>&amp;Media...</source>
         <translation>媒体(&amp;M)...</translation>
-    </message>
-    <message>
-        <source>&amp;Project Properties...</source>
-        <translation type="obsolete">项目属性(&amp;P)...</translation>
-    </message>
-    <message>
-        <source>Close All Projects</source>
-        <translation>关闭所有项目</translation>
     </message>
     <message>
         <source>E&amp;xit</source>
@@ -3008,11 +3403,11 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ripple to In Point</source>
-        <translation>涟漪删除至入点</translation>
+        <translation>波纹删除至入点</translation>
     </message>
     <message>
         <source>Ripple to Out Point</source>
-        <translation>涟漪删除至出点</translation>
+        <translation>波纹删除至出点</translation>
     </message>
     <message>
         <source>Edit to In Point</source>
@@ -3028,7 +3423,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ripple Delete In/Out Point</source>
-        <translation>涟漪删除入点/出点</translation>
+        <translation>波纹删除入点/出点</translation>
     </message>
     <message>
         <source>Set/Edit Marker</source>
@@ -3056,7 +3451,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Toggle Show All</source>
-        <translation>轨道全部显示</translation>
+        <translation>显示全部轨道</translation>
     </message>
     <message>
         <source>Full Screen</source>
@@ -3072,7 +3467,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Go to Start</source>
-        <translation>回到起始帧</translation>
+        <translation>转到开头</translation>
     </message>
     <message>
         <source>Previous Frame</source>
@@ -3092,15 +3487,15 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Go to End</source>
-        <translation>转到结束帧</translation>
+        <translation>转到结尾</translation>
     </message>
     <message>
         <source>Go to Previous Cut</source>
-        <translation>转到前一切点</translation>
+        <translation>转到上一个剪辑点</translation>
     </message>
     <message>
         <source>Go to Next Cut</source>
-        <translation>转到后一切点</translation>
+        <translation>转到下一个剪辑点</translation>
     </message>
     <message>
         <source>Go to In Point</source>
@@ -3143,10 +3538,6 @@ OpenTimelineIO错误：
         <translation>最大化面板</translation>
     </message>
     <message>
-        <source>Lock Panels</source>
-        <translation>锁定面板</translation>
-    </message>
-    <message>
         <source>Reset to Default Layout</source>
         <translation>重置为默认布局</translation>
     </message>
@@ -3156,7 +3547,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Pointer Tool</source>
-        <translation>指针工具</translation>
+        <translation>选择工具</translation>
     </message>
     <message>
         <source>Edit Tool</source>
@@ -3164,15 +3555,15 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Ripple Tool</source>
-        <translation>涟漪工具</translation>
+        <translation>波纹工具</translation>
     </message>
     <message>
         <source>Rolling Tool</source>
-        <translation>滚动工具</translation>
+        <translation>滚动编辑工具</translation>
     </message>
     <message>
         <source>Razor Tool</source>
-        <translation>刀片工具</translation>
+        <translation>剃刀工具</translation>
     </message>
     <message>
         <source>Slip Tool</source>
@@ -3184,7 +3575,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Hand Tool</source>
-        <translation>手形工具</translation>
+        <translation>抓手工具</translation>
     </message>
     <message>
         <source>Zoom Tool</source>
@@ -3484,11 +3875,11 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>Move In Point to Playhead</source>
-        <translation>移入点到播放头</translation>
+        <translation>将入点移到播放头</translation>
     </message>
     <message>
         <source>Move Out Point to Playhead</source>
-        <translation>移出点到播放头</translation>
+        <translation>将出点移到播放头</translation>
     </message>
     <message>
         <source>Clear Disk Cache</source>
@@ -3496,7 +3887,7 @@ OpenTimelineIO错误：
     </message>
     <message>
         <source>&amp;Window</source>
-        <translation>&amp;窗口</translation>
+        <translation>窗口(&amp;W)</translation>
     </message>
     <message>
         <source>Track Select Tool</source>
@@ -3510,6 +3901,14 @@ OpenTimelineIO错误：
         <source>Record Tool</source>
         <translation>录制工具</translation>
     </message>
+    <message>
+        <source>Add Tool Item</source>
+        <translation>添加工具项</translation>
+    </message>
+    <message>
+        <source>&amp;HAL Status...</source>
+        <translation>HAL 状态(&amp;H)...</translation>
+    </message>
 </context>
 <context>
     <name>olive::MainStatusBar</name>
@@ -3517,13 +3916,33 @@ OpenTimelineIO错误：
         <source>Welcome to %1 %2</source>
         <translation>欢迎使用 %1 %2</translation>
     </message>
-    <message>
-        <source>Running %1 background tasks</source>
-        <translation type="obsolete">正在运行 %1 后台任务</translation>
+    <message numerus="yes">
+        <source>Running %n background task(s)</source>
+        <translation>
+            <numerusform>正在运行 %n 个后台任务</numerusform>
+        </translation>
     </message>
     <message>
-        <source>Running %n background task(s)</source>
-        <translation>正在运行%n后台任务</translation>
+        <source>OpenGL renderer unavailable</source>
+        <translation>OpenGL 渲染器不可用</translation>
+    </message>
+    <message>
+        <source>The renderer failed to initialize.</source>
+        <translation>渲染器初始化失败。</translation>
+    </message>
+    <message>
+        <source>OCIO Config Error</source>
+        <translation>OCIO 配置错误</translation>
+    </message>
+    <message>
+        <source>Failed to load external OpenColorIO configuration:
+%1
+Reason: %2
+Rendering continues with the last configuration that loaded successfully.</source>
+        <translation>无法加载外部 OpenColorIO 配置：
+%1
+原因：%2
+渲染将继续使用上一次成功加载的配置。</translation>
     </message>
 </context>
 <context>
@@ -3533,12 +3952,20 @@ OpenTimelineIO错误：
         <translation>驱动程序警告</translation>
     </message>
     <message>
-        <source>Olive has detected your system is using the Nouveau graphics driver.
+        <source>Hardware decode fallback: %1</source>
+        <translation>硬件解码回退：%1</translation>
+    </message>
+    <message>
+        <source>Set Footage Workarea</source>
+        <translation>设置素材工作区</translation>
+    </message>
+    <message>
+        <source>Olivelan has detected your system is using the Nouveau graphics driver.
 
-This driver is known to have stability and performance issues with Olive. It is highly recommended you install the proprietary NVIDIA driver before continuing to use Olive.</source>
-        <translation>Olive 检测到您的系统正在使用 Nouveau 图形驱动程序。
+This driver is known to have stability and performance issues with Olivelan. It is highly recommended you install the proprietary NVIDIA driver before continuing to use Olivelan.</source>
+        <translation>Olivelan 检测到您的系统正在使用 Nouveau 显卡驱动。
 
-此驱动程序用于 Olive 会有稳定性和性能问题。强烈建议您在继续使用 Olive 之前安装 NVIDIA 专有驱动程序。</translation>
+该驱动在运行 Olivelan 时存在稳定性和性能问题。强烈建议您安装 NVIDIA 专有驱动后再继续使用 Olivelan。</translation>
     </message>
 </context>
 <context>
@@ -3574,6 +4001,10 @@ This driver is known to have stability and performance issues with Olive. It is 
     <message>
         <source>Failed to set color configuration: %1</source>
         <translation>无法设置颜色配置：%1</translation>
+    </message>
+    <message>
+        <source>Auto HDR (Follow Project)</source>
+        <translation>自动 HDR（跟随项目）</translation>
     </message>
 </context>
 <context>
@@ -3623,7 +4054,11 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>In point must be less than or equal to out point.</source>
-        <translation>输入点必须小于或等于输出点。</translation>
+        <translation>入点必须小于或等于出点。</translation>
+    </message>
+    <message>
+        <source>Set Marker Properties</source>
+        <translation>设置标记属性</translation>
     </message>
 </context>
 <context>
@@ -3646,7 +4081,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Apply a polygonal mask.</source>
-        <translation>应用多边形遮罩.</translation>
+        <translation>应用多边形遮罩。</translation>
     </message>
 </context>
 <context>
@@ -3666,26 +4101,6 @@ This driver is known to have stability and performance issues with Olive. It is 
     <message>
         <source>Value</source>
         <translation>值</translation>
-    </message>
-    <message>
-        <source>Add</source>
-        <translation type="obsolete">加</translation>
-    </message>
-    <message>
-        <source>Subtract</source>
-        <translation type="obsolete">减</translation>
-    </message>
-    <message>
-        <source>Multiply</source>
-        <translation type="obsolete">乘</translation>
-    </message>
-    <message>
-        <source>Divide</source>
-        <translation type="obsolete">除</translation>
-    </message>
-    <message>
-        <source>Power</source>
-        <translation type="obsolete">幂</translation>
     </message>
 </context>
 <context>
@@ -3747,13 +4162,6 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
 </context>
 <context>
-    <name>olive::MediaInput</name>
-    <message>
-        <source>Footage</source>
-        <translation type="obsolete">素材</translation>
-    </message>
-</context>
-<context>
     <name>olive::MenuShared</name>
     <message>
         <source>&amp;Project</source>
@@ -3773,11 +4181,11 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Cop&amp;y</source>
-        <translation>复制(&amp;Y)</translation>
+        <translation>复制(&amp;C)</translation>
     </message>
     <message>
         <source>&amp;Paste</source>
-        <translation>粘帖(&amp;P)</translation>
+        <translation>粘贴(&amp;P)</translation>
     </message>
     <message>
         <source>Paste Insert</source>
@@ -3785,7 +4193,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Duplicate</source>
-        <translation>复制</translation>
+        <translation>创建副本</translation>
     </message>
     <message>
         <source>Delete</source>
@@ -3793,11 +4201,11 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Ripple Delete</source>
-        <translation>涟漪删除</translation>
+        <translation>波纹删除</translation>
     </message>
     <message>
         <source>Split</source>
-        <translation>切断</translation>
+        <translation>分割</translation>
     </message>
     <message>
         <source>Set In Point</source>
@@ -3821,7 +4229,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Add Default Transition</source>
-        <translation>添加默认转场效果</translation>
+        <translation>添加默认转场</translation>
     </message>
     <message>
         <source>Link/Unlink</source>
@@ -3933,7 +4341,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Speed/Duration</source>
-        <translation>速度/持续时间</translation>
+        <translation>速度/时长</translation>
     </message>
 </context>
 <context>
@@ -3975,14 +4383,14 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Apply a pixelated mosaic filter to video.</source>
-        <translation>对视频应用像素化马赛克过滤器.</translation>
+        <translation>对视频应用像素化马赛克滤镜。</translation>
     </message>
 </context>
 <context>
     <name>olive::MultiCamNode</name>
     <message>
         <source>Multi-Cam</source>
-        <translation>多凸轮</translation>
+        <translation>多机位</translation>
     </message>
     <message>
         <source>Allows easy switching between multiple sources.</source>
@@ -3990,7 +4398,7 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
     <message>
         <source>Current</source>
-        <translation>现在的</translation>
+        <translation>当前</translation>
     </message>
     <message>
         <source>Sources</source>
@@ -4021,22 +4429,21 @@ This driver is known to have stability and performance issues with Olive. It is 
     <name>olive::MulticamPanel</name>
     <message>
         <source>Multi-Cam</source>
-        <translation>多凸轮</translation>
+        <translation>多机位</translation>
+    </message>
+</context>
+<context>
+    <name>olive::MulticamWidget</name>
+    <message>
+        <source>Switched Multi-Camera Source</source>
+        <translation>切换多机位素材源</translation>
     </message>
 </context>
 <context>
     <name>olive::Node</name>
     <message>
-        <source>Input</source>
-        <translation type="obsolete">输入</translation>
-    </message>
-    <message>
         <source>Output</source>
         <translation>输出</translation>
-    </message>
-    <message>
-        <source>General</source>
-        <translation type="obsolete">常规</translation>
     </message>
     <message>
         <source>Math</source>
@@ -4057,10 +4464,6 @@ This driver is known to have stability and performance issues with Olive. It is 
     <message>
         <source>Generator</source>
         <translation>生成器</translation>
-    </message>
-    <message>
-        <source>Channel</source>
-        <translation type="obsolete">通道</translation>
     </message>
     <message>
         <source>Transition</source>
@@ -4094,6 +4497,14 @@ This driver is known to have stability and performance issues with Olive. It is 
         <source>Time</source>
         <translation>时间</translation>
     </message>
+    <message>
+        <source>Connected %1 to %2 - %3</source>
+        <translation>将 %1 连接到 %2 - %3</translation>
+    </message>
+    <message>
+        <source>Disconnected %1 from %2 - %3</source>
+        <translation>断开 %1 与 %2 的连接 - %3</translation>
+    </message>
 </context>
 <context>
     <name>olive::NodeGroup</name>
@@ -4107,99 +4518,10 @@ This driver is known to have stability and performance issues with Olive. It is 
     </message>
 </context>
 <context>
-    <name>olive::NodeInput</name>
-    <message>
-        <source>Input</source>
-        <translation type="obsolete">输入</translation>
-    </message>
-</context>
-<context>
-    <name>olive::NodeOutput</name>
-    <message>
-        <source>Output</source>
-        <translation type="obsolete">输出</translation>
-    </message>
-</context>
-<context>
     <name>olive::NodePanel</name>
     <message>
         <source>Node Editor</source>
         <translation>节点编辑器</translation>
-    </message>
-</context>
-<context>
-    <name>olive::NodeParam</name>
-    <message>
-        <source>Value</source>
-        <translation type="obsolete">值</translation>
-    </message>
-    <message>
-        <source>None</source>
-        <translation type="obsolete">无</translation>
-    </message>
-    <message>
-        <source>Integer</source>
-        <translation type="obsolete">整数</translation>
-    </message>
-    <message>
-        <source>Float</source>
-        <translation type="obsolete">浮点数</translation>
-    </message>
-    <message>
-        <source>Rational</source>
-        <translation type="obsolete">有理数</translation>
-    </message>
-    <message>
-        <source>Boolean</source>
-        <translation type="obsolete">布尔值</translation>
-    </message>
-    <message>
-        <source>Color</source>
-        <translation type="obsolete">颜色</translation>
-    </message>
-    <message>
-        <source>Matrix</source>
-        <translation type="obsolete">矩阵</translation>
-    </message>
-    <message>
-        <source>Text</source>
-        <translation type="obsolete">文字</translation>
-    </message>
-    <message>
-        <source>Font</source>
-        <translation type="obsolete">字体</translation>
-    </message>
-    <message>
-        <source>File</source>
-        <translation type="obsolete">文件</translation>
-    </message>
-    <message>
-        <source>Texture</source>
-        <translation type="obsolete">纹理</translation>
-    </message>
-    <message>
-        <source>Samples</source>
-        <translation type="obsolete">采样</translation>
-    </message>
-    <message>
-        <source>Footage</source>
-        <translation type="obsolete">素材</translation>
-    </message>
-    <message>
-        <source>Vector 2D</source>
-        <translation type="obsolete">矢量 2D</translation>
-    </message>
-    <message>
-        <source>Vector 3D</source>
-        <translation type="obsolete">矢量 3D</translation>
-    </message>
-    <message>
-        <source>Vector 4D</source>
-        <translation type="obsolete">矢量 4D</translation>
-    </message>
-    <message>
-        <source>Unknown</source>
-        <translation type="obsolete">未知</translation>
     </message>
 </context>
 <context>
@@ -4236,6 +4558,14 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
         <source>Paste As Nodes</source>
         <translation>粘贴为节点</translation>
     </message>
+    <message>
+        <source>Deleted %1 Node(s)</source>
+        <translation>删除了 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Pasted %1 Node(s)</source>
+        <translation>粘贴了 %1 个节点</translation>
+    </message>
 </context>
 <context>
     <name>olive::NodeParamViewArrayButton</name>
@@ -4250,17 +4580,11 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
 </context>
 <context>
     <name>olive::NodeParamViewArrayWidget</name>
-    <message>
-        <source>+</source>
-        <translation type="obsolete">+</translation>
-    </message>
-    <message>
-        <source>%1 elements</source>
-        <translation type="obsolete">%1 个元素</translation>
-    </message>
-    <message>
+    <message numerus="yes">
         <source>%n element(s)</source>
-        <translation>%n 个元素</translation>
+        <translation>
+            <numerusform>%n 个元素</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -4279,10 +4603,10 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
 </context>
 <context>
-    <name>olive::NodeParamViewItem</name>
+    <name>olive::NodeParamViewContext</name>
     <message>
-        <source>%1 (%2)</source>
-        <translation type="obsolete">%1 (%2)</translation>
+        <source>Added %1 to Node Chain</source>
+        <translation>将 %1 加入节点链</translation>
     </message>
 </context>
 <context>
@@ -4298,6 +4622,18 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
         <source>%1:</source>
         <translation>%1:</translation>
     </message>
+    <message>
+        <source>Appended Array Element In %1 - %2</source>
+        <translation>在 %1 中追加数组元素 - %2</translation>
+    </message>
+    <message>
+        <source>Inserted Array Element In %1 - %2</source>
+        <translation>在 %1 中插入数组元素 - %2</translation>
+    </message>
+    <message>
+        <source>Removed Array Element In %1 - %2</source>
+        <translation>在 %1 中移除数组元素 - %2</translation>
+    </message>
 </context>
 <context>
     <name>olive::NodeParamViewKeyframeControl</name>
@@ -4309,12 +4645,31 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
         <source>Are you sure you want to disable keyframing on this value? This will clear all existing keyframes.</source>
         <translation>您确定要禁用当前值上的关键帧？这会清除所有已存在的关键帧。</translation>
     </message>
+    <message>
+        <source>Toggled Keyframe</source>
+        <translation>切换关键帧</translation>
+    </message>
+    <message>
+        <source>Enabled Keyframing On %1 - %2</source>
+        <translation>在 %1 上启用关键帧 - %2</translation>
+    </message>
+    <message>
+        <source>Disabled Keyframing On %1 - %2</source>
+        <translation>在 %1 上禁用关键帧 - %2</translation>
+    </message>
 </context>
 <context>
     <name>olive::NodeParamViewTextEdit</name>
     <message>
         <source>Edit In Viewer</source>
         <translation>在查看器中编辑</translation>
+    </message>
+</context>
+<context>
+    <name>olive::NodeParamViewWidgetBridge</name>
+    <message>
+        <source>Edited Value Of %1 - %2</source>
+        <translation>编辑 %1 的值 - %2</translation>
     </message>
 </context>
 <context>
@@ -4412,28 +4767,8 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
 <context>
     <name>olive::NodeView</name>
     <message>
-        <source>Label</source>
-        <translation type="obsolete">标签</translation>
-    </message>
-    <message>
-        <source>Auto-Position</source>
-        <translation type="obsolete">自动定位</translation>
-    </message>
-    <message>
         <source>Smooth Edges</source>
         <translation>平滑边缘</translation>
-    </message>
-    <message>
-        <source>Filter</source>
-        <translation type="obsolete">滤镜</translation>
-    </message>
-    <message>
-        <source>Show All</source>
-        <translation type="obsolete">全部显示</translation>
-    </message>
-    <message>
-        <source>Show Selected Blocks Only</source>
-        <translation type="obsolete">仅显示选中的方块</translation>
     </message>
     <message>
         <source>Direction</source>
@@ -4485,11 +4820,35 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     </message>
     <message>
         <source>Nodes can only be grouped if they&apos;re in the same context.</source>
-        <translation>Nodes can only be grouped if they&apos;re in the same context.</translation>
+        <translation>只有处于同一上下文的节点才能编组。</translation>
     </message>
     <message>
         <source>Input &quot;%1&quot; is currently connected to node &quot;%2&quot;, which is not visible in this context. By connecting this, that connection will be removed. Do you wish to continue?</source>
-        <translation>输入“%1”当前连接到节点“%2”，该节点在此上下文中不可见。通过连接此，将删除该连接。是否要继续？</translation>
+        <translation>输入“%1”当前连接到节点“%2”，而该节点在此上下文中不可见。若在此处连接，该连接将被移除。是否继续？</translation>
+    </message>
+    <message>
+        <source>Deleted %1 Node(s)</source>
+        <translation>删除了 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Set Color of %1 Node(s)</source>
+        <translation>设置 %1 个节点的颜色</translation>
+    </message>
+    <message>
+        <source>Moved %1 Node(s)</source>
+        <translation>移动了 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Dropped %1 Node(s)</source>
+        <translation>拖放了 %1 个节点</translation>
+    </message>
+    <message>
+        <source>Grouped Nodes</source>
+        <translation>编组节点</translation>
+    </message>
+    <message>
+        <source>Ungrouped Nodes</source>
+        <translation>取消编组节点</translation>
     </message>
 </context>
 <context>
@@ -4524,6 +4883,73 @@ Do you wish to paste values onto the existing nodes or paste new nodes?</source>
     <message>
         <source>Color</source>
         <translation>颜色</translation>
+    </message>
+</context>
+<context>
+    <name>olive::OCIOFileTransformNode</name>
+    <message>
+        <source>LUT (OpenColorIO)</source>
+        <translation>LUT 调色滤镜 (OpenColorIO)</translation>
+    </message>
+    <message>
+        <source>Applies a 1D or 3D LUT (.cube, .spi1d, .spi3d, etc.) using OpenColorIO.</source>
+        <translation>使用 OpenColorIO 应用 1D 或 3D LUT (.cube, .spi1d, .spi3d 等格式)。</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>LUT 文件</translation>
+    </message>
+    <message>
+        <source>Direction</source>
+        <translation>方向</translation>
+    </message>
+    <message>
+        <source>Forward</source>
+        <translation>正向</translation>
+    </message>
+    <message>
+        <source>Inverse</source>
+        <translation>反向</translation>
+    </message>
+    <message>
+        <source>Interpolation</source>
+        <translation>插值模式</translation>
+    </message>
+    <message>
+        <source>Default / Auto</source>
+        <translation>默认 / 自动</translation>
+    </message>
+    <message>
+        <source>Linear</source>
+        <translation>线性插值</translation>
+    </message>
+    <message>
+        <source>Tetrahedral</source>
+        <translation>四面体插值</translation>
+    </message>
+    <message>
+        <source>Nearest</source>
+        <translation>最邻近插值</translation>
+    </message>
+    <message>
+        <source>Best</source>
+        <translation>最佳质量</translation>
+    </message>
+    <message>
+        <source>LUT file does not exist: %1</source>
+        <translation>LUT 文件不存在：%1</translation>
+    </message>
+    <message>
+        <source>No active OpenColorIO configuration.</source>
+        <translation>没有激活的 OpenColorIO 配置。</translation>
+    </message>
+    <message>
+        <source>OpenColorIO failed to create processor for LUT: %1</source>
+        <translation>OpenColorIO 无法为 LUT 创建处理器：%1</translation>
     </message>
 </context>
 <context>
@@ -4628,6 +5054,33 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
 </context>
 <context>
+    <name>olive::OpenGLRenderer</name>
+    <message>
+        <source>The OpenGL renderer was already initialized.</source>
+        <translation>OpenGL 渲染器已经初始化。</translation>
+    </message>
+    <message>
+        <source>Failed to create the offscreen surface required for rendering.</source>
+        <translation>无法创建渲染所需的离屏表面。</translation>
+    </message>
+    <message>
+        <source>Failed to create an OpenGL context. The graphics driver may be missing or unable to provide the requested OpenGL 3.2 profile.</source>
+        <translation>无法创建 OpenGL 上下文。显卡驱动可能缺失，或无法提供所需的 OpenGL 3.2 配置。</translation>
+    </message>
+    <message>
+        <source>Cannot initialize the renderer without a valid OpenGL context.</source>
+        <translation>没有有效的 OpenGL 上下文，无法初始化渲染器。</translation>
+    </message>
+    <message>
+        <source>Failed to make the OpenGL context current on the render thread.</source>
+        <translation>无法在渲染线程上激活 OpenGL 上下文。</translation>
+    </message>
+    <message>
+        <source>The OpenGL context exposes no function table.</source>
+        <translation>OpenGL 上下文未提供函数表。</translation>
+    </message>
+</context>
+<context>
     <name>olive::PanNode</name>
     <message>
         <source>Pan</source>
@@ -4654,14 +5107,6 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     <message>
         <source>Parameter Editor</source>
         <translation>参数编辑器</translation>
-    </message>
-    <message>
-        <source>(none)</source>
-        <translation type="obsolete">(无)</translation>
-    </message>
-    <message>
-        <source>(multiple)</source>
-        <translation type="obsolete">(多个)</translation>
     </message>
 </context>
 <context>
@@ -4704,10 +5149,6 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
         <translation>颜色</translation>
     </message>
     <message>
-        <source>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;R: %1&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;G: %2&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;B: %3&lt;/font&gt;&lt;br&gt;A: %4&lt;/html&gt;</source>
-        <translation type="obsolete">&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;R: %1&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;G: %2&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;B: %3&lt;/font&gt;&lt;br&gt;A: %4&lt;/html&gt;</translation>
-    </message>
-    <message>
         <source>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;R: %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;G: %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;B: %3 (%7)&lt;/font&gt;&lt;br&gt;A: %4 (%8)&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;font color=&apos;#FF8080&apos;&gt;红(R): %1 (%5)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#80FF80&apos;&gt;绿(G): %2 (%6)&lt;/font&gt;&lt;br&gt;&lt;font color=&apos;#8080FF&apos;&gt;蓝(B): %3 (%7)&lt;/font&gt;&lt;br&gt;Alpha: %4 (%8)&lt;/html&gt;</translation>
     </message>
@@ -4745,10 +5186,6 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
         <translation>主题</translation>
     </message>
     <message>
-        <source>Node Color Scheme</source>
-        <translation type="obsolete">节点配色方案</translation>
-    </message>
-    <message>
         <source>Default Node Colors</source>
         <translation>默认节点颜色</translation>
     </message>
@@ -4756,48 +5193,84 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
         <source>Miscellaneous</source>
         <translation>混杂的</translation>
     </message>
+    <message>
+        <source>Import Theme / QSS...</source>
+        <translation>导入主题 / QSS...</translation>
+    </message>
+    <message>
+        <source>Import Theme File</source>
+        <translation>导入主题文件</translation>
+    </message>
+    <message>
+        <source>Import Theme Folder...</source>
+        <translation>导入主题文件夹...</translation>
+    </message>
+    <message>
+        <source>Import Theme Folder</source>
+        <translation>导入主题文件夹</translation>
+    </message>
+    <message>
+        <source>Default Marker Color</source>
+        <translation>默认标记颜色</translation>
+    </message>
+    <message>
+        <source> (Community QSS)</source>
+        <translation> （社区 QSS）</translation>
+    </message>
+    <message>
+        <source> (Custom Theme)</source>
+        <translation> （自定义主题）</translation>
+    </message>
+    <message>
+        <source>Theme Import Failed</source>
+        <translation>主题导入失败</translation>
+    </message>
+    <message>
+        <source>The theme could not be imported.</source>
+        <translation>无法导入该主题。</translation>
+    </message>
+    <message>
+        <source>The theme could not be imported.
+
+%1</source>
+        <translation>无法导入该主题。
+
+%1</translation>
+    </message>
+    <message>
+        <source>Theme Error</source>
+        <translation>主题错误</translation>
+    </message>
+    <message>
+        <source>Olivelan Themes &amp; QSS (*.qss *.olivetheme *.zip);;All Files (*.*)</source>
+        <translation>Olivelan 主题与 QSS (*.qss *.olivetheme *.zip);;所有文件 (*.*)</translation>
+    </message>
+    <message>
+        <source>The selected theme could not be applied. Olivelan has fallen back to the default theme.</source>
+        <translation>无法应用所选主题。Olivelan 已回退到默认主题。</translation>
+    </message>
+    <message>
+        <source>The selected theme could not be applied. Olivelan has fallen back to the default theme.
+
+%1</source>
+        <translation>无法应用所选主题。Olivelan 已回退到默认主题。
+
+%1</translation>
+    </message>
 </context>
 <context>
     <name>olive::PreferencesAudioTab</name>
     <message>
-        <source>Output Device:</source>
-        <translation type="obsolete">输出设备：</translation>
-    </message>
-    <message>
-        <source>Input Device:</source>
-        <translation type="obsolete">输入设备：</translation>
-    </message>
-    <message>
         <source>Sample Rate:</source>
         <translation>采样率：</translation>
-    </message>
-    <message>
-        <source>Audio Recording:</source>
-        <translation type="obsolete">音频录制：</translation>
-    </message>
-    <message>
-        <source>Mono</source>
-        <translation type="obsolete">单声道</translation>
-    </message>
-    <message>
-        <source>Stereo</source>
-        <translation type="obsolete">立体声</translation>
     </message>
     <message>
         <source>Refresh Devices</source>
         <translation>刷新设备</translation>
     </message>
     <message>
-        <source>Please wait...</source>
-        <translation type="obsolete">请等待...</translation>
-    </message>
-    <message>
-        <source>Default</source>
-        <translation type="obsolete">默认</translation>
-    </message>
-    <message>
         <source>Backend:</source>
-        <translation>后端:</translation>
+        <translation>后端：</translation>
     </message>
     <message>
         <source>Output</source>
@@ -4805,7 +5278,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Device:</source>
-        <translation>装置:</translation>
+        <translation>设备：</translation>
     </message>
     <message>
         <source>Advanced</source>
@@ -4817,7 +5290,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Sample Format:</source>
-        <translation>示例格式：</translation>
+        <translation>采样格式：</translation>
     </message>
     <message>
         <source>Input</source>
@@ -4825,11 +5298,27 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Recording</source>
-        <translation>记录中</translation>
+        <translation>录音</translation>
     </message>
     <message>
         <source>Format:</source>
         <translation>格式：</translation>
+    </message>
+    <message>
+        <source>PipeWire and Pulse entries are host audio-server bridges; they follow the server&apos;s current default sink. Raw ALSA/JACK entries pin a specific device.</source>
+        <translation>PipeWire 和 Pulse 条目是宿主音频服务器的桥接项，会跟随服务器当前的默认输出设备。原生 ALSA/JACK 条目则会固定到具体设备。</translation>
+    </message>
+    <message>
+        <source>Follow system default output device</source>
+        <translation>跟随系统默认输出设备</translation>
+    </message>
+    <message>
+        <source>Use the host audio server&apos;s current default output. On Linux this prefers PipeWire/Pulse so changing the system sink is followed automatically; on macOS it follows the CoreAudio default route.</source>
+        <translation>使用宿主音频服务器当前的默认输出。在 Linux 上优先使用 PipeWire/Pulse，因此系统输出设备变化会自动跟随；在 macOS 上则跟随 CoreAudio 的默认路由。</translation>
+    </message>
+    <message>
+        <source>PipeWire and Pulse entries follow the host audio server&apos;s current default source.</source>
+        <translation>PipeWire 和 Pulse 条目会跟随宿主音频服务器当前的默认输入源。</translation>
     </message>
 </context>
 <context>
@@ -4851,20 +5340,12 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
         <translation>面板会在鼠标指针悬停在上方时获取焦点，而无需点击。</translation>
     </message>
     <message>
-        <source>Scroll wheel zooms by default instead of scrolling</source>
-        <translation type="obsolete">滚轮默认缩放而不是滚动</translation>
-    </message>
-    <message>
-        <source>Holding CTRL while using Olive toggles this setting</source>
-        <translation type="obsolete">使用 Olive 时按住 CTRL 来切换此设置</translation>
-    </message>
-    <message>
         <source>Audio</source>
         <translation>音频</translation>
     </message>
     <message>
         <source>Enable audio scrubbing</source>
-        <translation>启用音频清理</translation>
+        <translation>启用音频擦洗</translation>
     </message>
     <message>
         <source>Timeline</source>
@@ -4872,11 +5353,11 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Auto-Seek to Imported Clips</source>
-        <translation>自动寻找并导入片段</translation>
+        <translation>导入后自动跳转到片段</translation>
     </message>
     <message>
         <source>Edit Tool Also Seeks</source>
-        <translation>编辑工具并寻找</translation>
+        <translation>编辑工具同时跳转</translation>
     </message>
     <message>
         <source>Edit Tool Selects Links</source>
@@ -4896,15 +5377,15 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Seek Also Selects</source>
-        <translation>查找并选择</translation>
+        <translation>跳转时同时选择</translation>
     </message>
     <message>
         <source>Seek to the End of Pastes</source>
-        <translation>查找至最后粘帖</translation>
+        <translation>粘贴后跳转到末尾</translation>
     </message>
     <message>
         <source>Selecting Also Seeks</source>
-        <translation>选择并查找</translation>
+        <translation>选择时同时跳转</translation>
     </message>
     <message>
         <source>Playback</source>
@@ -4940,19 +5421,19 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Splitting Clips Copies Dependencies</source>
-        <translation>切断片段副本依赖</translation>
+        <translation>分割片段时复制依赖</translation>
     </message>
     <message>
         <source>Multiple clips can share the same nodes. Disable this to automatically share node dependencies among clips when copying or splitting them.</source>
-        <translation>多个片段可以共享相同节点。禁用此项来在复制或切断片段时在其中共享节点依赖。</translation>
+        <translation>多个片段可以共享同一批节点。禁用此项后，复制或分割片段时会自动共享节点依赖。</translation>
     </message>
     <message>
         <source>Enable slider ladder</source>
-        <translation>启用滑块阶梯</translation>
+        <translation>启用滑块调节条</translation>
     </message>
     <message>
         <source>Scrolling zooms by default</source>
-        <translation>默认情况下滚动缩放</translation>
+        <translation>默认滚轮缩放</translation>
     </message>
     <message>
         <source>By default, scrolling will move the view around, and holding Ctrl/Cmd will make it zoom instead. Enabling this will switch those, scrolling will zoom by default, and holding Ctrl/Cmd will move the view instead.</source>
@@ -5061,7 +5542,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Rectified Waveforms:</source>
-        <translation>整流波形:</translation>
+        <translation>整流波形：</translation>
     </message>
     <message>
         <source>Default Still Image Length:</source>
@@ -5120,7 +5601,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>Import</source>
-        <translation>输入</translation>
+        <translation>导入</translation>
     </message>
     <message>
         <source>Export</source>
@@ -5197,11 +5678,7 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     </message>
     <message>
         <source>&amp;Import...</source>
-        <translation>输入(&amp;I)...</translation>
-    </message>
-    <message>
-        <source>&amp;Project Properties...</source>
-        <translation type="obsolete">项目属性(&amp;P)...</translation>
+        <translation>导入(&amp;I)...</translation>
     </message>
     <message>
         <source>Open in New Tab</source>
@@ -5210,10 +5687,6 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     <message>
         <source>Open in New Window</source>
         <translation>在新窗口中打开</translation>
-    </message>
-    <message>
-        <source>Reveal in Explorer</source>
-        <translation>在资源管理器中显示</translation>
     </message>
     <message>
         <source>Reveal in Finder</source>
@@ -5238,28 +5711,6 @@ This is equivalent to multiplying a video by a number between 0.0 and 1.0.</sour
     <message>
         <source>P&amp;roperties</source>
         <translation>属性(&amp;R)</translation>
-    </message>
-    <message>
-        <source>Confirm Footage Deletion</source>
-        <translation type="obsolete">确认删除素材</translation>
-    </message>
-    <message>
-        <source>The footage &quot;%1&quot; is currently used in the following sequence(s):
-
-%2
-What would you like to do with these clips?</source>
-        <translation type="obsolete">素材 &quot;%1&quot; 已在以下序列中使用:
-
-%2
-您相对这些片段做什么？</translation>
-    </message>
-    <message>
-        <source>Offline Footage</source>
-        <translation type="obsolete">离线素材</translation>
-    </message>
-    <message>
-        <source>Delete Clips</source>
-        <translation type="obsolete">删除片段</translation>
     </message>
     <message>
         <source>Confirm Item Deletion</source>
@@ -5293,6 +5744,26 @@ Are you sure you wish to delete this footage?</source>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
+    <message>
+        <source>Relink Footage...</source>
+        <translation>重新链接素材...</translation>
+    </message>
+    <message>
+        <source>Replaced Footage</source>
+        <translation>已替换素材</translation>
+    </message>
+    <message>
+        <source>Relink Footage</source>
+        <translation>重新链接素材</translation>
+    </message>
+    <message>
+        <source>All selected footage files are online.</source>
+        <translation>所选素材文件均可用。</translation>
+    </message>
+    <message>
+        <source>Deleted %1 Item(s)</source>
+        <translation>删除了 %1 个项目</translation>
+    </message>
 </context>
 <context>
     <name>olive::ProjectExplorerNavigation</name>
@@ -5308,19 +5779,17 @@ Are you sure you wish to delete this footage?</source>
         <translation>导入出错</translation>
     </message>
     <message>
-        <source>The following files failed to import. Olive likely does not support their formats.</source>
-        <translation>下列文件无法导入。Olive 可能不支持这些文件格式。</translation>
+        <source>The following files failed to import. Olivelan likely does not support their formats.</source>
+        <translation>以下文件导入失败。Olivelan 可能不支持这些格式。</translation>
     </message>
 </context>
 <context>
     <name>olive::ProjectImportTask</name>
-    <message>
-        <source>Importing %1 files</source>
-        <translation type="obsolete">正在导入 %1 文件</translation>
-    </message>
-    <message>
+    <message numerus="yes">
         <source>Importing %n file(s)</source>
-        <translation>正在导入 %n 个文件</translation>
+        <translation>
+            <numerusform>正在导入 %n 个文件</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -5333,20 +5802,8 @@ Are you sure you wish to delete this footage?</source>
 <context>
     <name>olive::ProjectLoadTask</name>
     <message>
-        <source>This project is newer than this version of Olive and cannot be opened.</source>
-        <translation type="obsolete">这个项目版本高于比当前 Olive 版本，无法读取。</translation>
-    </message>
-    <message>
-        <source>This project is from a version of Olive that is no longer supported in this version.</source>
-        <translation>这个项目来自当前版本已不支持的 Olive 版本。</translation>
-    </message>
-    <message>
         <source>Failed to read file &quot;%1&quot; for reading.</source>
         <translation>无法读取文件 &quot;%1&quot;。</translation>
-    </message>
-    <message>
-        <source>This project is from a newer version of Olive and cannot be opened in this version.</source>
-        <translation>此项目来自较新版本的Olive，无法在此版本中打开。</translation>
     </message>
     <message>
         <source>Failed to determine project version.</source>
@@ -5363,6 +5820,14 @@ Are you sure you wish to delete this footage?</source>
     <message>
         <source>Unknown error.</source>
         <translation>未知错误。</translation>
+    </message>
+    <message>
+        <source>This project is from a version of Olivelan that is no longer supported in this version.</source>
+        <translation>此项目来自 Olivelan 的旧版本，当前版本已不再支持。</translation>
+    </message>
+    <message>
+        <source>This project is from a newer version of Olivelan and cannot be opened in this version.</source>
+        <translation>此项目来自更高版本的 Olivelan，无法在当前版本中打开。</translation>
     </message>
 </context>
 <context>
@@ -5413,7 +5878,7 @@ Are you sure you wish to delete this footage?</source>
     </message>
     <message>
         <source>Use Custom Location:</source>
-        <translation>使用默认位置：</translation>
+        <translation>使用自定义位置：</translation>
     </message>
     <message>
         <source>Disk Cache Settings</source>
@@ -5436,20 +5901,32 @@ Are you sure you wish to delete this footage?</source>
         <translation>无效的路径</translation>
     </message>
     <message>
-        <source>The cache path is invalid. Please check it and try again.</source>
-        <translation type="obsolete">缓存路径无效。请检查后重试。</translation>
-    </message>
-    <message>
         <source>Browse for OpenColorIO configuration</source>
         <translation>浏览 OpenColorIO 配置</translation>
     </message>
     <message>
         <source>Store Alongside Project</source>
-        <translation>项目旁边的仓库</translation>
+        <translation>与项目保存在一起</translation>
     </message>
     <message>
         <source>The custom cache path is invalid. Please check it and try again.</source>
         <translation>自定义缓存路径无效。请检查并重试。</translation>
+    </message>
+    <message>
+        <source>Reference Space:</source>
+        <translation>参考空间：</translation>
+    </message>
+    <message>
+        <source>Scene Linear</source>
+        <translation>场景线性</translation>
+    </message>
+    <message>
+        <source>Compositing Log</source>
+        <translation>合成对数</translation>
+    </message>
+    <message>
+        <source>OpenColorIO Configurations (*.ocio);;All Files (*)</source>
+        <translation>OpenColorIO 配置 (*.ocio);;所有文件 (*)</translation>
     </message>
 </context>
 <context>
@@ -5459,16 +5936,8 @@ Are you sure you wish to delete this footage?</source>
         <translation>正在保存 &apos;%1&apos;</translation>
     </message>
     <message>
-        <source>Failed to write XML data</source>
-        <translation type="obsolete">无法写入 XML 数据</translation>
-    </message>
-    <message>
         <source>Failed to overwrite &quot;%1&quot;. Project has been saved as &quot;%2&quot; instead.</source>
         <translation>无法覆盖 &quot;%1&quot;。项目已保存为 &quot;%2&quot;。</translation>
-    </message>
-    <message>
-        <source>Failed to open temporary file &quot;%1&quot; for writing.</source>
-        <translation type="obsolete">无法打开临时文件 &quot;%1&quot; 进行写入。</translation>
     </message>
     <message>
         <source>Failed to write XML data.</source>
@@ -5481,41 +5950,6 @@ Are you sure you wish to delete this footage?</source>
     <message>
         <source>Unknown error.</source>
         <translation>未知错误。</translation>
-    </message>
-</context>
-<context>
-    <name>olive::ProjectSettingsNode</name>
-    <message>
-        <source>Disk Cache Location</source>
-        <translation>磁盘缓存位置</translation>
-    </message>
-    <message>
-        <source>Disk Cache Path</source>
-        <translation>磁盘缓存路径</translation>
-    </message>
-    <message>
-        <source>Use Default Location</source>
-        <translation>使用默认位置</translation>
-    </message>
-    <message>
-        <source>Store Alongside Project</source>
-        <translation>项目旁边的仓库</translation>
-    </message>
-    <message>
-        <source>Use Custom Location</source>
-        <translation>使用默认位置</translation>
-    </message>
-    <message>
-        <source>(default)</source>
-        <translation>(默认)</translation>
-    </message>
-    <message>
-        <source>Project Settings</source>
-        <translation>项目设置</translation>
-    </message>
-    <message>
-        <source>Settings used throughout the project.</source>
-        <translation>整个项目中使用的设置。</translation>
     </message>
 </context>
 <context>
@@ -5533,28 +5967,8 @@ Are you sure you wish to delete this footage?</source>
         <translation>保存项目</translation>
     </message>
     <message>
-        <source>Undo</source>
-        <translation type="obsolete">撤销</translation>
-    </message>
-    <message>
-        <source>Redo</source>
-        <translation type="obsolete">重做</translation>
-    </message>
-    <message>
         <source>Search media, markers, etc.</source>
         <translation>搜索媒体、标记等。</translation>
-    </message>
-    <message>
-        <source>Switch to Tree View</source>
-        <translation type="obsolete">切换到树视图</translation>
-    </message>
-    <message>
-        <source>Switch to List View</source>
-        <translation type="obsolete">切换到列表视图</translation>
-    </message>
-    <message>
-        <source>Switch to Icon View</source>
-        <translation type="obsolete">切换到图标视图</translation>
     </message>
     <message>
         <source>Tree View</source>
@@ -5585,16 +5999,20 @@ Are you sure you wish to delete this footage?</source>
         <translation>速率</translation>
     </message>
     <message>
-        <source>Move Items</source>
-        <translation>移动项</translation>
-    </message>
-    <message>
         <source>Modified</source>
         <translation>调整</translation>
     </message>
     <message>
         <source>Created</source>
         <translation>创建</translation>
+    </message>
+    <message>
+        <source>Renamed Item &quot;%1&quot; to &quot;%2&quot;</source>
+        <translation>将项目“%1”重命名为“%2”</translation>
+    </message>
+    <message>
+        <source>Move %1 Item(s)</source>
+        <translation>移动 %1 个项目</translation>
     </message>
 </context>
 <context>
@@ -5620,7 +6038,7 @@ Are you sure you wish to delete this footage?</source>
     <name>olive::RenderCancelDialog</name>
     <message>
         <source>Waiting for workers to finish...</source>
-        <translation>正在等待工作器完成...</translation>
+        <translation>正在等待后台任务完成...</translation>
     </message>
     <message>
         <source>Renderer</source>
@@ -5629,78 +6047,10 @@ Are you sure you wish to delete this footage?</source>
     </message>
 </context>
 <context>
-    <name>olive::RichTextDialog</name>
+    <name>olive::RenderThread</name>
     <message>
-        <source>B</source>
-        <translation type="obsolete">B</translation>
-    </message>
-    <message>
-        <source>Bold</source>
-        <translation type="obsolete">粗体</translation>
-    </message>
-    <message>
-        <source>I</source>
-        <translation type="obsolete">I</translation>
-    </message>
-    <message>
-        <source>Italic</source>
-        <translation type="obsolete">斜体</translation>
-    </message>
-    <message>
-        <source>U</source>
-        <translation type="obsolete">U</translation>
-    </message>
-    <message>
-        <source>Underline</source>
-        <translation type="obsolete">下划线</translation>
-    </message>
-    <message>
-        <source>S</source>
-        <translation type="obsolete">S</translation>
-    </message>
-    <message>
-        <source>Strikethrough</source>
-        <translation type="obsolete">删除线</translation>
-    </message>
-    <message>
-        <source>Font Family</source>
-        <translation type="obsolete">字体系列</translation>
-    </message>
-    <message>
-        <source>Font Size</source>
-        <translation type="obsolete">字体大小</translation>
-    </message>
-    <message>
-        <source>L</source>
-        <translation type="obsolete">L</translation>
-    </message>
-    <message>
-        <source>Left Align</source>
-        <translation type="obsolete">左对齐</translation>
-    </message>
-    <message>
-        <source>C</source>
-        <translation type="obsolete">C</translation>
-    </message>
-    <message>
-        <source>Center Align</source>
-        <translation type="obsolete">居中对齐</translation>
-    </message>
-    <message>
-        <source>R</source>
-        <translation type="obsolete">R</translation>
-    </message>
-    <message>
-        <source>Right Align</source>
-        <translation type="obsolete">右对齐</translation>
-    </message>
-    <message>
-        <source>J</source>
-        <translation type="obsolete">J</translation>
-    </message>
-    <message>
-        <source>Justify Align</source>
-        <translation type="obsolete">两端对齐</translation>
+        <source>The OpenGL renderer failed to initialize without reporting a reason.</source>
+        <translation>OpenGL 渲染器初始化失败，且未报告原因。</translation>
     </message>
 </context>
 <context>
@@ -5711,7 +6061,7 @@ Are you sure you wish to delete this footage?</source>
     </message>
     <message>
         <source>Distorts an image with a ripple effect.</source>
-        <translation>使用涟漪效果扭曲图像。</translation>
+        <translation>使用波纹效果扭曲图像。</translation>
     </message>
     <message>
         <source>Input</source>
@@ -5764,10 +6114,6 @@ Are you sure you wish to delete this footage?</source>
         <translation>直方图</translation>
     </message>
     <message>
-        <source>Scope</source>
-        <translation type="obsolete">范围</translation>
-    </message>
-    <message>
         <source>Scopes</source>
         <translation>范围</translation>
     </message>
@@ -5777,6 +6123,30 @@ Are you sure you wish to delete this footage?</source>
     <message>
         <source>Properties</source>
         <translation>属性</translation>
+    </message>
+    <message>
+        <source>Deleted %1 Marker(s)</source>
+        <translation>删除了 %1 个标记</translation>
+    </message>
+    <message>
+        <source>Pasted %1 Marker(s)</source>
+        <translation>粘贴了 %1 个标记</translation>
+    </message>
+    <message>
+        <source>Moved %1 Marker(s)</source>
+        <translation>移动了 %1 个标记</translation>
+    </message>
+    <message>
+        <source>Changed Color of %1 Marker(s)</source>
+        <translation>更改了 %1 个标记的颜色</translation>
+    </message>
+    <message>
+        <source>Changed Marker Length</source>
+        <translation>更改了标记长度</translation>
+    </message>
+    <message>
+        <source>Changed Workarea Length</source>
+        <translation>更改了工作区长度</translation>
     </message>
 </context>
 <context>
@@ -5799,7 +6169,7 @@ Are you sure you wish to delete this footage?</source>
     </message>
     <message>
         <source>A series of cuts that result in an edited video. Also called a timeline.</source>
-        <translation>生成编辑视频的一系列剪辑。也称为时间线.</translation>
+        <translation>经过一系列剪辑后形成成片。也称为时间线。</translation>
     </message>
 </context>
 <context>
@@ -5822,7 +6192,7 @@ Are you sure you wish to delete this footage?</source>
     </message>
     <message>
         <source>Please enter a name for this Sequence.</source>
-        <translation>请输入此序列名称.</translation>
+        <translation>请输入此序列的名称。</translation>
     </message>
     <message>
         <source>Set As Default</source>
@@ -5851,6 +6221,10 @@ Do you wish to continue?</source>
     <message>
         <source>Are you sure you want to set the current parameters as defaults?</source>
         <translation>是否确实要将当前参数设置为默认值？</translation>
+    </message>
+    <message>
+        <source>Set Sequence Parameters For &quot;%1&quot;</source>
+        <translation>设置“%1”的序列参数</translation>
     </message>
 </context>
 <context>
@@ -6036,11 +6410,17 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>The entered value is not valid for this field.</source>
-        <translation>输入的值在在这个字段无效。</translation>
+        <translation>输入的值对该字段无效。</translation>
     </message>
     <message>
         <source>---</source>
         <translation>---</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n 分钟</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -6062,7 +6442,7 @@ Do you wish to continue?</source>
     <name>olive::SpeedDurationDialog</name>
     <message>
         <source>Clip Properties</source>
-        <translation>剪辑财产</translation>
+        <translation>片段属性</translation>
     </message>
     <message>
         <source>Speed/Duration</source>
@@ -6070,11 +6450,11 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Speed:</source>
-        <translation>速度:</translation>
+        <translation>速度：</translation>
     </message>
     <message>
         <source>Duration:</source>
-        <translation>持续时间:</translation>
+        <translation>持续时间：</translation>
     </message>
     <message>
         <source>Link Speed and Duration</source>
@@ -6090,7 +6470,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Ripple Trailing Clips</source>
-        <translation>涟漪尾部剪辑</translation>
+        <translation>波纹移动后续片段</translation>
     </message>
     <message>
         <source>Loop</source>
@@ -6098,7 +6478,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Loop:</source>
-        <translation>循环:</translation>
+        <translation>循环：</translation>
     </message>
     <message>
         <source>None</source>
@@ -6107,6 +6487,33 @@ Do you wish to continue?</source>
     <message>
         <source>Clamp</source>
         <translation>夹钳</translation>
+    </message>
+    <message>
+        <source>Set %1 Clip Properties</source>
+        <translation>设置 %1 个片段的属性</translation>
+    </message>
+    <message>
+        <source>Set Clip &quot;%1&quot; Properties</source>
+        <translation>设置片段“%1”的属性</translation>
+    </message>
+</context>
+<context>
+    <name>olive::SplashScreen</name>
+    <message>
+        <source>Starting Olivelan...</source>
+        <translation>正在启动 Olivelan...</translation>
+    </message>
+    <message>
+        <source>GPU-RESIDENT HIGH PERFORMANCE NLE</source>
+        <translation>GPU 常驻高性能非线性编辑</translation>
+    </message>
+    <message>
+        <source>OpenColorIO 2.5.1 Single-Track • Tier 1/2 Hardware Zero-Copy HAL • Metro Fluent UI</source>
+        <translation>OpenColorIO 2.5.1 单轨 · 层级 1/2 硬件零拷贝 HAL · Metro 流畅界面</translation>
+    </message>
+    <message>
+        <source>© 2024-2026 Olivelan Contributors. All rights reserved.</source>
+        <translation>© 2024-2026 Olivelan 贡献者。保留所有权利。</translation>
     </message>
 </context>
 <context>
@@ -6219,49 +6626,6 @@ Do you wish to continue?</source>
     <message>
         <source>Error: %1</source>
         <translation>错误：%1</translation>
-    </message>
-</context>
-<context>
-    <name>olive::TextGenerator</name>
-    <message>
-        <source>Sample Text</source>
-        <translation type="obsolete">文字样本</translation>
-    </message>
-    <message>
-        <source>Text</source>
-        <translation type="obsolete">文字</translation>
-    </message>
-    <message>
-        <source>Generate rich text.</source>
-        <translation type="obsolete">生成富文本。</translation>
-    </message>
-    <message>
-        <source>Font</source>
-        <translation type="obsolete">字体</translation>
-    </message>
-    <message>
-        <source>Font Size</source>
-        <translation type="obsolete">字体大小</translation>
-    </message>
-    <message>
-        <source>Color</source>
-        <translation type="obsolete">颜色</translation>
-    </message>
-    <message>
-        <source>Vertical Align</source>
-        <translation type="obsolete">垂直对齐</translation>
-    </message>
-    <message>
-        <source>Top</source>
-        <translation type="obsolete">顶部</translation>
-    </message>
-    <message>
-        <source>Center</source>
-        <translation type="obsolete">居中</translation>
-    </message>
-    <message>
-        <source>Bottom</source>
-        <translation type="obsolete">底部</translation>
     </message>
 </context>
 <context>
@@ -6396,6 +6760,17 @@ Do you wish to continue?</source>
         <source>Arguments</source>
         <translation>参数</translation>
     </message>
+    <message>
+        <source>Set Text Vertical Alignment</source>
+        <translation>设置文本垂直对齐</translation>
+    </message>
+</context>
+<context>
+    <name>olive::TextGizmo</name>
+    <message>
+        <source>Edit Text</source>
+        <translation>编辑文本</translation>
+    </message>
 </context>
 <context>
     <name>olive::TileDistortNode</name>
@@ -6478,12 +6853,20 @@ Do you wish to continue?</source>
 <context>
     <name>olive::TimeBasedWidget</name>
     <message>
-        <source>Set Marker</source>
-        <translation type="obsolete">设置标记</translation>
+        <source>Set In/Out Point</source>
+        <translation>设置入点/出点</translation>
     </message>
     <message>
-        <source>Marker name:</source>
-        <translation type="obsolete">标记名称：</translation>
+        <source>Reset In/Out Points</source>
+        <translation>重置入点/出点</translation>
+    </message>
+    <message>
+        <source>Cleared In/Out Points</source>
+        <translation>清除入点/出点</translation>
+    </message>
+    <message>
+        <source>Added Marker</source>
+        <translation>添加了标记</translation>
     </message>
 </context>
 <context>
@@ -6514,10 +6897,6 @@ Do you wish to continue?</source>
     <message>
         <source>Time</source>
         <translation>时间</translation>
-    </message>
-    <message>
-        <source>Generates the time (in seconds) at this frame</source>
-        <translation type="obsolete">在这一帧生成时间 (以秒为单位)</translation>
     </message>
     <message>
         <source>Generates the time (in seconds) at this frame.</source>
@@ -6559,9 +6938,9 @@ Do you wish to continue?</source>
         <source>In: %1
 Out: %2
 Duration: %3</source>
-        <translation>在：%1
-输出：%2
-持续时间：%3</translation>
+        <translation>入点：%1
+出点：%2
+时长：%3</translation>
     </message>
 </context>
 <context>
@@ -6592,7 +6971,7 @@ Duration: %3</source>
     </message>
     <message>
         <source>Cache In/Out</source>
-        <translation>缓存输入/输出</translation>
+        <translation>缓存入点/出点</translation>
     </message>
     <message>
         <source>Discard</source>
@@ -6608,7 +6987,7 @@ Duration: %3</source>
     </message>
     <message>
         <source>Multi-Cam</source>
-        <translation>多凸轮</translation>
+        <translation>多机位</translation>
     </message>
     <message>
         <source>Show Thumbnails</source>
@@ -6620,7 +6999,7 @@ Duration: %3</source>
     </message>
     <message>
         <source>Only At In Points</source>
-        <translation>仅在输入点</translation>
+        <translation>仅在入点</translation>
     </message>
     <message>
         <source>Enabled</source>
@@ -6642,6 +7021,94 @@ Do you wish to continue?</source>
 
 是否要继续？</translation>
     </message>
+    <message>
+        <source>Split Clips At Playhead</source>
+        <translation>在播放头处分割片段</translation>
+    </message>
+    <message>
+        <source>Deleted Clips</source>
+        <translation>删除了片段</translation>
+    </message>
+    <message>
+        <source>Inserted Footage At Playhead</source>
+        <translation>在播放头处插入素材</translation>
+    </message>
+    <message>
+        <source>Overwrote Footage At Playhead</source>
+        <translation>在播放头处覆盖素材</translation>
+    </message>
+    <message>
+        <source>Linked Clips</source>
+        <translation>链接了片段</translation>
+    </message>
+    <message>
+        <source>Added Default Transitions</source>
+        <translation>添加了默认转场</translation>
+    </message>
+    <message>
+        <source>Deleted In To Out</source>
+        <translation>删除了入点到出点之间的内容</translation>
+    </message>
+    <message>
+        <source>Toggled Clips Enabled</source>
+        <translation>切换了片段的启用状态</translation>
+    </message>
+    <message>
+        <source>Set Colors of %1 Clips</source>
+        <translation>设置了 %1 个片段的颜色</translation>
+    </message>
+    <message>
+        <source>Recorded Audio Clip</source>
+        <translation>录制了音频片段</translation>
+    </message>
+    <message>
+        <source>Nested Clips</source>
+        <translation>嵌套了片段</translation>
+    </message>
+    <message>
+        <source>Renamed %1 Clip(s)</source>
+        <translation>重命名了 %1 个片段</translation>
+    </message>
+    <message>
+        <source>Created Subtitle Track</source>
+        <translation>创建了字幕轨道</translation>
+    </message>
+    <message>
+        <source>Enabled Auto-Caching On %1 Clip(s)</source>
+        <translation>在 %1 个片段上启用自动缓存</translation>
+    </message>
+    <message>
+        <source>Disabled Auto-Caching On %1 Clip(s)</source>
+        <translation>在 %1 个片段上禁用自动缓存</translation>
+    </message>
+    <message>
+        <source>Multi-Cam Enabled On %1 Clip(s)</source>
+        <translation>在 %1 个片段上启用多机位</translation>
+    </message>
+    <message>
+        <source>Multi-Cam Disabled On %1 Clip(s)</source>
+        <translation>在 %1 个片段上禁用多机位</translation>
+    </message>
+    <message>
+        <source>Nudged Clips</source>
+        <translation>微移了片段</translation>
+    </message>
+    <message>
+        <source>Moved Clip(s) To Point</source>
+        <translation>将片段移动到指定位置</translation>
+    </message>
+    <message>
+        <source>Rippled Clip(s) To Point</source>
+        <translation>将片段波纹移动到指定位置</translation>
+    </message>
+    <message>
+        <source>Cut Clip(s) To Point</source>
+        <translation>将片段剪切到指定位置</translation>
+    </message>
+    <message>
+        <source>Pasted %1 Clip(s)</source>
+        <translation>粘贴了 %1 个片段</translation>
+    </message>
 </context>
 <context>
     <name>olive::ToolPanel</name>
@@ -6654,7 +7121,7 @@ Do you wish to continue?</source>
     <name>olive::Toolbar</name>
     <message>
         <source>Pointer Tool</source>
-        <translation>指针工具</translation>
+        <translation>选择工具</translation>
     </message>
     <message>
         <source>Edit Tool</source>
@@ -6662,15 +7129,15 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Ripple Tool</source>
-        <translation>涟漪工具</translation>
+        <translation>波纹工具</translation>
     </message>
     <message>
         <source>Rolling Tool</source>
-        <translation>滚动工具</translation>
+        <translation>滚动编辑工具</translation>
     </message>
     <message>
         <source>Razor Tool</source>
-        <translation>刀片工具</translation>
+        <translation>剃刀工具</translation>
     </message>
     <message>
         <source>Slip Tool</source>
@@ -6682,7 +7149,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Hand Tool</source>
-        <translation>手形工具</translation>
+        <translation>抓手工具</translation>
     </message>
     <message>
         <source>Zoom Tool</source>
@@ -6753,50 +7220,7 @@ Do you wish to continue?</source>
     </message>
 </context>
 <context>
-    <name>olive::TrackOutput</name>
-    <message>
-        <source>Track</source>
-        <translation type="obsolete">轨道</translation>
-    </message>
-    <message>
-        <source>Node for representing and processing a single array of Blocks sorted by time. Also represents the end of a Sequence.</source>
-        <translation type="obsolete">代表并处理单组方块节点，以时间排序，也代表序列的结尾。</translation>
-    </message>
-    <message>
-        <source>Blocks</source>
-        <translation type="obsolete">方块</translation>
-    </message>
-    <message>
-        <source>Muted</source>
-        <translation type="obsolete">已静音</translation>
-    </message>
-    <message>
-        <source>Video %1</source>
-        <translation type="obsolete">视频 %1</translation>
-    </message>
-    <message>
-        <source>Audio %1</source>
-        <translation type="obsolete">音频 %1</translation>
-    </message>
-    <message>
-        <source>Subtitle %1</source>
-        <translation type="obsolete">字幕 %1</translation>
-    </message>
-    <message>
-        <source>Track %1</source>
-        <translation type="obsolete">轨道 %1</translation>
-    </message>
-</context>
-<context>
     <name>olive::TrackViewItem</name>
-    <message>
-        <source>M</source>
-        <translation type="obsolete">M</translation>
-    </message>
-    <message>
-        <source>L</source>
-        <translation type="obsolete">L</translation>
-    </message>
     <message>
         <source>&amp;Delete</source>
         <translation>删除(&amp;D)</translation>
@@ -6824,6 +7248,14 @@ Do you wish to continue?</source>
 %1
 
 是否要继续？</translation>
+    </message>
+    <message>
+        <source>Deleted Track &quot;%1&quot;</source>
+        <translation>删除了轨道“%1”</translation>
+    </message>
+    <message>
+        <source>Deleted All Empty Tracks</source>
+        <translation>删除了所有空轨道</translation>
     </message>
 </context>
 <context>
@@ -6968,6 +7400,17 @@ Do you wish to continue?</source>
     </message>
 </context>
 <context>
+    <name>olive::UndoStack</name>
+    <message>
+        <source>New/Open Project</source>
+        <translation>新建/打开项目</translation>
+    </message>
+    <message>
+        <source>Command</source>
+        <translation>命令</translation>
+    </message>
+</context>
+<context>
     <name>olive::ValueNode</name>
     <message>
         <source>Value</source>
@@ -6976,32 +7419,6 @@ Do you wish to continue?</source>
     <message>
         <source>Create a single value that can be connected to various other inputs.</source>
         <translation>创建一个可以连接到其他各种输入的值。</translation>
-    </message>
-</context>
-<context>
-    <name>olive::VideoDividerComboBox</name>
-    <message>
-        <source>Full</source>
-        <translation type="obsolete">完全</translation>
-    </message>
-    <message>
-        <source>1/%1</source>
-        <translation type="obsolete">1/%1</translation>
-    </message>
-</context>
-<context>
-    <name>olive::VideoInput</name>
-    <message>
-        <source>Video Input</source>
-        <translation type="obsolete">视频输入</translation>
-    </message>
-    <message>
-        <source>Video</source>
-        <translation type="obsolete">视频</translation>
-    </message>
-    <message>
-        <source>Import a video footage stream.</source>
-        <translation type="obsolete">导入视频素材流。</translation>
     </message>
 </context>
 <context>
@@ -7062,12 +7479,18 @@ Do you wish to continue?</source>
         <source>Full (0-255)</source>
         <translation>完整（0-255）</translation>
     </message>
+    <message>
+        <source>Auto (Follow Source)</source>
+        <translation>自动（跟随源）</translation>
+    </message>
 </context>
 <context>
     <name>olive::ViewerDisplayWidget</name>
-    <message>
+    <message numerus="yes">
         <source>%n skipped frame(s) detected during playback</source>
-        <translation>播放过程中检测到%n个跳过的帧</translation>
+        <translation>
+            <numerusform>播放期间检测到 %n 个丢帧</numerusform>
+        </translation>
     </message>
     <message>
         <source>%1 FPS</source>
@@ -7076,6 +7499,10 @@ Do you wish to continue?</source>
     <message>
         <source>%1 frames skipped</source>
         <translation>跳过%1帧</translation>
+    </message>
+    <message>
+        <source>Dragged Gizmo</source>
+        <translation>拖动控件</translation>
     </message>
 </context>
 <context>
@@ -7095,18 +7522,6 @@ Do you wish to continue?</source>
     <message>
         <source>Samples</source>
         <translation>采样</translation>
-    </message>
-    <message>
-        <source>Video Tracks</source>
-        <translation type="obsolete">视频轨道</translation>
-    </message>
-    <message>
-        <source>Audio Tracks</source>
-        <translation type="obsolete">音频轨道</translation>
-    </message>
-    <message>
-        <source>Subtitle Tracks</source>
-        <translation type="obsolete">字幕轨道</translation>
     </message>
     <message>
         <source>%1 FPS</source>
@@ -7140,7 +7555,7 @@ Do you wish to continue?</source>
     <name>olive::ViewerTextEditorToolBar</name>
     <message>
         <source>Stretch: </source>
-        <translation>拉伸: </translation>
+        <translation>拉伸： </translation>
     </message>
     <message>
         <source>%1%</source>
@@ -7148,7 +7563,7 @@ Do you wish to continue?</source>
     </message>
     <message>
         <source>Kerning: </source>
-        <translation>字距: </translation>
+        <translation>字距： </translation>
     </message>
     <message>
         <source>Line Height: </source>
@@ -7194,30 +7609,6 @@ Do you wish to continue?</source>
         <translation>去交错</translation>
     </message>
     <message>
-        <source>Scopes</source>
-        <translation type="obsolete">范围</translation>
-    </message>
-    <message>
-        <source>Cache</source>
-        <translation type="obsolete">缓存</translation>
-    </message>
-    <message>
-        <source>Auto-Cache</source>
-        <translation type="obsolete">自动缓存</translation>
-    </message>
-    <message>
-        <source>Pause Auto-Cache During Playback</source>
-        <translation type="obsolete">在回放过程中暂停自动缓存</translation>
-    </message>
-    <message>
-        <source>Cache Entire Sequence</source>
-        <translation type="obsolete">缓存整个序列</translation>
-    </message>
-    <message>
-        <source>Cache Sequence In/Out</source>
-        <translation type="obsolete">缓存序列入点至出点</translation>
-    </message>
-    <message>
         <source>Off</source>
         <translation>关闭</translation>
     </message>
@@ -7228,10 +7619,6 @@ Do you wish to continue?</source>
     <message>
         <source>Custom Aspect</source>
         <translation>自定义宽高比</translation>
-    </message>
-    <message>
-        <source>Show Audio Waveform</source>
-        <translation type="obsolete">显示音频波形</translation>
     </message>
     <message>
         <source>Audio scrubbing failed: %1</source>
@@ -7287,7 +7674,7 @@ Please check your audio preferences and try again.</source>
     </message>
     <message>
         <source>Subtitle Properties</source>
-        <translation>字幕财产</translation>
+        <translation>字幕属性</translation>
     </message>
     <message>
         <source>Use Anti-aliasing</source>
@@ -7312,6 +7699,14 @@ Please check your audio preferences and try again.</source>
     <message>
         <source>Failed to start audio recording: %1</source>
         <translation>无法启动音频录制：%1</translation>
+    </message>
+    <message>
+        <source>Created Shape</source>
+        <translation>创建了形状</translation>
+    </message>
+    <message>
+        <source>Changed Playback Resolution</source>
+        <translation>更改了播放分辨率</translation>
     </message>
 </context>
 <context>
@@ -7368,534 +7763,4 @@ Please check your audio preferences and try again.</source>
         <translation>垂直</translation>
     </message>
 </context>
-<context>
-    <name>GpuSessionAdvisor</name>
-    <message>
-        <source>unknown</source>
-        <translation>未知</translation>
-    </message>
-    <message>
-        <source>(none detected)</source>
-        <translation>（未检测到）</translation>
-    </message>
-    <message>
-        <source>Session: %1 (Xwayland %2)</source>
-        <translation>会话：%1（Xwayland %2）</translation>
-    </message>
-    <message>
-        <source>native Wayland</source>
-        <translation>原生 Wayland</translation>
-    </message>
-    <message>
-        <source>X11</source>
-        <translation>X11</translation>
-    </message>
-    <message>
-        <source>reachable</source>
-        <translation>可达</translation>
-    </message>
-    <message>
-        <source>not reachable</source>
-        <translation>不可达</translation>
-    </message>
-    <message>
-        <source>Display (OpenGL) GPU: %1</source>
-        <translation>显示（OpenGL）GPU：%1</translation>
-    </message>
-    <message>
-        <source>Connected displays: %1</source>
-        <translation>已连接显示器：%1</translation>
-    </message>
-    <message>
-        <source>Discrete GPU: %1</source>
-        <translation>独立显卡：%1</translation>
-    </message>
-    <message>
-        <source>NVDEC: %1</source>
-        <translation>NVDEC：%1</translation>
-    </message>
-    <message>
-        <source>available</source>
-        <translation>可用</translation>
-    </message>
-    <message>
-        <source>unavailable</source>
-        <translation>不可用</translation>
-    </message>
-    <message>
-        <source>Connected display on the discrete GPU: %1</source>
-        <translation>独显上的已连接显示器：%1</translation>
-    </message>
-    <message>
-        <source>yes</source>
-        <translation>有</translation>
-    </message>
-    <message>
-        <source>no</source>
-        <translation>没有</translation>
-    </message>
-    <message>
-        <source>Discrete GPU: no NVIDIA GPU detected</source>
-        <translation>独立显卡：未检测到 NVIDIA GPU</translation>
-    </message>
-    <message>
-        <source>Tier 1: %1</source>
-        <translation>Tier 1：%1</translation>
-    </message>
-    <message>
-        <source>unavailable - CUDA-GL interop needs the OpenGL context and CUDA on the same GPU</source>
-        <translation>不可用——CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 GPU</translation>
-    </message>
-    <message>
-        <source>Tier 2: %1</source>
-        <translation>Tier 2：%1</translation>
-    </message>
-    <message>
-        <source>available (VA-API)</source>
-        <translation>可用（VA-API）</translation>
-    </message>
-    <message>
-        <source>Tier 1 - CUDA-NVDEC decode with CUDA-GL same-GPU zero-copy. Already the best path on this machine.</source>
-        <translation>Tier 1——CUDA-NVDEC 解码，CUDA-GL 同卡零拷贝。已经是这台机器上的最优路径。</translation>
-    </message>
-    <message>
-        <source>Tier 2 - VA-API decodes on the display GPU (%1), using less CPU than Tier 3.</source>
-        <translation>Tier 2——VA-API 在显示 GPU（%1）上硬件解码，CPU 占用低于 Tier 3。</translation>
-    </message>
-    <message>
-        <source>Tier 3 - reinforced CPU decode plus PBO upload. The fallback when no hardware decode is available.</source>
-        <translation>Tier 3——强化 CPU 解码 + PBO 上传。无硬件解码可用时的兜底路径。</translation>
-    </message>
-    <message>
-        <source>No change needed: Tier 1 (zero-copy) is available on this machine.</source>
-        <translation>无需更改：本机 Tier 1（零拷贝）可用。</translation>
-    </message>
-    <message>
-        <source>[Best] Discrete GPU direct: a display on the discrete GPU is already connected (%1). Make that screen the primary one, or move the Olive window onto it, and the OpenGL context lands on the discrete GPU - keeping the native session and getting Tier 1.</source>
-        <translation>【最优】独显直连：独显上已有已连接的显示器（%1）。把那块屏幕设为主屏，或把 Olive 窗口移过去，OpenGL 上下文就会落在独显上——保留原生会话且拿到 Tier 1。</translation>
-    </message>
-    <message>
-        <source>[Best] Discrete GPU direct: the discrete GPU (%1) currently has no connected display - the display is driven by %2, so the OpenGL context cannot land on the discrete GPU. This needs a firmware/MUX switch to discrete-only graphics, or a monitor connected to the discrete GPU's output. After that the OpenGL context and CUDA share a card: native session kept, Tier 1 available.</source>
-        <translation>【最优】独显直连：独显（%1）当前没有已连接的显示器——显示由 %2 驱动，所以 OpenGL 上下文无法落在独显上。这需要固件/MUX 切到「独显直连」，或把显示器接到独显的输出口。之后 OpenGL 上下文与 CUDA 同卡：保留原生会话，且 Tier 1 可用。</translation>
-    </message>
-    <message>
-        <source>This machine has no NVIDIA GPU, so Tier 1 does not apply; the remaining two options are the only ones.</source>
-        <translation>本机没有 NVIDIA GPU，Tier 1 不适用；下面两项是仅有的选择。</translation>
-    </message>
-    <message>
-        <source>[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context lands on the discrete GPU, which makes Tier 1 reachable. The cost is the native session (per-monitor fractional scaling, native input methods). Switching restarts Olive into the new session.</source>
-        <translation>【次优】Xwayland + PRIME：切到 X11（xcb），让 OpenGL 上下文落在独显，从而拿到 Tier 1。代价是放弃原生会话（逐屏分数缩放、原生输入法）。切换后 Olive 会自动重启进入新会话。</translation>
-    </message>
-    <message>
-        <source>Xwayland is not available (no reachable X display), so that option cannot be selected on this machine.</source>
-        <translation>Xwayland 不可用（没有可达的 X 显示），该选项在本机无法选择。</translation>
-    </message>
-    <message>
-        <source>[Keep current] Leave the session as it is and use the path shown above (%1).</source>
-        <translation>【保持当前】不更改会话，走上面「本次会话实际会走」的那条路径（%1）。</translation>
-    </message>
-    <message>
-        <source>Expected path:</source>
-        <translation>预期路径：</translation>
-    </message>
-    <message>
-        <source>Options:</source>
-        <translation>可选的改进：</translation>
-    </message>
-</context>
-<context>
-    <name>olive::GpuSessionDialog</name>
-    <message>
-        <source>GPU Session Selection</source>
-        <translation>GPU 会话选择</translation>
-    </message>
-    <message>
-        <source>Detected display session and GPU topology:</source>
-        <translation>检测到的显示会话与 GPU 拓扑：</translation>
-    </message>
-    <message>
-        <source>Item</source>
-        <translation>项目</translation>
-    </message>
-    <message>
-        <source>Value</source>
-        <translation>值</translation>
-    </message>
-    <message>
-        <source>Session</source>
-        <translation>会话</translation>
-    </message>
-    <message>
-        <source>Wayland session</source>
-        <translation>Wayland 会话</translation>
-    </message>
-    <message>
-        <source>Xwayland reachable</source>
-        <translation>Xwayland 可达</translation>
-    </message>
-    <message>
-        <source>Configured mode</source>
-        <translation>当前配置模式</translation>
-    </message>
-    <message>
-        <source>Xwayland + PRIME</source>
-        <translation>Xwayland + PRIME</translation>
-    </message>
-    <message>
-        <source>Native</source>
-        <translation>原生</translation>
-    </message>
-    <message>
-        <source>Yes</source>
-        <translation>是</translation>
-    </message>
-    <message>
-        <source>No</source>
-        <translation>否</translation>
-    </message>
-    <message>
-        <source>GPU</source>
-        <translation>GPU</translation>
-    </message>
-    <message>
-        <source>Primary GPU</source>
-        <translation>主 GPU</translation>
-    </message>
-    <message>
-        <source>Hybrid topology</source>
-        <translation>混合拓扑</translation>
-    </message>
-    <message>
-        <source>Active OpenGL vendor</source>
-        <translation>当前 OpenGL 厂商</translation>
-    </message>
-    <message>
-        <source>Unknown (no live GL context yet)</source>
-        <translation>未知（尚无活动的 GL 上下文）</translation>
-    </message>
-    <message>
-        <source>Decode path on this session</source>
-        <translation>本次会话的解码路径</translation>
-    </message>
-    <message>
-        <source>Tier 1 (CUDA-NVDEC + CUDA-GL interop)</source>
-        <translation>Tier 1（CUDA-NVDEC + CUDA-GL 互操作）</translation>
-    </message>
-    <message>
-        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
-        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
-    </message>
-    <message>
-        <source>Available</source>
-        <translation>可用</translation>
-    </message>
-    <message>
-        <source>Unavailable</source>
-        <translation>不可用</translation>
-    </message>
-    <message>
-        <source>Tier 2 (VA-API DMA-BUF)</source>
-        <translation>Tier 2（VA-API DMA-BUF）</translation>
-    </message>
-    <message>
-        <source>Tier 3 (Reinforced CPU decode)</source>
-        <translation>Tier 3（强化 CPU 解码）</translation>
-    </message>
-    <message>
-        <source>Display session</source>
-        <translation>显示会话</translation>
-    </message>
-    <message>
-        <source>Native session (recommended default)</source>
-        <translation>原生会话（推荐默认）</translation>
-    </message>
-    <message>
-        <source>Xwayland + PRIME offload (enables Tier 1 zero-copy)</source>
-        <translation>Xwayland + PRIME 卸载（可启用 Tier 1 零拷贝）</translation>
-    </message>
-    <message>
-        <source>No reachable X display was found on this system.</source>
-        <translation>本机未找到可达的 X 显示。</translation>
-    </message>
-    <message>
-        <source>Recommendation</source>
-        <translation>建议</translation>
-    </message>
-    <message>
-        <source>Don't ask again</source>
-        <translation>不再提示</translation>
-    </message>
-    <message>
-        <source>Could not restart</source>
-        <translation>无法自动重启</translation>
-    </message>
-    <message>
-        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
-        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
-    </message>
-</context>
-<context>
-    <name>olive::HALBackendDialog</name>
-    <message>
-        <source>HAL Backend Selection</source>
-        <translation>HAL 后端选择</translation>
-    </message>
-    <message>
-        <source>Detected hardware environment (GpuEnvironmentProbe):</source>
-        <translation>检测到的硬件环境（GpuEnvironmentProbe）：</translation>
-    </message>
-    <message>
-        <source>Item</source>
-        <translation>项目</translation>
-    </message>
-    <message>
-        <source>Value</source>
-        <translation>值</translation>
-    </message>
-    <message>
-        <source>Environment</source>
-        <translation>环境</translation>
-    </message>
-    <message>
-        <source>Primary GPU</source>
-        <translation>主 GPU</translation>
-    </message>
-    <message>
-        <source>Vendor</source>
-        <translation>厂商</translation>
-    </message>
-    <message>
-        <source>Total VRAM</source>
-        <translation>显存总量</translation>
-    </message>
-    <message>
-        <source>%1 MB</source>
-        <translation>%1 MB</translation>
-    </message>
-    <message>
-        <source>Display server</source>
-        <translation>显示服务器</translation>
-    </message>
-    <message>
-        <source>Hybrid topology</source>
-        <translation>混合拓扑</translation>
-    </message>
-    <message>
-        <source>Yes</source>
-        <translation>是</translation>
-    </message>
-    <message>
-        <source>No</source>
-        <translation>否</translation>
-    </message>
-    <message>
-        <source>Unknown</source>
-        <translation>未知</translation>
-    </message>
-    <message>
-        <source>Detected devices</source>
-        <translation>检测到的设备</translation>
-    </message>
-    <message>
-        <source>%1 MB VRAM%2</source>
-        <translation>%1 MB 显存%2</translation>
-    </message>
-    <message>
-        <source>, primary display</source>
-        <translation>，主显示器</translation>
-    </message>
-    <message>
-        <source>Driver</source>
-        <translation>驱动</translation>
-    </message>
-    <message>
-        <source>Backend availability</source>
-        <translation>后端可用性</translation>
-    </message>
-    <message>
-        <source>Available</source>
-        <translation>可用</translation>
-    </message>
-    <message>
-        <source>Unavailable</source>
-        <translation>不可用</translation>
-    </message>
-    <message>
-        <source>Unavailable - the OpenGL context is not on the NVIDIA GPU</source>
-        <translation>不可用——OpenGL 上下文不在 NVIDIA GPU 上</translation>
-    </message>
-    <message>
-        <source>Reinforced CPU Decode + Native YUV Upload (Tier 3)</source>
-        <translation>强化 CPU 解码 + 原生 YUV 上传（Tier 3）</translation>
-    </message>
-    <message>
-        <source>VideoToolbox (Tier 2, macOS)</source>
-        <translation>VideoToolbox（Tier 2，macOS）</translation>
-    </message>
-    <message>
-        <source>VA-API DMA-BUF (Tier 2, Linux)</source>
-        <translation>VA-API DMA-BUF（Tier 2，Linux）</translation>
-    </message>
-    <message>
-        <source>D3D11 Interop (Tier 2, Windows)</source>
-        <translation>D3D11 互操作（Tier 2，Windows）</translation>
-    </message>
-    <message>
-        <source>Decode capability matrix</source>
-        <translation>解码能力矩阵</translation>
-    </message>
-    <message>
-        <source>HEVC 8-bit</source>
-        <translation>HEVC 8 位</translation>
-    </message>
-    <message>
-        <source>HEVC 10-bit</source>
-        <translation>HEVC 10 位</translation>
-    </message>
-    <message>
-        <source>AV1 8-bit</source>
-        <translation>AV1 8 位</translation>
-    </message>
-    <message>
-        <source>AV1 10-bit</source>
-        <translation>AV1 10 位</translation>
-    </message>
-    <message>
-        <source>Backend to use for this session:</source>
-        <translation>本次会话使用的后端：</translation>
-    </message>
-    <message>
-        <source>Expected path (auto routing): %1</source>
-        <translation>预期路径（自动路由）：%1</translation>
-    </message>
-    <message>
-        <source>Will attempt: %1 (forced for this process only). If it fails to initialize, Olive falls back to automatic routing.</source>
-        <translation>将尝试：%1（仅对本次进程强制）。若初始化失败，Olive 会回退到自动路由。</translation>
-    </message>
-    <message>
-        <source>The probe marks it unavailable here, so OK will offer a working alternative first.</source>
-        <translation>探测显示它在此处不可用，因此点击“确定”会先提供一个可用的替代方案。</translation>
-    </message>
-    <message>
-        <source>The selection applies to this process only and is not saved. Automatic routing can also be forced without a dialog via -hal-backend &lt;name&gt; or the OLIVE_HAL_BACKEND environment variable.</source>
-        <translation>该选择仅对本次进程生效，不会保存。也可以不用对话框强制自动路由：-hal-backend &lt;name&gt; 或环境变量 OLIVE_HAL_BACKEND。</translation>
-    </message>
-    <message>
-        <source>Backend unavailable</source>
-        <translation>后端不可用</translation>
-    </message>
-    <message>
-        <source>CUDA-NVDEC (Tier 1) cannot work in this session: CUDA-GL interop requires the OpenGL context and CUDA to be on the same NVIDIA GPU, but the current OpenGL context is on "%1". The frame pool will fail to register its textures and this stream will produce no picture.</source>
-        <translation>CUDA-NVDEC（Tier 1）在本会话无法工作：CUDA-GL 互操作要求 OpenGL 上下文与 CUDA 位于同一块 NVIDIA GPU，而当前 OpenGL 上下文在“%1”上。帧池将无法注册纹理，该路流不会出画面。</translation>
-    </message>
-    <message>
-        <source>The probe reports that backend "%1" is unavailable on this system.</source>
-        <translation>探测显示后端“%1”在本机不可用。</translation>
-    </message>
-    <message>
-        <source>Use Tier 2 (VA-API hardware decode)</source>
-        <translation>改用 Tier 2（VA-API 硬件解码）</translation>
-    </message>
-    <message>
-        <source>Use Tier 3 (CPU decode)</source>
-        <translation>改用 Tier 3（CPU 解码）</translation>
-    </message>
-    <message>
-        <source>Switch to Xwayland + PRIME</source>
-        <translation>改用 Xwayland + PRIME</translation>
-    </message>
-    <message>
-        <source>Force %1 anyway</source>
-        <translation>仍然强制 %1</translation>
-    </message>
-    <message>
-        <source>Could not restart</source>
-        <translation>无法自动重启</translation>
-    </message>
-    <message>
-        <source>The session preference was saved, but Olive could not restart itself. It will take effect the next time you start Olive.</source>
-        <translation>会话偏好已保存，但 Olive 无法自动重启。将在你下次启动 Olive 时生效。</translation>
-    </message>
-    <message>
-        <source>detected unavailable</source>
-        <translation>探测为不可用</translation>
-    </message>
-    <message>
-        <source>Auto (dynamic probe)</source>
-        <translation>自动（动态探测）</translation>
-    </message>
-    <message>
-        <source>the OpenGL context is not on the NVIDIA GPU</source>
-        <translation>OpenGL 上下文不在 NVIDIA GPU 上</translation>
-    </message>
-    <message>
-        <source>Planned - not implemented; Tier 3 is used instead</source>
-        <translation>规划中——尚未实现；实际使用 Tier 3</translation>
-    </message>
-</context>
-
-<context>
-    <name>CrashHandler</name>
-    <message>
-        <source>Olivelan Crash Report</source>
-        <translation>Olivelan 崩溃报告</translation>
-    </message>
-    <message>
-        <source>Olivelan did not shut down correctly.</source>
-        <translation>Olivelan 上次未能正常退出。</translation>
-    </message>
-    <message>
-        <source>A crash report was written locally.
-
-Log file:
-%1
-
-You can attach the log file to a bug report if you would like help.</source>
-        <translation>已在本地生成崩溃记录文件。
-
-日志文件位置：
-%1
-
-如果需要排查帮助，您可以将该日志文件附在 Issue 缺陷报告中。</translation>
-    </message>
-    <message>
-        <source>Open Log Folder</source>
-        <translation>打开日志所在文件夹</translation>
-    </message>
-    <message>
-        <source>Close</source>
-        <translation>关闭</translation>
-    </message>
-</context>
-<context>
-    <name>olive::SplashScreen</name>
-    <message>
-        <source>Starting Olivelan...</source>
-        <translation>正在启动 Olivelan...</translation>
-    </message>
-</context>
-<context>
-    <name>Core</name>
-    <message>
-        <source>Initializing application core...</source>
-        <translation>正在初始化应用程序核心...</translation>
-    </message>
-    <message>
-        <source>Initializing OpenColorIO 2.5.1 color management...</source>
-        <translation>正在载入 OpenColorIO 2.5.1 色彩管理引擎...</translation>
-    </message>
-    <message>
-        <source>Setting up background render &amp; frame pipeline...</source>
-        <translation>正在初始化后台渲染与帧池管线...</translation>
-    </message>
-    <message>
-        <source>Building workspace layout and panels...</source>
-        <translation>正在构建工作区界面与面板布局...</translation>
-    </message>
-    <message>
-        <source>Ready</source>
-        <translation>就绪</translation>
-    </message>
-</context>
-
 </TS>

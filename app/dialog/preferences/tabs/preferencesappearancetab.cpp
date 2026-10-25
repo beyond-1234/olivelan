@@ -60,7 +60,7 @@ PreferencesAppearanceTab::PreferencesAppearanceTab()
   connect(import_theme_btn, &QPushButton::clicked, this, [this]() {
     const QString file = QFileDialog::getOpenFileName(
         this, tr("Import Theme File"), QString(),
-        tr("Olive Themes & QSS (*.qss *.olivetheme *.zip);;All Files (*.*)"));
+        tr("Olivelan Themes & QSS (*.qss *.olivetheme *.zip);;All Files (*.*)"));
     if (!file.isEmpty()) {
       ImportTheme(file);
     }
@@ -176,8 +176,8 @@ void PreferencesAppearanceTab::Accept(MultiUndoCommand *command)
       QMessageBox::warning(
           this, tr("Theme Error"),
           details.isEmpty()
-              ? tr("The selected theme could not be applied. Olive has fallen back to the default theme.")
-              : tr("The selected theme could not be applied. Olive has fallen back to the default theme.\n\n%1")
+              ? tr("The selected theme could not be applied. Olivelan has fallen back to the default theme.")
+              : tr("The selected theme could not be applied. Olivelan has fallen back to the default theme.\n\n%1")
                     .arg(details));
       OLIVE_CONFIG("Style") = ThemeManager::instance()->CurrentThemeId();
       RefreshThemeCombo();

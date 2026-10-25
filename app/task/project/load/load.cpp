@@ -45,10 +45,10 @@ bool ProjectLoadTask::Run()
   case ProjectSerializer::kSuccess:
     break;
   case ProjectSerializer::kProjectTooOld:
-    SetError(tr("This project is from a version of Olive that is no longer supported in this version."));
+    SetError(tr("This project is from a version of Olivelan that is no longer supported in this version."));
     break;
   case ProjectSerializer::kProjectTooNew:
-    SetError(tr("This project is from a newer version of Olive and cannot be opened in this version."));
+    SetError(tr("This project is from a newer version of Olivelan and cannot be opened in this version."));
     break;
   case ProjectSerializer::kUnknownVersion:
     SetError(tr("Failed to determine project version."));

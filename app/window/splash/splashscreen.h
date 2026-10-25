@@ -19,6 +19,8 @@ public:
 protected:
   void paintEvent(QPaintEvent *event) override;
 
+  void changeEvent(QEvent *event) override;
+
 private:
   QString status_message_;
   int progress_percent_{-1};

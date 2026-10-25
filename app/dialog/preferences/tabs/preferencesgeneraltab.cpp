@@ -57,12 +57,7 @@ PreferencesGeneralTab::PreferencesGeneralTab()
 
     QString current_language = OLIVE_CONFIG("Language").toString();
     if (current_language.isEmpty()) {
-      const QString sys_lang = QLocale::system().name();
-      if (sys_lang.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive) && languages.contains(QStringLiteral("zh_CN"))) {
-        current_language = QStringLiteral("zh_CN");
-      } else {
-        current_language = QStringLiteral("en_US");
-      }
+      current_language = Core::DefaultLanguage();
     }
     language_combobox_->setCurrentIndex(languages.indexOf(current_language));
 
@@ -171,7 +166,7 @@ void PreferencesGeneralTab::Accept(MultiUndoCommand *command)
   // If the language has changed, set it now
   if (OLIVE_CONFIG("Language").toString() != set_language) {
     OLIVE_CONFIG("Language") = set_language;
-    Core::instance()->SetLanguage(set_language.isEmpty() ? QLocale::system().name() : set_language);
+    Core::instance()->SetLanguage(set_language.isEmpty() ? Core::DefaultLanguage() : set_language);
   }
 
   OLIVE_CONFIG("AutorecoveryEnabled") = autorecovery_enabled_->isChecked();

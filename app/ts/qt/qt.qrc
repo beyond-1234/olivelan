@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/i18n/qt">
+    <file alias="qtbase_zh_CN.qm">qtbase_zh_CN.qm</file>
+  </qresource>
+</RCC>

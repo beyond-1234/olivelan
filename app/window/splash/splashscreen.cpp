@@ -37,6 +37,17 @@ void SplashScreen::SetStatus(const QString &message, int progress_percent)
   qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
+void SplashScreen::changeEvent(QEvent *event)
+{
+  if (event->type() == QEvent::LanguageChange) {
+    // The captions are tr()'d while painting, so a repaint is enough to follow the translator that
+    // Core installs right after the splash has been created.
+    update();
+  }
+
+  QWidget::changeEvent(event);
+}
+
 void SplashScreen::Finish(QWidget *main_window)
 {
   if (main_window) {
@@ -106,7 +117,7 @@ void SplashScreen::paintEvent(QPaintEvent *)
   tag_font.setPixelSize(12);
   tag_font.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
   p.setFont(tag_font);
-  p.drawText(122, 94, QStringLiteral("GPU-RESIDENT HIGH PERFORMANCE NLE"));
+  p.drawText(122, 94, tr("GPU-RESIDENT HIGH PERFORMANCE NLE"));
 
   // 6. Center feature banner / creative illustration area
   p.setPen(QColor(0x73, 0x79, 0x85));
@@ -114,7 +125,7 @@ void SplashScreen::paintEvent(QPaintEvent *)
   info_font.setPixelSize(11);
   info_font.setLetterSpacing(QFont::PercentageSpacing, 100);
   p.setFont(info_font);
-  p.drawText(46, 170, QStringLiteral("OpenColorIO 2.5.1 Single-Track • Tier 1/2 Hardware Zero-Copy HAL • Metro Fluent UI"));
+  p.drawText(46, 170, tr("OpenColorIO 2.5.1 Single-Track • Tier 1/2 Hardware Zero-Copy HAL • Metro Fluent UI"));
 
   // 7. Status message & progress bar
   // Status message
@@ -147,7 +158,7 @@ void SplashScreen::paintEvent(QPaintEvent *)
   QFont footer_font = p.font();
   footer_font.setPixelSize(10);
   p.setFont(footer_font);
-  p.drawText(44, 334, QStringLiteral("© 2024-2026 Olivelan Contributors. All rights reserved."));
+  p.drawText(44, 334, tr("© 2024-2026 Olivelan Contributors. All rights reserved."));
 
   // Version identifier on bottom right
   p.drawText(QRect(width() - 200, 322, 156, 16), Qt::AlignRight | Qt::AlignVCenter, version_string_);

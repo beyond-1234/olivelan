@@ -78,8 +78,8 @@ GpuSessionDialog::GpuSessionDialog(QWidget* parent) :
     // do it by hand.
     if (!GpuSessionAdvisor::RestartWithSession(mode)) {
       QMessageBox::warning(this, tr("Could not restart"),
-          tr("The session preference was saved, but Olive could not restart itself. "
-             "It will take effect the next time you start Olive."),
+          tr("The session preference was saved, but Olivelan could not restart itself. "
+             "It will take effect the next time you start Olivelan."),
           QMessageBox::Ok);
     }
 

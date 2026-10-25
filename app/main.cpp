@@ -368,6 +368,36 @@ int main(int argc, char *argv[])
     a.reset(new QCoreApplication(argc, argv));
   }
 
+  // Install a translator before any window exists. The splash screen and the HAL backend dialog are
+  // built before Core::SetStartupLocale() runs, so without this they would always be English no
+  // matter which language the user configured. Core later installs its own translator, which takes
+  // precedence because Qt searches the installed translators in reverse order.
+  QTranslator early_translator;
+  QTranslator early_qt_translator;
+  if (dynamic_cast<QApplication *>(a.get())) {
+    bool loaded = false;
+    if (!startup_params.startup_language().isEmpty()) {
+      // --ts takes an arbitrary .qm path; the Qt catalog locale is unknown, so skip it (Core does
+      // the same for this option).
+      loaded = early_translator.load(startup_params.startup_language());
+    } else {
+      QString locale = olive::Config::Current()[QStringLiteral("Language")].toString();
+      if (locale.isEmpty()) {
+        locale = olive::Core::DefaultLanguage();
+      }
+
+      // Qt's catalog first, so Olivelan's own strings win where both define a context.
+      if (early_qt_translator.load(QStringLiteral(":/i18n/qt/qtbase_%1").arg(locale))) {
+        QCoreApplication::installTranslator(&early_qt_translator);
+      }
+      loaded = early_translator.load(QStringLiteral(":/ts/%1").arg(locale));
+    }
+
+    if (loaded) {
+      QCoreApplication::installTranslator(&early_translator);
+    }
+  }
+
   // Offline crash handling: rolling log file + a marker that survives fatal signals.
   olive::CrashHandler::Install();
 
@@ -383,32 +413,9 @@ int main(int argc, char *argv[])
   // startup so the forced backend applies to every decoder instance. Cancelled
   // dialog keeps whatever was set from -hal-backend / OLIVE_HAL_BACKEND.
   //
-  // Patch 0081 (Phase 9): the translator is normally installed by Core::SetStartupLocale(), which
-  // runs inside Core::Start() - i.e. *after* this dialog. Without installing one here too, this
-  // dialog is the one piece of UI that could never be translated. Declared at this scope so it
-  // outlives the dialog; Core later installs its own, which takes precedence in Qt's
-  // reverse-order translator lookup.
-  QTranslator early_translator;
-
   if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
       && hal_dialog_option->IsSet()
       && dynamic_cast<QApplication*>(a.get())) {
-    bool early_loaded = false;
-    if (!startup_params.startup_language().isEmpty()) {
-      early_loaded = early_translator.load(startup_params.startup_language());
-    } else {
-      QString locale = olive::Config::Current()[QStringLiteral("Language")].toString();
-      if (locale.isEmpty()) {
-        // Core is not up yet, but the rule for picking a language is Core's.
-        locale = olive::Core::DefaultLanguage();
-      }
-      early_loaded = early_translator.load(QStringLiteral(":/ts/%1").arg(locale));
-    }
-
-    if (early_loaded) {
-      QCoreApplication::installTranslator(&early_translator);
-    }
-
     olive::HALBackendDialog hal_dialog;
     if (hal_dialog.exec() == QDialog::Accepted) {
       olive::HardwarePipelineFactory::SetForcedBackend(hal_dialog.SelectedBackend());

@@ -189,8 +189,8 @@ QString HALBackendDialog::ResolveUnavailableBackend(const QString& requested)
     // user to do it themselves. Closing the dialog lets main() see RestartLaunched() and exit.
     if (!GpuSessionAdvisor::RestartWithSession(GpuSessionAdvisor::Mode::XwaylandPrime)) {
       QMessageBox::warning(this, tr("Could not restart"),
-          tr("The session preference was saved, but Olive could not restart itself. "
-             "It will take effect the next time you start Olive."),
+          tr("The session preference was saved, but Olivelan could not restart itself. "
+             "It will take effect the next time you start Olivelan."),
           QMessageBox::Ok);
     } else {
       reject();
@@ -369,7 +369,7 @@ void HALBackendDialog::UpdateEffectivePathLabel()
   const QVariant available = backend_combo_->itemData(idx, Qt::UserRole + 1);
 
   QString text = tr("Will attempt: %1 (forced for this process only). If it fails to initialize, "
-                    "Olive falls back to automatic routing.")
+                    "Olivelan falls back to automatic routing.")
                      .arg(display);
 
   if (available.isValid() && !available.toBool()) {

@@ -2,6 +2,16 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US">
 <context>
+    <name>olive::ExportDialog</name>
+    <message numerus="yes">
+        <source>Filename doesn&apos;t contain enough digits for the amount of frames this export will need (need %1 for %n frame(s)).</source>
+        <translation>
+            <numerusform>Filename doesn&apos;t contain enough digits for the amount of frames this export will need (need %1 for %n frame).</numerusform>
+            <numerusform>Filename doesn&apos;t contain enough digits for the amount of frames this export will need (need %1 for %n frames).</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>olive::Footage</name>
     <message numerus="yes">
         <source>%1: Audio - %n Channel(s), %2Hz</source>
@@ -48,6 +58,16 @@
         <translation>
             <numerusform>%n minute</numerusform>
             <numerusform>%n minutes</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>olive::ViewerDisplayWidget</name>
+    <message numerus="yes">
+        <source>%n skipped frame(s) detected during playback</source>
+        <translation>
+            <numerusform>%n skipped frame detected during playback</numerusform>
+            <numerusform>%n skipped frames detected during playback</numerusform>
         </translation>
     </message>
 </context>

@@ -98,6 +98,7 @@ Core::Core(const CoreParams& params) :
   instance_ = this;
 
   translator_ = new QTranslator(this);
+  qt_translator_ = new QTranslator(this);
 }
 
 Core *Core::instance()
@@ -1038,7 +1039,7 @@ void Core::SaveAutorecovery()
       } else {
         QMessageBox::critical(main_window_, tr("Auto-Recovery Error"),
                               tr("Failed to save auto-recovery to \"%1\". "
-                                 "Olive may not have permission to this directory.")
+                                 "Olivelan may not have permission to this directory.")
                               .arg(project_autorecovery_dir.absolutePath()));
       }
     }
@@ -1110,10 +1111,10 @@ QString Core::GetProjectFilter(bool include_any_filter)
 {
   static const QVector< QPair<QString, QString> > FILTERS = {
     // Standard compressed Olive project
-    {tr("Olive Project"), QStringLiteral("ove")},
+    {tr("Olivelan Project"), QStringLiteral("ove")},
 
     // Uncompressed XML Olive project
-    {tr("Olive Project (Uncompressed XML)"), QStringLiteral("ovexml")},
+    {tr("Olivelan Project (Uncompressed XML)"), QStringLiteral("ovexml")},
 
     // OpenTimelineIO project, if available
 #ifdef USE_OTIO
@@ -1256,7 +1257,7 @@ void Core::CheckForAutoRecoveries()
     if (autorecovery_index.open(QFile::ReadOnly)) {
       QStringList recovery_filenames = QString::fromUtf8(autorecovery_index.readAll()).split('\n');
 
-      AutoRecoveryDialog ard(tr("The following projects had unsaved changes when Olive "
+      AutoRecoveryDialog ard(tr("The following projects had unsaved changes when Olivelan "
                                 "forcefully quit. Would you like to load them?"),
                              recovery_filenames, true, main_window_);
       ard.exec();
@@ -1308,7 +1309,7 @@ void Core::WarnCacheFull()
     shown_cache_full_warning_ = true;
 
     QMessageBox::warning(main_window_, tr("Disk Cache Full"),
-                         tr("The disk cache is currently full and Olive is having to delete old "
+                         tr("The disk cache is currently full and Olivelan is having to delete old "
                             "frames to keep it within the limits set in the Disk preferences. This "
                             "will result in SIGNIFICANTLY reduced cache performance.\n\n"
                             "To remedy this, please do one of the following:\n\n"
@@ -1679,13 +1680,21 @@ bool Core::ValidateFootageInLoadedProject(Project* project, const QString& proje
 bool Core::SetLanguage(const QString &locale)
 {
   QApplication::removeTranslator(translator_);
+  QApplication::removeTranslator(qt_translator_);
 
-  QString resource_path = QStringLiteral(":/ts/%1").arg(locale);
-  if (translator_->load(resource_path) && QApplication::installTranslator(translator_)) {
-    return true;
+  const QString resource_path = QStringLiteral(":/ts/%1").arg(locale);
+  if (!translator_->load(resource_path)) {
+    return false;
   }
 
-  return false;
+  // Qt's own strings (standard dialog buttons, line-edit context menus, message box titles and the
+  // non-native file dialog) come from a separate catalog. Install it first so our catalog wins if
+  // both define the same context, since Qt looks translators up in reverse install order.
+  if (qt_translator_->load(QStringLiteral(":/i18n/qt/qtbase_%1").arg(locale))) {
+    QApplication::installTranslator(qt_translator_);
+  }
+
+  return QApplication::installTranslator(translator_);
 }
 
 void Core::OpenProject()

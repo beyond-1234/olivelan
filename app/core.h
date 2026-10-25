@@ -617,6 +617,11 @@ private:
   QTranslator* translator_;
 
   /**
+   * @brief Qt's own translation catalog (standard dialog buttons, context menus, ...)
+   */
+  QTranslator* qt_translator_;
+
+  /**
    * @brief List of projects that are unsaved but have autorecovery projects
    */
   QVector<QUuid> autorecovered_projects_;

@@ -64,7 +64,7 @@ AboutDialog::AboutDialog(bool welcome_dialog, QWidget *parent) :
                                 "<p>%3</p>" // First statement
                                 "</body></html>").arg(QApplication::applicationName(),
                                                       QApplication::applicationVersion(),
-                                                      tr("Olive is a free open source non-linear video editor. "
+                                                      tr("Olivelan is a free open source non-linear video editor. "
                                                          "This software is licensed under the GNU GPL Version 3.")));
 
   // Set text formatting
@@ -84,9 +84,9 @@ AboutDialog::AboutDialog(bool welcome_dialog, QWidget *parent) :
   QString opening_statement;
 
   if (welcome_dialog || patrons.isEmpty()) {
-    opening_statement = tr("<b>Olive relies on support from the community to continue its development.</b>");
+    opening_statement = tr("<b>Olivelan relies on support from the community to continue its development.</b>");
   } else {
-    opening_statement = tr("Olive wouldn't be possible without the support of gracious donations from the following people.");
+    opening_statement = tr("Olivelan wouldn't be possible without the support of gracious donations from the following people.");
   }
 
   QLabel* support_lbl = new QLabel(tr("<html>%1 "

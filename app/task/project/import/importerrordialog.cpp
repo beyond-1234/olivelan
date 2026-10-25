@@ -34,7 +34,7 @@ ProjectImportErrorDialog::ProjectImportErrorDialog(const QStringList& filenames,
 
   setWindowTitle(tr("Import Error"));
 
-  layout->addWidget(new QLabel(tr("The following files failed to import. Olive likely does not "
+  layout->addWidget(new QLabel(tr("The following files failed to import. Olivelan likely does not "
                                   "support their formats.")));
 
   QListWidget* list_widget = new QListWidget();

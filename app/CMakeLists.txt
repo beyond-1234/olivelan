@@ -63,6 +63,7 @@ configure_file(ts/translations.qrc.in ts/translations.qrc @ONLY)
 set(OLIVE_RESOURCES
   ${OLIVE_RESOURCES}
   ${CMAKE_CURRENT_BINARY_DIR}/ts/translations.qrc
+  ${CMAKE_CURRENT_SOURCE_DIR}/ts/qt/qt.qrc
 )
 
 # Add version object

@@ -540,7 +540,7 @@ QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
   if (assessment.nvidia_present) {
     if (assessment.nvidia_has_display) {
       actions << Tr("[Best] Discrete GPU direct: a display on the discrete GPU is already "
-                    "connected (%1). Make that screen the primary one, or move the Olive window "
+                    "connected (%1). Make that screen the primary one, or move the Olivelan window "
                     "onto it, and the OpenGL context lands on the discrete GPU - keeping the "
                     "native session and getting Tier 1.")
                     .arg(assessment.connected_displays);
@@ -570,7 +570,7 @@ QStringList GpuSessionAdvisor::RecommendedActions(const Assessment& assessment)
       actions << Tr("[Second best] Xwayland + PRIME: switch to X11 (xcb) so the OpenGL context "
                     "lands on the discrete GPU, which makes Tier 1 reachable. The cost is the "
                     "native session (per-monitor fractional scaling, native input methods). "
-                    "Switching restarts Olive into the new session.");
+                    "Switching restarts Olivelan into the new session.");
     } else if (!assessment.xwayland_available) {
       actions << Tr("Xwayland is not available (no reachable X display), so that option cannot be "
                     "selected on this machine.");

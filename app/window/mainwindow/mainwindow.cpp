@@ -727,9 +727,9 @@ void MainWindow::ShowNouveauWarning()
 {
   QMessageBox::warning(this,
                        tr("Driver Warning"),
-                       tr("Olive has detected your system is using the Nouveau graphics driver.\n\nThis driver is "
-                          "known to have stability and performance issues with Olive. It is highly recommended "
-                          "you install the proprietary NVIDIA driver before continuing to use Olive."),
+                       tr("Olivelan has detected your system is using the Nouveau graphics driver.\n\nThis driver is "
+                          "known to have stability and performance issues with Olivelan. It is highly recommended "
+                          "you install the proprietary NVIDIA driver before continuing to use Olivelan."),
                        QMessageBox::Ok);
 }
 #endif
