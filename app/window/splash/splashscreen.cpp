@@ -12,7 +12,7 @@ SplashScreen::SplashScreen(QWidget *parent)
   : QWidget(parent, Qt::FramelessWindowHint | Qt::SplashScreen | Qt::WindowStaysOnTopHint),
     status_message_(tr("Starting Olivelan...")),
     version_string_(QCoreApplication::applicationVersion().isEmpty()
-                        ? QStringLiteral("v0.2.0")
+                        ? QStringLiteral("v0.1.0-alpha")
                         : QStringLiteral("v%1").arg(QCoreApplication::applicationVersion()))
 {
   setAttribute(Qt::WA_TranslucentBackground, false);

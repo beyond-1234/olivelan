@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
-project(olivelan VERSION 0.2.0 LANGUAGES C CXX)
+project(olivelan VERSION 0.1.0 LANGUAGES C CXX)
 
 option(BUILD_TESTS "Build unit tests" OFF)
 option(USE_WERROR "Error on compile warning" OFF)
