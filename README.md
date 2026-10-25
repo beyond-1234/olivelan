@@ -81,13 +81,10 @@ ctest --output-on-failure
 ```
 
 #### 打包分发与质量验证
-工程自包含打包脚本与核心质量门禁收录于 [`scripts/`](scripts/) 目录：
+工程自包含打包脚本与核心质量门禁收录于 [`scripts/`](scripts/) 目录（现阶段官方二进制发布聚焦于 Linux AppImage，macOS 暂未纳入官方预编译分发）：
 ```bash
-# 制作 Linux AppImage（兼容 Ubuntu 22.04 LTS / glibc 2.35+）
+# 制作 Linux AppImage（兼容 Ubuntu 22.04 LTS / glibc 2.35+，唯一官方推荐独立运行包）
 bash scripts/dist/build_linux_appimage.sh
-
-# 制作 macOS 自包含 .app
-bash scripts/dist/build_macos_dist.sh
 
 # 执行 GPU 离屏像素级色彩一致性测试
 bash scripts/verify/verify_gpu_color.sh
