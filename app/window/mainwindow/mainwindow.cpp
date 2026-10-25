@@ -599,12 +599,20 @@ void MainWindow::closeEvent(QCloseEvent *e)
 
   scope_panel_->SetViewerPanel(nullptr);
 
+  // Panels must be destroyed here, while PanelManager and the other services still exist:
+  // Core::Stop() destroys those services before it deletes this window.
   PanelManager::instance()->DeleteAllPanels();
 
   SaveCustomShortcuts();
 
   QMainWindow::closeEvent(e);
 
+  // This is the application's only window, so closing it terminates the application. Do it
+  // explicitly: QGuiApplication::lastWindowClosed() is not emitted reliably on macOS while the
+  // platform is still settling the window's visibility state.
+  if (e->isAccepted()) {
+    QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+  }
 }
 
 void MainWindow::StatusBarDoubleClicked()

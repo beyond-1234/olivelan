@@ -58,7 +58,11 @@ PanelWidget::PanelWidget(const QString &object_name) :
 
 PanelWidget::~PanelWidget()
 {
-  PanelManager::instance()->UnregisterPanel(this);
+  // PanelManager may already be gone when the main window is destroyed during application
+  // shutdown; do not touch a dangling singleton in that case.
+  if (PanelManager* manager = PanelManager::instance()) {
+    manager->UnregisterPanel(this);
+  }
 }
 
 void PanelWidget::SetBorderVisible(bool enabled)
