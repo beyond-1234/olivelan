@@ -327,6 +327,15 @@ public:
 
   bool IsMagicEnabled() const { return magic_; }
 
+  /**
+   * @brief Language the UI starts in when the user has not configured one
+   *
+   * Follows the host system's primary language: zh_CN for Chinese systems, en_US for everything
+   * else. Exposed so the pre-Core startup UI (which runs before SetStartupLocale()) uses the same
+   * rule instead of its own copy.
+   */
+  static QString DefaultLanguage();
+
 public slots:
   /**
    * @brief Starts an open file dialog to load a project from file
@@ -470,7 +479,20 @@ signals:
    */
   void ColorPickerColorEmitted(const Color &reference, const Color &display);
 
+protected:
+  /**
+   * @brief Intercepts application-quit requests
+   *
+   * @see QuitApplication()
+   */
+  bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
+  /**
+   * @brief Leave the event loop once the main window has finished closing
+   */
+  void QuitApplication();
+
   /**
    * @brief Get the file filter than can be used with QFileDialog to open and save compatible projects
    */

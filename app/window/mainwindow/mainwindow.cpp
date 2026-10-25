@@ -607,11 +607,9 @@ void MainWindow::closeEvent(QCloseEvent *e)
 
   QMainWindow::closeEvent(e);
 
-  // This is the application's only window, so closing it terminates the application. Do it
-  // explicitly: QGuiApplication::lastWindowClosed() is not emitted reliably on macOS while the
-  // platform is still settling the window's visibility state.
   if (e->isAccepted()) {
-    QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+    // Report the outcome; Core decides whether that means terminating the application.
+    emit Closed();
   }
 }
 

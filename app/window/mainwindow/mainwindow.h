@@ -122,6 +122,15 @@ protected:
 
   virtual void closeEvent(QCloseEvent* e) override;
 
+signals:
+  /**
+   * @brief Emitted after a close request was accepted and the panels have been torn down
+   *
+   * The window itself does not decide what happens next: Core owns the window and terminates the
+   * application when this fires. Emitted only when the close was not cancelled by the user.
+   */
+  void Closed();
+
 private:
   /**
    * @brief Applies the default dock layout once the window actually has a size.

@@ -36,7 +36,6 @@ extern "C" {
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QFontDatabase>
-#include <QLocale>
 #include <QMessageBox>
 #include <QSurfaceFormat>
 #include <QTranslator>
@@ -56,52 +55,6 @@ extern "C" {
 #include "node/project/serializer/serializer.h"
 #include "bootstrap/graphicsfallback.h"
 #include "version.h"
-
-namespace {
-
-/**
- * @brief Handles application-quit requests (Cmd+Q, Dock "Quit", AppleEvent "quit").
- *
- * Qt answers QEvent::Quit from QApplication::event() with QApplication::closeAllWindows(),
- * whose implementation (QApplicationPrivate::tryCloseAllWidgetWindows) restarts its window
- * enumeration after every window it manages to close and returns false only when a window
- * refuses to close. On macOS a hidden top-level window can keep reporting isVisible() == true
- * for a moment after the platform accepted the close (WA_WState_Visible is only cleared once
- * the window system confirms the hide), so that helper keeps closing the very same window
- * forever - the main thread spins at 100% CPU and the app can never be quit.
- *
- * KDDockWidgets' main window is affected, so instead of letting closeAllWindows() run we close
- * the window exactly once and leave the event loop ourselves. The Quit event is consumed so that
- * QApplication::event() never reaches the broken code path.
- */
-class QuitRequestHandler : public QObject
-{
-public:
-  explicit QuitRequestHandler(QObject *parent = nullptr) : QObject(parent) {}
-
-  bool eventFilter(QObject *obj, QEvent *e) override
-  {
-    Q_UNUSED(obj)
-
-    if (e->type() != QEvent::Quit) {
-      return false;
-    }
-
-    olive::MainWindow *window = olive::Core::instance() ? olive::Core::instance()->main_window() : nullptr;
-
-    if (window && !window->close()) {
-      // MainWindow::closeEvent() rejected the close (the user cancelled the unsaved-changes
-      // prompt), so keep running.
-      return true;
-    }
-
-    QCoreApplication::exit(0);
-
-    return true;
-  }
-};
-
-} // namespace
 
 int decompress_project(const QString &project)
 {
@@ -446,10 +399,8 @@ int main(int argc, char *argv[])
     } else {
       QString locale = olive::Config::Current()[QStringLiteral("Language")].toString();
       if (locale.isEmpty()) {
-        // Same rule as Core::SetStartupLocale(): follow the host system's primary language.
-        locale = QLocale::system().name().startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)
-                     ? QStringLiteral("zh_CN")
-                     : QStringLiteral("en_US");
+        // Core is not up yet, but the rule for picking a language is Core's.
+        locale = olive::Core::DefaultLanguage();
       }
       early_loaded = early_translator.load(QStringLiteral(":/ts/%1").arg(locale));
     }
@@ -491,11 +442,6 @@ int main(int argc, char *argv[])
 
     // Surface a previous crash (if any) once the main window exists. Never uploads anything.
     olive::CrashHandler::ShowPendingCrashReport(c.main_window());
-
-    // Replace Qt's closeAllWindows()-based quit handling, which does not terminate reliably with
-    // KDDockWidgets' main window on macOS (see QuitRequestHandler).
-    QuitRequestHandler quit_handler;
-    a->installEventFilter(&quit_handler);
 
     ret = a->exec();
 

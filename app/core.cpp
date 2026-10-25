@@ -174,6 +174,12 @@ void Core::Start()
     // Start GUI
     StartGUI(core_params_.fullscreen());
 
+    // The main window is the application's only window, so closing it quits the application. Core
+    // owns the window's lifetime, so the quit policy lives here instead of inside the widget (or in
+    // main(), which should only wire objects together).
+    connect(main_window_, &MainWindow::Closed, this, &Core::QuitApplication);
+    qApp->installEventFilter(this);
+
     if (splash) {
       splash->SetStatus(tr("Ready"), 100);
       splash->Finish(main_window_);
@@ -1150,22 +1156,57 @@ void Core::SetStartupLocale()
   }
 
   QString use_locale = OLIVE_CONFIG("Language").toString();
-
   if (use_locale.isEmpty()) {
-    // If user has not explicitly configured a language, respect the host system's primary locale.
-    // e.g. "en_US" for English systems, "zh_CN" for Chinese systems.
-    const QString sys_lang = QLocale::system().name();
-    if (sys_lang.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)) {
-      use_locale = QStringLiteral("zh_CN");
-    } else {
-      use_locale = QStringLiteral("en_US");
-    }
+    use_locale = DefaultLanguage();
   }
 
   if (!SetLanguage(use_locale)) {
     qWarning() << "Trying to use locale" << use_locale << "but couldn't find a translation for it; falling back to en_US";
     SetLanguage(QStringLiteral("en_US"));
   }
+}
+
+QString Core::DefaultLanguage()
+{
+  // If the user has not explicitly configured a language, respect the host system's primary locale.
+  // e.g. "en_US" for English systems, "zh_CN" for Chinese systems.
+  return QLocale::system().name().startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)
+             ? QStringLiteral("zh_CN")
+             : QStringLiteral("en_US");
+}
+
+void Core::QuitApplication()
+{
+  // Defer: the caller is usually still inside MainWindow::closeEvent() (this is emitted from there)
+  // or inside Qt's close helper, so let those finish before unwinding the event loop.
+  QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
+}
+
+bool Core::eventFilter(QObject *watched, QEvent *event)
+{
+  if (event->type() != QEvent::Quit || !main_window_) {
+    return QObject::eventFilter(watched, event);
+  }
+
+  // macOS delivers Cmd+Q / Dock "Quit" as QEvent::Quit, which QApplication::event() answers with
+  // QApplication::closeAllWindows(). Its helper (QApplicationPrivate::tryCloseAllWidgetWindows)
+  // restarts the top-level-window enumeration after every window it closes, and only bails out
+  // when a window refuses to close. With KDDockWidgets' main window, macOS keeps reporting
+  // isVisible() == true for a moment after the platform accepted the close, so the helper closes
+  // the same window forever: the main thread spins at 100% CPU and the app can never be quit.
+  //
+  // So close the window ourselves (it reports back through MainWindow::Closed() once it has
+  // accepted the close) and consume the event so that broken path never runs.
+  if (QWidget *modal = QApplication::activeModalWidget()) {
+    // closeAllWindows() would have given an open dialog the chance to veto the quit; keep that.
+    if (!modal->close()) {
+      return true;
+    }
+  }
+
+  main_window_->close();
+
+  return true;
 }
 
 bool Core::SaveProject()
