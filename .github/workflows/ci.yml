@@ -58,9 +58,8 @@ jobs:
             olivelan-build-qt68:latest \
             bash -c "
               set -euo pipefail
-              export CMAKE_PREFIX_PATH='/opt/Qt/6.8.3/gcc_64;/usr/local'
-              export LD_LIBRARY_PATH='/usr/local/lib:/opt/Qt/6.8.3/gcc_64/lib'
-              export PATH='/opt/Qt/6.8.3/gcc_64/bin:\$PATH'
+              # Qt paths come from the image ENV block. Re-exporting PATH here broke the first
+              # run: the single-quoted value was taken literally, so cmake/ninja were not found.
 
               echo '[INFO] Configuring CMake...'
               cmake -S . -B build \
@@ -83,9 +82,8 @@ jobs:
             olivelan-build-qt68:latest \
             bash -c "
               set -euo pipefail
-              export CMAKE_PREFIX_PATH='/opt/Qt/6.8.3/gcc_64;/usr/local'
-              export LD_LIBRARY_PATH='/usr/local/lib:/opt/Qt/6.8.3/gcc_64/lib'
-              export PATH='/opt/Qt/6.8.3/gcc_64/bin:\$PATH'
+              # Qt paths come from the image ENV block. Re-exporting PATH here broke the first
+              # run: the single-quoted value was taken literally, so cmake/ninja were not found.
 
               echo '[INFO] Packaging self-contained Linux distribution directory...'
               BUILD_DIR=/workspace/build bash scripts/dist/build_linux_dist.sh
