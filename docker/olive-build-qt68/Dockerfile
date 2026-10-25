@@ -145,6 +145,9 @@ RUN curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
          --disable-debug \
          --disable-autodetect \
          --enable-gpl \
+         --enable-zlib \
+         --enable-bzlib \
+         --enable-lzma \
          --enable-libx264 \
          --enable-libx265 \
          --enable-libvpx \
