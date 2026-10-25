@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -42,10 +42,6 @@
 #include "panel/footageviewer/footageviewer.h"
 #include "panel/sequenceviewer/sequenceviewer.h"
 #include "panel/pixelsampler/pixelsamplerpanel.h"
-
-#ifdef Q_OS_WINDOWS
-#include <shobjidl.h>
-#endif
 
 namespace olive {
 
@@ -126,10 +122,6 @@ protected:
 
   virtual void closeEvent(QCloseEvent* e) override;
 
-#ifdef Q_OS_WINDOWS
-  virtual bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
-#endif
-
 private:
   /**
    * @brief Applies the default dock layout once the window actually has a size.
@@ -189,12 +181,6 @@ private:
   QList<ViewerPanel*> viewer_panels_;
   MulticamPanel *multicam_panel_;
   HistoryPanel *history_panel_;
-
-#ifdef Q_OS_WINDOWS
-  unsigned int taskbar_btn_id_;
-
-  ITaskbarList3* taskbar_interface_;
-#endif
 
   bool first_show_;
 

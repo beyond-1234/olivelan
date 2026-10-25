@@ -1,5 +1,5 @@
-# Olive - Non-Linear Video Editor
-# Copyright (C) 2022 Olive Team
+# Olivelan - Non-Linear Video Editor
+# Copyright (C) 2022-2026 Olivelan Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,9 +20,8 @@ set(OLIVE_SOURCES
   common/channellayout.h
   common/commandlineparser.cpp
   common/commandlineparser.h
-  common/crashpadinterface.cpp
-  common/crashpadinterface.h
-  common/crashpadutils.h
+  common/crashhandler.cpp
+  common/crashhandler.h
   common/debug.cpp
   common/debug.h
   common/decibel.h

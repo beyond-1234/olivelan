@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-APP="${OLIVE_APP:-$ROOT/build/app/Olive.app/Contents/MacOS/Olive}"
+APP="${OLIVE_APP:-$ROOT/build/app/Olivelan.app/Contents/MacOS/Olivelan}"
 PROJECT="${1:?usage: verify_mixed_hdr_sdr.sh <mixed.ovexml>}"
 SECONDS_TO_PLAY="${OLIVE_SECONDS:-3}"
 LOG="$(mktemp "${TMPDIR:-/tmp}/olive-mixed-hdr.XXXXXX")"

@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -71,12 +71,6 @@ MainWindow::MainWindow(QWidget *parent) :
   if (!qApp->screens().empty()) {
     resize(qApp->screens().at(0)->availableSize());
   }
-
-#ifdef Q_OS_WINDOWS
-  // Set up taskbar button progress bar (used for some modal tasks like exporting)
-  taskbar_btn_id_ = RegisterWindowMessage(TEXT("TaskbarButtonCreated"));
-  taskbar_interface_ = nullptr;
-#endif
 
   first_show_ = true;
 
@@ -174,11 +168,6 @@ MainWindow::~MainWindow()
 {
   HardwarePipelineFactory::SetFallbackHandler({});
 
-#ifdef Q_OS_WINDOWS
-  if (taskbar_interface_) {
-    taskbar_interface_->Release();
-  }
-#endif
 }
 
 void MainWindow::LoadLayout(const MainWindowLayoutInfo &info)
@@ -586,33 +575,10 @@ void MainWindow::SetProject(Project *p)
 
 void MainWindow::SetApplicationProgressStatus(ProgressStatus status)
 {
-#if defined(Q_OS_WINDOWS)
-  if (taskbar_interface_) {
-    switch (status) {
-    case kProgressShow:
-      taskbar_interface_->SetProgressState(reinterpret_cast<HWND>(this->winId()), TBPF_NORMAL);
-      break;
-    case kProgressNone:
-      taskbar_interface_->SetProgressState(reinterpret_cast<HWND>(this->winId()), TBPF_NOPROGRESS);
-      break;
-    case kProgressError:
-      taskbar_interface_->SetProgressState(reinterpret_cast<HWND>(this->winId()), TBPF_ERROR);
-      break;
-    }
-  }
-
-#elif defined(Q_OS_MAC)
-#endif
 }
 
 void MainWindow::SetApplicationProgressValue(int value)
 {
-#if defined(Q_OS_WINDOWS)
-  if (taskbar_interface_) {
-    taskbar_interface_->SetProgressValue(reinterpret_cast<HWND>(this->winId()), value, 100);
-  }
-#elif defined(Q_OS_MAC)
-#endif
 }
 
 void MainWindow::SelectFootage(const QVector<Footage *> &e)
@@ -639,31 +605,6 @@ void MainWindow::closeEvent(QCloseEvent *e)
 
   QMainWindow::closeEvent(e);
 }
-
-#ifdef Q_OS_WINDOWS
-bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *result)
-{
-  if (static_cast<MSG*>(message)->message == taskbar_btn_id_) {
-    // Attempt to create taskbar button progress handle
-    HRESULT hr = CoCreateInstance(CLSID_TaskbarList,
-                                  NULL,
-                                  CLSCTX_INPROC_SERVER,
-                                  IID_ITaskbarList3,
-                                  reinterpret_cast<void**>(&taskbar_interface_));
-
-    if (SUCCEEDED(hr)) {
-      hr = taskbar_interface_->HrInit();
-
-      if (FAILED(hr)) {
-        taskbar_interface_->Release();
-        taskbar_interface_ = nullptr;
-      }
-    }
-  }
-
-  return QMainWindow::nativeEvent(eventType, message, result);
-}
-#endif
 
 void MainWindow::StatusBarDoubleClicked()
 {

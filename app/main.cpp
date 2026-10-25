@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,10 +18,10 @@
 
 ***/
 
-/** \mainpage Olive Video Editor - Code Documentation
+/** \mainpage Olivelan Video Editor - Code Documentation
  *
- * This documentation is a primarily a developer resource. For information on using Olive, visit the website
- * https://www.olivevideoeditor.org/
+ * This documentation is primarily a developer resource. For information on using Olivelan, visit the repository
+ * https://github.com/beyond-1234/olivelan
  *
  * Use the navigation above to find documentation on classes or source files.
  */
@@ -43,7 +43,9 @@ extern "C" {
 #include <kddockwidgets/KDDockWidgets.h>
 
 #include "core.h"
+#include "window/mainwindow/mainwindow.h"
 #include "common/commandlineparser.h"
+#include "common/crashhandler.h"
 #include "common/debug.h"
 #include "codec/hal/gpu_session_advisor.h"
 #include "codec/hal/hardware_pipeline_factory.h"
@@ -53,17 +55,6 @@ extern "C" {
 #include "node/project/serializer/serializer.h"
 #include "bootstrap/graphicsfallback.h"
 #include "version.h"
-
-#ifdef _WIN32
-#include <QOffscreenSurface>
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
-#include <Windows.h>
-#endif
-
-#ifdef USE_CRASHPAD
-#include "common/crashpadinterface.h"
-#endif // USE_CRASHPAD
 
 int decompress_project(const QString &project)
 {
@@ -128,8 +119,8 @@ int main(int argc, char *argv[])
   qInstallMessageHandler(olive::DebugHandler);
 
   // Set application metadata
-  QCoreApplication::setOrganizationName("olivelan.org");
-  QCoreApplication::setOrganizationDomain("olivelan.org");
+  QCoreApplication::setOrganizationName("olivevideoeditor.org");
+  QCoreApplication::setOrganizationDomain("olivevideoeditor.org");
   QCoreApplication::setApplicationName("Olivelan");
   QGuiApplication::setDesktopFileName("org.olivelan.Olivelan");
   QCoreApplication::setApplicationVersion(olive::kAppVersionLong);
@@ -141,26 +132,15 @@ int main(int argc, char *argv[])
   olive::Config::Load();
   olive::GpuSessionAdvisor::ApplySessionPreference();
 
-
   //
   // Parse command line arguments
   //
 
   QVector<QString> args;
-#if defined(_WIN32) && defined(UNICODE)
-  int wargc;
-  LPWSTR *wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
-  args.resize(wargc);
-  for (int i=0; i<wargc; i++) {
-    args[i] = QString::fromWCharArray(wargv[i]);
-  }
-  LocalFree(wargv);
-#else
   args.resize(argc);
   for (int i=0; i<argc; i++) {
     args[i] = QString::fromLocal8Bit(argv[i]);
   }
-#endif
 
   olive::Core::CoreParams startup_params;
 
@@ -206,16 +186,9 @@ int main(int argc, char *argv[])
                        QCoreApplication::translate("main",
                           "Show the HAL backend selection dialog with probe results on startup"));
 
-#ifdef _WIN32
-  auto console_option =
-      parser.AddOption({QStringLiteral("c"), QStringLiteral("-console")},
-                       QCoreApplication::translate("main", "Launch with debug console"));
-#endif // _WIN32
-
   auto project_argument =
       parser.AddPositionalArgument(QStringLiteral("project"),
                                    QCoreApplication::translate("main", "Project to open on startup"));
-
 
   // Qt options re-implemented (add to this as necessary)
   //
@@ -330,13 +303,6 @@ int main(int argc, char *argv[])
   std::unique_ptr<QCoreApplication> a;
 
   if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal) {
-#ifdef _WIN32
-    // Since Olive is linked with the console subsystem (for better POSIX compatibility), a console
-    // is created by default. If the user didn't request one, we free it here.
-    if (!console_option->IsSet()) {
-      FreeConsole();
-    }
-#endif // _WIN32
 
     a.reset(new QApplication(argc, argv));
 
@@ -354,7 +320,7 @@ int main(int argc, char *argv[])
     if (graphics_result == olive::GraphicsFallback::Result::Unavailable) {
       const QString message = QCoreApplication::translate(
           "main",
-          "Olive could not create an OpenGL context. The viewer cannot start.\n\n"
+          "Olivelan could not create an OpenGL context. The viewer cannot start.\n\n"
           "%1\n\n"
           "Try an X11/XWayland session or install/update the GPU driver. "
           "The diagnostics log contains more details.")
@@ -401,40 +367,8 @@ int main(int argc, char *argv[])
     a.reset(new QCoreApplication(argc, argv));
   }
 
-#ifdef _WIN32
-  // On Windows, users seem to frequently run into a crash caused by their graphics driver not
-  // supporting framebuffers, which we require. I personally have only been able to recreate this
-  // when no driver is installed (e.g. when using the Microsoft Basic Display Adapter). Whether
-  // that's true for all users or not is still up in the air, but what we do know is it's a driver
-  // issue and users should know what to do rather than simply receive a cryptic crash report.
-  QOpenGLContext ctx;
-  ctx.create();
-  QOffscreenSurface surface;
-  surface.create();
-  ctx.makeCurrent(&surface);
-  bool has_proc_address = wglGetProcAddress("glGenFramebuffers");
-  std::string gpu_vendor = reinterpret_cast<const char*>(ctx.functions()->glGetString(GL_VENDOR));
-  std::string gpu_renderer = reinterpret_cast<const char*>(ctx.functions()->glGetString(GL_RENDERER));
-  std::string gpu_version = reinterpret_cast<const char*>(ctx.functions()->glGetString(GL_VERSION));
-  ctx.doneCurrent();
-  surface.destroy();
-
-  if (!has_proc_address) {
-    QString msg = QCoreApplication::translate("main",
-      "Your computer's graphics driver does not appear to support framebuffers. "
-      "This most likely means either your graphics driver is not up-to-date or your graphics card is too old to run Olive.\n\n"
-      "Please update your graphics driver to the latest version and try again.\n\n"
-      "Current driver information: %1 %2 %3").arg(QString::fromStdString(gpu_vendor), QString::fromStdString(gpu_renderer), QString::fromStdString(gpu_version));
-
-    if (dynamic_cast<QGuiApplication*>(a.get())) {
-      QMessageBox::critical(nullptr, QString(), msg);
-    } else {
-      qCritical().noquote() << msg;
-    }
-
-    return 1;
-  }
-#endif
+  // Offline crash handling: rolling log file + a marker that survives fatal signals.
+  olive::CrashHandler::Install();
 
   // Register FFmpeg codecs and filters (deprecated in 4.0+)
 #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58, 9, 100)
@@ -485,13 +419,6 @@ int main(int argc, char *argv[])
     return 0;
   }
 
-  // Enable Google Crashpad if compiled with it
-#ifdef USE_CRASHPAD
-  if (!InitializeCrashpad()) {
-    qWarning() << "Failed to initialize Crashpad handler";
-  }
-#endif // USE_CRASHPAD
-
   // Launch modern Adobe-style splash screen in normal GUI mode
   std::unique_ptr<olive::SplashScreen> splash;
   if (startup_params.run_mode() == olive::Core::CoreParams::kRunNormal
@@ -506,10 +433,15 @@ int main(int argc, char *argv[])
 
   c.Start();
 
+  // Surface a previous crash (if any) once the main window exists. Never uploads anything.
+  olive::CrashHandler::ShowPendingCrashReport(c.main_window());
+
   int ret = a->exec();
 
   // Clear core memory
   c.Stop();
+
+  olive::CrashHandler::MarkCleanShutdown();
 
   return ret;
 }

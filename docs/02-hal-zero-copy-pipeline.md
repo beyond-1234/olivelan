@@ -52,7 +52,7 @@ Olivelan 通过 `IVideoHardwarePipeline` 抽象与 `HardwarePipelineFactory` 工
   - 提取底层共享内存 `IOSurfaceRef`；
   - 通过 `CGLTexImageIOSurface2D` 零拷贝绑定为 `GL_TEXTURE_RECTANGLE`。
 
-### 2.3 Tier 3: Olive 强化原生软解保底 (Safety Net)
+### 2.3 Tier 3: Olivelan 强化原生软解保底 (Safety Net)
 针对老旧显卡、格式不兼容或硬件驱动异常时的安全防线：
 - **全局线程配额调度 (`Tier3ThreadBudget`)**：
   - 动态感知 CPU 核心数，**始终保底预留 2 核专供操作系统、实时音频渲染与 UI 响应**，彻底消除解码器过订阅导致的音频撕裂与卡死；

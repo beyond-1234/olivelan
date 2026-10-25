@@ -1,5 +1,5 @@
-# Olive - Non-Linear Video Editor
-# Copyright (C) 2022 Olive Team
+# Olivelan - Non-Linear Video Editor
+# Copyright (C) 2022-2026 Olivelan Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -85,29 +85,20 @@ add_library(libolive-editor
 set_target_properties(libolive-editor PROPERTIES PREFIX "")
 
 # Add application
-add_executable(olive-editor
+add_executable(olivelan
   main.cpp
   $<TARGET_OBJECTS:libolive-editor>
   $<TARGET_OBJECTS:olive-version-obj>
 )
 
-# Create docs if doxygen was found
-if(DOXYGEN_FOUND)
-  set(DOXYGEN_PROJECT_NAME "Olive")
-  set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
-  set(DOXYGEN_EXTRACT_ALL "YES")
-  set(DOXYGEN_EXTRACT_PRIVATE "YES")
-  doxygen_add_docs(docs ALL ${OLIVE_SOURCES})
-endif()
-
 # Platform-specific deployment preferences
 if(APPLE)
   # Set Mac application icon
   set(OLIVE_ICON packaging/macos/olive.icns)
-  target_sources(olive-editor PRIVATE ${OLIVE_ICON})
+  target_sources(olivelan PRIVATE ${OLIVE_ICON})
 
   # Set Mac bundle properties
-  set_target_properties(olive-editor PROPERTIES
+  set_target_properties(olivelan PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/MacOSXBundleInfo.plist.in
     MACOSX_BUNDLE_GUI_IDENTIFIER org.olivelan.Olivelan
@@ -116,13 +107,13 @@ if(APPLE)
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_BUNDLE_NAME "Olivelan"
     MACOSX_BUNDLE_INFO_STRING "Olivelan ${PROJECT_LONG_VERSION}"
-    MACOSX_BUNDLE_COPYRIGHT "©2024-2026 Olivelan Contributors. Original core ©2018-2022 Olive Studios LLC."
+    MACOSX_BUNDLE_COPYRIGHT "©2018-2021 Olive Studios LLC and others. Published under the GNU General Public License version 3.0."
     RESOURCE "${OLIVE_ICON}"
-    OUTPUT_NAME "Olive"
+    OUTPUT_NAME "Olivelan"
   )
 elseif(UNIX)
   # Set Linux-specific properties for application
-  install(TARGETS olive-editor RUNTIME DESTINATION bin)
+  install(TARGETS olivelan RUNTIME DESTINATION bin)
 
   # Patch 0093 (P2-5): Source Han Sans SC is distributed under SIL OFL 1.1, which requires the
   # licence to accompany the font. The qrc embeds it in the binary; this also installs a
@@ -133,22 +124,17 @@ elseif(UNIX)
 endif()
 
 # Set link libraries
-target_link_libraries(olive-editor PRIVATE ${OLIVE_LIBRARIES})
+target_link_libraries(olivelan PRIVATE ${OLIVE_LIBRARIES})
 target_link_libraries(libolive-editor PRIVATE ${OLIVE_LIBRARIES})
 
 # Set compile options
-target_compile_options(olive-editor PRIVATE ${OLIVE_COMPILE_OPTIONS})
+target_compile_options(olivelan PRIVATE ${OLIVE_COMPILE_OPTIONS})
 target_compile_options(libolive-editor PRIVATE ${OLIVE_COMPILE_OPTIONS})
 
 # Set global definitions
-target_compile_definitions(olive-editor PRIVATE ${OLIVE_DEFINITIONS})
+target_compile_definitions(olivelan PRIVATE ${OLIVE_DEFINITIONS})
 target_compile_definitions(libolive-editor PRIVATE ${OLIVE_DEFINITIONS})
 
 # Set include dirs
-target_include_directories(olive-editor PRIVATE ${OLIVE_INCLUDE_DIRS})
+target_include_directories(olivelan PRIVATE ${OLIVE_INCLUDE_DIRS})
 target_include_directories(libolive-editor PRIVATE ${OLIVE_INCLUDE_DIRS})
-
-# Add crash handler
-if (GoogleCrashpad_FOUND AND Qt6Network_FOUND)
-  add_subdirectory(crashhandler)
-endif()

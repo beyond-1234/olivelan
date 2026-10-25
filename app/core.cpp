@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,9 +31,6 @@
 #include <QMessageBox>
 #include <QStyleFactory>
 #include "window/mainwindow/mainwindowundo.h"
-#ifdef Q_OS_WINDOWS
-#include <QtPlatformHeaders/QWindowsWindowFunctions>
-#endif
 
 #include "audio/audiomanager.h"
 #include "cli/clitask/clitaskdialog.h"
@@ -803,12 +800,6 @@ void Core::StartGUI(bool full_screen)
   } else {
     main_window_->showMaximized();
   }
-
-#ifdef Q_OS_WINDOWS
-  // Workaround for Qt bug where menus don't appear in full screen mode
-  // See: https://doc.qt.io/qt-5/windows-issues.html
-  QWindowsWindowFunctions::setHasBorderInFullScreen(main_window_->windowHandle(), true);
-#endif
 
   // Start autorecovery timer using the config value as its interval
   SetAutorecoveryInterval(OLIVE_CONFIG("AutorecoveryInterval").toInt());
@@ -1582,14 +1573,12 @@ QString StripWindowsDriveLetter(QString s)
   //       we're on a non-Windows platform and we detect a Windows path (i.e. a path with a drive
   //       letter at the start), we strip it off. We also convert any back-slashes to forward-slashes
   //       because on Windows they are interchangeable and on non-Windows they are not.
-#ifndef Q_OS_WINDOWS
   if (s.size() >= 2) {
     if (s.at(0).isLetter() && s.at(1) == ':') {
       s = s.mid(2);
       s.replace('\\', '/');
     }
   }
-#endif
 
   return s;
 }

@@ -2,9 +2,7 @@
 
 #include <QtGlobal>
 
-#if defined(Q_OS_WINDOWS)
-#include <windows.h>
-#elif defined(Q_OS_MAC)
+#if defined(Q_OS_MAC)
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #elif defined(Q_OS_LINUX)
 #include <QtDBus/QtDBus>
@@ -20,9 +18,7 @@ IOPMAssertionID assertionID = 0;
 
 void PreventSleep(bool on)
 {
-#if defined(Q_OS_WINDOWS)
-  SetThreadExecutionState(on ? ES_DISPLAY_REQUIRED | ES_CONTINUOUS : ES_CONTINUOUS);
-#elif defined(Q_OS_MAC)
+#if defined(Q_OS_MAC)
   if (on) {
     static const CFStringRef reasonForActivity = CFSTR("Video Playback");
 
@@ -57,7 +53,7 @@ void PreventSleep(bool on)
         QDBusReply<uint> reply;
 
         if (on) {
-          reply = interface.call(QStringLiteral("Inhibit"), QStringLiteral("Olive Video Editor"), QStringLiteral("Video Playback"));
+          reply = interface.call(QStringLiteral("Inhibit"), QStringLiteral("Olivelan Video Editor"), QStringLiteral("Video Playback"));
         } else {
           reply = interface.call(QStringLiteral("UnInhibit"), sleep_cookies.at(i));
         }

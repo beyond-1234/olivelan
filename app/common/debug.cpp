@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,11 +48,6 @@ void DebugHandler(QtMsgType type, const QMessageLogContext &context, const QStri
   //fprintf(stderr, "[%s] %s (%s:%u)\n", msg_type, localMsg.constData(), context.function, context.line);
   fprintf(stderr, "[%s] %s\n", msg_type, localMsg.constData());
 
-#ifdef Q_OS_WINDOWS
-  // Windows still seems to buffer stderr and we want to see debug messages immediately, so here we make sure each line
-  // is flushed
-  fflush(stderr);
-#endif
 }
 
 }

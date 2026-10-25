@@ -1,12 +1,13 @@
-# Contributing to Olive
+# Contributing to Olivelan
 
-Thank you for your interest in contributing to Olive!
+Thank you for your interest in contributing to Olivelan!
 
 ## Reporting issues
 
 Bug reports help to make the software more stable and usable.
-Please read the pinned [issue #1175](https://github.com/olive-editor/olive/issues/1175)
-for guidelines before you create a new issue.
+Please open issues at <https://github.com/beyond-1234/olivelan/issues> and include
+the platform, Olivelan version and, when relevant, the log file from
+`Help > Open Log Folder` (or the path reported by the crash dialog).
 
 ## Writing code
 

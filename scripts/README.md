@@ -27,8 +27,8 @@ scripts/
 ### 2.1 零拷贝遥测验证 (`scripts/verify/verify_zero_copy.sh`)
 用于严密防范“日志显示硬件解码，底层偷偷进行 CPU 内存回读”的虚假零拷贝：
 ```bash
-# 默认使用 build/app/Olive.app，播放 2 秒并核验 hardware_frames > 0 与 cpu_readback == 0
-OLIVE_APP="build/app/Olive.app/Contents/MacOS/Olive" bash scripts/verify/verify_zero_copy.sh <工程路径.ove>
+# 默认使用 build/app/Olivelan.app，播放 2 秒并核验 hardware_frames > 0 与 cpu_readback == 0
+OLIVE_APP="build/app/Olivelan.app/Contents/MacOS/Olivelan" bash scripts/verify/verify_zero_copy.sh <工程路径.ove>
 ```
 
 ### 2.2 离屏 GPU 像素级色彩验证 (`scripts/verify/verify_gpu_color.sh`)

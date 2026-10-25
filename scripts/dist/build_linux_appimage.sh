@@ -20,8 +20,8 @@ command -v file >/dev/null 2>&1 || {
   exit 1
 }
 
-[ -x "$DIST_DIR/bin/olive-editor" ] || {
-  echo "ERROR: missing $DIST_DIR/bin/olive-editor; run build_linux_dist.sh first." >&2
+[ -x "$DIST_DIR/bin/olivelan" ] || {
+  echo "ERROR: missing $DIST_DIR/bin/olivelan; run build_linux_dist.sh first." >&2
   exit 1
 }
 

@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -396,9 +396,7 @@ void ProjectExplorer::ShowContextMenu()
 
         QString reveal_text;
 
-#if defined(Q_OS_WINDOWS)
-        reveal_text = tr("Reveal in Explorer");
-#elif defined(Q_OS_MAC)
+#if defined(Q_OS_MAC)
         reveal_text = tr("Reveal in Finder");
 #else
         reveal_text = tr("Reveal in File Manager");
@@ -514,12 +512,7 @@ void ProjectExplorer::RevealSelectedFootage()
 {
   Footage* footage = static_cast<Footage*>(context_menu_items_.first());
 
-#if defined(Q_OS_WINDOWS)
-  // Explorer
-  QStringList args;
-  args << "/select," << QDir::toNativeSeparators(footage->filename());
-  QProcess::startDetached("explorer", args);
-#elif defined(Q_OS_MAC)
+#if defined(Q_OS_MAC)
   QStringList args;
   args << "-e";
   args << "tell application \"Finder\"";

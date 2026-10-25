@@ -1,4 +1,4 @@
-# Copyright (C) 2022 Olive Team
+# Copyright (C) 2022-2026 Olivelan Contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Build image (default):
@@ -28,7 +28,6 @@ FROM ${ASWF_PKG_ORG}/ci-package-boost:${VFXPLATFORM_VERSION} as ci-package-boost
 # default build does not link it (its ldd lists no Imath).
 FROM ${ASWF_PKG_ORG}/ci-package-imath:${VFXPLATFORM_VERSION} as ci-package-imath
 FROM ${OLIVE_ORG}/ci-package-ffmpeg:${FFMPEG_VERSION} as ci-package-ffmpeg
-FROM ${OLIVE_ORG}/ci-package-crashpad:latest as ci-package-crashpad
 FROM ${OLIVE_ORG}/ci-package-otio:${OTIO_VERSION} as ci-package-otio
 
 FROM ${OLIVE_ORG}/ci-common:${CI_COMMON_VERSION} as ci-olive
@@ -48,7 +47,6 @@ LABEL org.opencontainers.image.version="1.0"
 LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
 
 ENV PYTHONPATH=/usr/local/lib/python${PYTHON_VERSION}/site-packages:${PYTHONPATH} \
-    CRASHPAD_LOCATION=/usr/local/crashpad \
     VFXPLATFORM_VERSION=${VFXPLATFORM_VERSION}
 
 COPY --from=ci-package-qt /. /usr/local/
@@ -56,7 +54,6 @@ COPY --from=ci-package-python /. /usr/local/
 COPY --from=ci-package-boost /. /usr/local/
 COPY --from=ci-package-imath /. /usr/local/
 COPY --from=ci-package-ffmpeg /. /usr/local/
-COPY --from=ci-package-crashpad /. /usr/local/
 COPY --from=ci-package-otio /. /usr/local/
 COPY scripts/build_olive.sh /tmp/
 

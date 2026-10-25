@@ -1,14 +1,14 @@
 [Desktop Entry]
 Name=Olivelan
-Comment=Olivelan professional GPU-resident non-linear video editor
-Comment[zh_CN]=Olivelan 现代化、高性能 GPU 驻留非线性视频编辑器
-Comment[fr]=Éditeur vidéo non-linéaire open-source professionnel
-Comment[it]=Programma di montaggio video professionale open-source
-Comment[id]=Aplikasi edit video yang non-linier, profesional serta sumbernya terbuka.
-Exec=olive-editor %f
+Comment=Modern, high-performance GPU-resident non-linear video editor
+Comment[zh_CN]=现代化、高性能 GPU 驻留非线性视频编辑器
+Exec=olivelan %f
 Icon=org.olivelan.Olivelan
 Terminal=false
 Type=Application
-Categories=AudioVideo;Recorder;
+Categories=AudioVideo;Video;AudioVideoEditing;Recorder;
 MimeType=application/vnd.olivelan-project;application/vnd.olive-project;
 StartupNotify=true
+StartupWMClass=olivelan
+Keywords=video;editor;timeline;nle;ocio;剪辑;视频;调色;非编;
+Keywords[zh_CN]=视频;剪辑;非编;调色;剪映;电影;影视;时间线;字幕;音频;

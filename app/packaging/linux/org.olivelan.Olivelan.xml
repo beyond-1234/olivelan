@@ -3,6 +3,7 @@
   <mime-type type="application/vnd.olivelan-project">
     <comment>Olivelan project</comment>
     <comment xml:lang="zh_CN">Olivelan 剪辑工程文件</comment>
+    <alias type="application/vnd.olive-project"/>
     <glob pattern="*.ove"/>
   </mime-type>
 </mime-info>

@@ -24,9 +24,6 @@ libQt5QmlModels.so,\
 libQt5Quick.so,\
 libQt5VirtualKeyboard.so \
   -bundle-non-qt-libs \
-  -executable=appdir/usr/bin/crashpad_handler \
-  -executable=appdir/usr/bin/minidump_stackwalk \
-  -executable=appdir/usr/bin/olive-crashhandler \
   --appimage-extract-and-run
 
 ./Olive*.AppImage --appimage-extract-and-run --version

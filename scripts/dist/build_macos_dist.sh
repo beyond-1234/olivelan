@@ -2,7 +2,7 @@
 # ==============================================================================
 # macOS 自包含打包脚本。**必须在 macOS 上执行**（VideoToolbox/CGL 编译期绑定 Apple SDK）。
 #
-# 产出：dist/macos-<arch>/Olive.app（.app bundle）+ olive-macos-<arch>.tar.gz
+# 产出：dist/macos-<arch>/Olivelan.app（.app bundle）+ olivelan-macos-<arch>.tar.gz
 #
 # 依赖来源：MacPorts（推荐，隔离到 /opt/local，不污染 /usr/local）。
 #   安装：sudo port install cmake qt6 ffmpeg
@@ -23,14 +23,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCH="${ARCH:-x86_64}"
 SRC="${SRC:-$ROOT}"
 BUILD="${BUILD:-$ROOT/build}"
-APP="$ROOT/dist/macos-$ARCH/Olive.app"
+APP="$ROOT/dist/macos-$ARCH/Olivelan.app"
 DEPS_PREFIX="${DEPS_PREFIX:-/opt/local}"
 
 echo "[INFO] 构建 macOS $ARCH 自包含包 (依赖前缀: $DEPS_PREFIX)"
 
 # --- 1. 配置 & 构建 ---
 # MacPorts 布局：include/lib 直接在 $DEPS_PREFIX 下；qt6 在 $DEPS_PREFIX/libexec/qt6
-# Olive 的 find module 已硬编码 /opt/local（FFmpeg）；OCIO 现在是硬依赖。
+# Olivelan 的 find module 已硬编码 /opt/local（FFmpeg）；OCIO 现在是硬依赖。
 export CMAKE_PREFIX_PATH="$DEPS_PREFIX/libexec/qt6;$DEPS_PREFIX"
 export OCIO_LOCATION="${OCIO_LOCATION:-$DEPS_PREFIX}"
 
@@ -47,12 +47,12 @@ cmake --build "$BUILD" -j"$(sysctl -n hw.ncpu)"
 # --- 2. 组装 .app bundle ---
 rm -rf "$APP"
 mkdir -p "$ROOT/dist/macos-$ARCH"
-# CMake 在 macOS 下将 target olive-editor 直接输出为标准的 Bundle: app/Olive.app
-if [ -d "$BUILD/app/Olive.app" ]; then
-  cp -Rp "$BUILD/app/Olive.app" "$APP"
-elif [ -f "$BUILD/app/olive-editor" ]; then
+# CMake 在 macOS 下将 target olivelan 直接输出为标准的 Bundle: app/Olivelan.app
+if [ -d "$BUILD/app/Olivelan.app" ]; then
+  cp -Rp "$BUILD/app/Olivelan.app" "$APP"
+elif [ -f "$BUILD/app/olivelan" ]; then
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns" "$APP/Contents/Resources"
-  cp -p "$BUILD/app/olive-editor" "$APP/Contents/MacOS/Olive"
+  cp -p "$BUILD/app/olivelan" "$APP/Contents/MacOS/Olivelan"
 fi
 
 # --- 3. 用 macdeployqt 拉入 Qt 依赖 + 插件 ---
@@ -100,8 +100,8 @@ for stem in "${DYLIB_STEMS[@]}"; do
 done
 
 # 重写主二进制对这些库的引用为 @rpath
-MAIN_BIN="$APP/Contents/MacOS/Olive"
-[ -f "$MAIN_BIN" ] || MAIN_BIN="$APP/Contents/MacOS/olive-editor"
+MAIN_BIN="$APP/Contents/MacOS/Olivelan"
+[ -f "$MAIN_BIN" ] || MAIN_BIN="$APP/Contents/MacOS/olivelan"
 
 for name in $(ls "$APP/Contents/Frameworks" 2>/dev/null); do
   # No match is normal for Qt frameworks already rewritten by macdeployqt. Keep the
@@ -116,8 +116,8 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "$MAIN_BIN" 2>/dev
 # 系统 OCIO 默认配置导致包内配置与内嵌 :/ocioconf 不一致。
 if [ -d "$BUILD/app/render/ocioconf" ]; then
   cp -a "$BUILD/app/render/ocioconf" "$APP/Contents/Resources/ocioconf"
-elif [ -d "$ROOT/olive-0.2.0-nightly/app/render/ocioconf" ]; then
-  cp -a "$ROOT/olive-0.2.0-nightly/app/render/ocioconf" "$APP/Contents/Resources/ocioconf"
+elif [ -d "$ROOT/app/render/ocioconf" ]; then
+  cp -a "$ROOT/app/render/ocioconf" "$APP/Contents/Resources/ocioconf"
 elif [ -d "$ROOT/dist/linux-x86_64/share/ocioconf" ]; then
   cp -a "$ROOT/dist/linux-x86_64/share/ocioconf" "$APP/Contents/Resources/ocioconf"
 elif [ -d "$DEPS_PREFIX/share/OpenColorIO" ]; then
@@ -126,5 +126,5 @@ fi
 
 # --- 6. tar.gz ---
 cd "$ROOT/dist"
-tar czf "olive-macos-$ARCH-$(date +%Y%m%d).tar.gz" "macos-$ARCH"
-echo "[OK] 完成: $ROOT/dist/olive-macos-$ARCH-$(date +%Y%m%d).tar.gz"
+tar czf "olivelan-macos-$ARCH-$(date +%Y%m%d).tar.gz" "macos-$ARCH"
+echo "[OK] 完成: $ROOT/dist/olivelan-macos-$ARCH-$(date +%Y%m%d).tar.gz"

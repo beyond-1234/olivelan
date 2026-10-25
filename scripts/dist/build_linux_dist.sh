@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 在 distrobox 容器 `olive-build` 内运行。
-# 把已构建好的 `build/olive-full-auto-qt68/app/olive-editor` 及其第三方依赖，
+# 把已构建好的 `build/app/olivelan` 及其第三方依赖，
 # 打成自包含的 Linux x86_64 可移植目录，输出到 dist/linux-x86_64/。
 #
 # 目标：测试分发。目标机解压后无需安装任何库（仅依赖系统 glibc + libGL + GPU 驱动）。
 # 用法：
-#   ./run-remote.sh --box olive-build 'cd /home/name/code/gpu_nle_preview && bash scripts/build_linux_dist.sh'
+#   ./run-remote.sh --box olive-build 'cd ~/olivelan && bash scripts/build_linux_dist.sh'
 # ==============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
-SRC_BIN="${OLIVE_BIN:-$BUILD_DIR/app/olive-editor}"
+SRC_BIN="${OLIVE_BIN:-$BUILD_DIR/app/olivelan}"
 DIST="$ROOT/dist/linux-x86_64"
 # Qt6 only (minimum 6.6; product pinned 6.8 LTS). Qt5 is no longer supported.
 QMAKE_BIN="$(command -v qmake6 || command -v qmake || true)"
@@ -38,7 +38,7 @@ if [ ! -f "$SRC_BIN" ]; then
   echo "[INFO] 未找到构建产物，先执行全量自动构建..."
   NVCC="${OLIVE_NVCC:-$ROOT/build/cuda-toolkit-12.4/bin/nvcc}"
   [ -f "$NVCC" ] || NVCC=""
-  cmake -S "$ROOT/olive-0.2.0-nightly" -B "$BUILD_DIR" \
+  cmake -S "$ROOT" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_TESTS=OFF \
     -DOLIVE_FETCH_METRO_FONT=OFF \
@@ -56,7 +56,7 @@ echo "[INFO] 打包 Linux x86_64 自包含目录 (Qt $QT_VERSION)"
 rm -rf "$DIST"
 mkdir -p "$DIST/bin" "$DIST/lib" "$DIST/plugins" "$DIST/share"
 
-cp -p "$SRC_BIN" "$DIST/bin/olive-editor"
+cp -p "$SRC_BIN" "$DIST/bin/olivelan"
 
 # --- 1. 收集二进制及其所有非系统依赖 (libc/libm/libGL/libEGL 等系统库除外) ---
 # 系统级库（目标机自带）与 GPU 驱动层库（随驱动提供）不打包。
@@ -109,9 +109,9 @@ collect_libs() {
   done
 }
 
-collect_libs "$DIST/bin/olive-editor"
+collect_libs "$DIST/bin/olivelan"
 
-# --- 2. 拷贝 Qt 平台/图像插件（Olive 运行时必需） ---
+# --- 2. 拷贝 Qt 平台/图像插件（Olivelan 运行时必需） ---
 # Wayland needs the shell/decoration/graphics-integration plugin subdirectories;
 # copying only platforms/ makes Qt find libqwayland-*.so but fail to load a shell
 # integration, after which it silently falls back to xcb.
@@ -136,10 +136,10 @@ done
 # 保证新增 LUT/色彩空间与内嵌 :/ocioconf 一致。
 if [ -d "$BUILD_DIR/app/render/ocioconf" ]; then
   cp -a "$BUILD_DIR/app/render/ocioconf" "$DIST/share/ocioconf"
-elif [ -d "$ROOT/olive-0.2.0-nightly/app/render/ocioconf" ]; then
-  cp -a "$ROOT/olive-0.2.0-nightly/app/render/ocioconf" "$DIST/share/ocioconf"
-elif [ -d "$HOME/.cache/olivevideoeditor.org/Olive/ocioconf" ]; then
-  cp -a "$HOME/.cache/olivevideoeditor.org/Olive/ocioconf" "$DIST/share/ocioconf"
+elif [ -d "$ROOT/app/render/ocioconf" ]; then
+  cp -a "$ROOT/app/render/ocioconf" "$DIST/share/ocioconf"
+elif [ -d "$HOME/.cache/olivevideoeditor.org/Olivelan/ocioconf" ]; then
+  cp -a "$HOME/.cache/olivevideoeditor.org/Olivelan/ocioconf" "$DIST/share/ocioconf"
 fi
 
 # --- 4. 写启动脚本，设置 RPATH/LD_LIBRARY_PATH + Qt 插件路径 ---
@@ -185,7 +185,7 @@ if [ -z "${OLIVE_GPU_SESSION:-}" ]; then
 fi
 
 # Consume the small session-routing subset before exec. Everything else is
-# passed through unchanged to Olive (project path, --hal-backend, --autoplay,
+# passed through unchanged to Olivelan (project path, --hal-backend, --autoplay,
 # --hal-dialog, --help, ...). Session flags may appear before or after the
 # project path, matching run-interactive.sh's argument handling.
 OLIVE_ARGS=()
@@ -233,13 +233,13 @@ if [ -z "${ALSA_PLUGIN_DIR:-}" ]; then
   done
 fi
 
-exec "$HERE/bin/olive-editor" "$@"
+exec "$HERE/bin/olivelan" "$@"
 EOF
 chmod +x "$DIST/run-olive.sh"
 
 # 可选：用 patchelf 给二进制写死 $ORIGIN RPATH（若可用），否则依赖上面的 LD_LIBRARY_PATH
 if command -v patchelf >/dev/null 2>&1; then
-  patchelf --set-rpath '$ORIGIN/../lib' "$DIST/bin/olive-editor" 2>/dev/null || true
+  patchelf --set-rpath '$ORIGIN/../lib' "$DIST/bin/olivelan" 2>/dev/null || true
   echo "[INFO] 已写入 RPATH \$ORIGIN/../lib"
 fi
 

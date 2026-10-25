@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -87,17 +87,12 @@ public:
 
   inline static QString GetFormattedExecutableForPlatform(QString unformatted)
   {
-#ifdef Q_OS_WINDOWS
-    unformatted.append(QStringLiteral(".exe"));
-#endif
-
     return unformatted;
   }
 
   static QString GetAutoRecoveryRoot();
 
 };
-
 
 
 }

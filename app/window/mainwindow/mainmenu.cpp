@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -693,7 +693,7 @@ void MainMenu::HALStatusTriggered()
 
 void MainMenu::HelpFeedbackTriggered()
 {
-  QDesktopServices::openUrl(QStringLiteral("https://github.com/olive-editor/olive/issues"));
+  QDesktopServices::openUrl(QStringLiteral("https://github.com/beyond-1234/olivelan/issues"));
 }
 
 void MainMenu::Retranslate()

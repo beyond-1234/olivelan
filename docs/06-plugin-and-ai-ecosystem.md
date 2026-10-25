@@ -48,7 +48,7 @@ Olivelan 确立了 **Phase 17「统一资源中心（Universal Resource Hub）�
 
 系统通过内部嵌入的标准 **Model Context Protocol (MCP)** 服务，打通大语言模型与端云多模态 AI 算力：
 
-1. **Olive MCP Server**：
+1. **Olivelan MCP Server**：
    - 将时间线操作抽象为标准的 Tools（如 `split_clip`、`add_transition`、`search_resources`）；
    - 将工程上下文抽象为 Resources（如 `timeline://active/tracks`、`footage://metadata`）；
 2. **智能化剪辑流水线**：

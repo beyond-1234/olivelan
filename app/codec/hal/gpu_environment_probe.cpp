@@ -222,9 +222,7 @@ bool GpuEnvironmentProbe::IsCudaGlInteropBlocked() const
 
 void GpuEnvironmentProbe::DetectDisplayServer()
 {
-#if defined(_WIN32)
-  display_server_ = DisplayServer::WindowsDWM;
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
   display_server_ = DisplayServer::Cocoa;
 #elif defined(__linux__)
   const char* wayland_disp = std::getenv("WAYLAND_DISPLAY");
@@ -315,14 +313,6 @@ void GpuEnvironmentProbe::DetectGpuTopology()
   }
 #endif
 
-#if defined(_WIN32)
-  // Windows-specific vendor fallback.
-  //
-  // Patch 0049 (Phase 8): the D3D11 interop pipeline is a PLACEHOLDER - it is never
-  // enabled, on any platform. Policy: Windows uses Tier 3 (reinforced CPU decode)
-  // as its hardware fallback until the D3D11 path is actually implemented and
-  // validated. Do not set has_d3d11_support_ here; see hardware_pipeline_factory.cpp.
-#endif
 }
 
 void GpuEnvironmentProbe::DetectBackendCapabilities()

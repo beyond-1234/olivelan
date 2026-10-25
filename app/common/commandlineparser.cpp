@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -107,7 +107,7 @@ void CommandLineParser::PrintHelp(const char* filename)
          QCoreApplication::applicationName().toUtf8().constData(),
          QCoreApplication::applicationVersion().toUtf8().constData());
 
-  printf("Copyright (C) 2018-2022 Olive Team\n");
+  printf("Copyright (C) 2018-2022 Olive Team, 2024-2026 Olivelan Contributors\n");
 
   QString positional_args;
   for (int i=0; i<positional_args_.size(); i++) {
@@ -121,14 +121,7 @@ void CommandLineParser::PrintHelp(const char* filename)
   }
 
   const char* basename;
-#ifdef Q_OS_WINDOWS
-  basename = strrchr(filename, '\\');
-  if (!basename) {
-    basename = strrchr(filename, '/');
-  }
-#else
   basename = strrchr(filename, '/');
-#endif
 
   if (basename) {
     // Slash found, increment pointer to avoid showing the slash itself

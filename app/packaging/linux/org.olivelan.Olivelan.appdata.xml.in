@@ -3,29 +3,21 @@
   <id>org.olivelan.Olivelan</id>
   <name>Olivelan</name>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <developer_name>Olivelan Contributors</developer_name>
   <summary>Modern, high-performance GPU-resident non-linear video editor</summary>
   <summary xml:lang="zh_CN">现代化、高性能 GPU 驻留非线性视频编辑器</summary>
-  <summary xml:lang="de_DE">Nicht-lineares Videoschnittprogramm</summary>
-  <summary xml:lang="pt_BR">Editor de vídeo não-linear</summary>
-  <summary xml:lang="es">Editor de video no lineal</summary>
-  <summary xml:lang="it">Editor video non lineare</summary>
-  <summary xml:lang="ru">Нелинейный видеоредактор</summary>
-  <summary xml:lang="uk">Нелінійний відеоредактор</summary>
-  <summary xml:lang="uk_UA">Нелінійний відеоредактор</summary>
-  <summary xml:lang="id">Aplikasi edit video non-linier</summary>
-  <summary xml:lang="fr">Éditeur vidéo non-linéaire</summary>
-  <description><p>Olive is a free non-linear video editor aiming to provide a fully-featured alternative to high-end professional video editing software.</p></description>
-  <description xml:lang="de_DE">Olive ist ein freies nicht-lineares Videoschnittprogramm, welches eine vollwertige Alternative zu High-End Videoschnittprogrammen darstellen soll.</description>
-  <description xml:lang="pt_BR"><p>Olive é um editor de vídeo não-linear com o objetivo de fornecer uma alternativa completa para softwares profissionais de edição de vídeo.</p></description>
-  <description xml:lang="es"><p>Olive es un editor de video no lineal libre que apunta a brindar una alternativa completa al software de edición de video profesional.</p></description>
-  <description xml:lang="it"><p>Olivelan è un programma di montaggio video che mira a fornire una alternativa di alta qualità ai software professionali</p></description>
-  <description xml:lang="ru"><p>Olivelan — свободный нелинейный видеоредактор, задуманный как полноценная замена закрытым коммерческим продуктам.</p></description>
-  <description xml:lang="uk"><p>Olivelan — вільний нелінійний відеоредактор, задуманий як повноцінна заміна закритим комерційним продуктам.</p></description>
-  <description xml:lang="uk_UA"><p>Olivelan — вільний нелінійний відеоредактор, задуманий як повноцінна заміна закритим комерційним продуктам.</p></description>
-  <description xml:lang="id"><p>Olivelan adalah aplikasi edit video bersifat non-linier yang bebas dan gratis, bertujuan untuk memberikan alternatif yang lengkap untuk aplikasi edit video profesional.</p></description>
-  <description xml:lang="fr"><p>Olivelan est un éditeur vidéo non linéaire libre visant à fournir une alternative complète aux logiciels de montage vidéo professionnels haut de gamme.</p></description>
+  <description>
+    <p>
+      Olivelan is a modern, high-performance, GPU-resident cross-platform non-linear video editor.
+      Featuring a single-source OpenColorIO (OCIO) 2.5 color pipeline, multi-vendor zero-copy hardware
+      decoding, and a sleek Metro/Fluent design system.
+    </p>
+    <p xml:lang="zh_CN">
+      Olivelan 是一款现代化、高性能、GPU 驻留直通的跨平台开源非线性视频编辑软件。
+      拥有 OpenColorIO 2.5 现代单轨色彩管线、多厂商硬件零拷贝直通架构以及现代 Metro/Fluent 声明式工作区设计。
+    </p>
+  </description>
   <url type="homepage">https://github.com/beyond-1234/olivelan</url>
   <url type="bugtracker">https://github.com/beyond-1234/olivelan/issues</url>
   <content_rating type="oars-1.1"/>

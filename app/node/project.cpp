@@ -1,7 +1,7 @@
 /***
 
-  Olive - Non-Linear Video Editor
-  Copyright (C) 2022 Olive Team
+  Olivelan - Non-Linear Video Editor
+  Copyright (C) 2022-2026 Olivelan Contributors
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -346,11 +346,6 @@ QString Project::pretty_filename() const
 void Project::set_filename(const QString &s)
 {
   filename_ = s;
-
-#ifdef Q_OS_WINDOWS
-  // Prevents filenames
-  filename_.replace('/', '\\');
-#endif
 
   emit NameChanged();
 }

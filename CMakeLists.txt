@@ -1,5 +1,5 @@
-# Olive - Non-Linear Video Editor
-# Copyright (C) 2023 Olive Studios LLC
+# Olivelan - Non-Linear Video Editor
+# Copyright (C) 2023-2026 Olivelan Contributors
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,9 +16,8 @@
 
 cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
-project(olive-editor VERSION 0.2.0 LANGUAGES C CXX)
+project(olivelan VERSION 0.2.0 LANGUAGES C CXX)
 
-option(BUILD_DOXYGEN "Build Doxygen documentation" OFF)
 option(BUILD_TESTS "Build unit tests" OFF)
 option(USE_WERROR "Error on compile warning" OFF)
 
@@ -63,8 +62,7 @@ endif()
 
 # Platform-native decode backends. These are auto-enabled per platform: the
 # dependency ships with the OS SDK, so no manual -D flag is needed.
-#   - VA-API DMA-BUF : Linux only (needs libva + libva-drm headers)
-#   - D3D11 interop  : Windows only (d3d11.h ships with Windows SDK)
+#   - VA-API DMA-BUF : Linux only (needs libva + libva-drm headers + EGL)
 #   - VideoToolbox   : macOS only (already gated by __APPLE__ in the source)
 if(UNIX AND NOT APPLE)
   if(OLIVE_ENABLE_VAAPI_DMABUF STREQUAL "OFF")
@@ -115,41 +113,26 @@ include(cmake/Sanitizers.cmake)
 enable_sanitizers(olive-sanitizers)
 list(APPEND OLIVE_LIBRARIES olive-sanitizers)
 
-# Set compiler options
-if(MSVC)
-  set(OLIVE_COMPILE_OPTIONS
-    /wd4267
-    /wd4244
-    /experimental:external
-    /external:anglebrackets
-    /external:W0
-    "$<$<CONFIG:RELEASE>:/O2>"
-    "$<$<COMPILE_LANGUAGE:CXX>:/MP>"
-  )
-  if (USE_WERROR)
-    list(APPEND OLIVE_COMPILE_OPTIONS "/WX")
-  endif()
-else()
-  set(OLIVE_COMPILE_OPTIONS
-    "$<$<CONFIG:RELEASE>:-O2>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-Wuninitialized>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-pedantic-errors>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-Wall>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-Wextra>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-parameter>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-Wshadow>"
-  )
-  if (USE_WERROR)
-    list(APPEND OLIVE_COMPILE_OPTIONS "-Werror")
+# Compiler options (POSIX toolchains only: Clang, AppleClang, GCC)
+set(OLIVE_COMPILE_OPTIONS
+  "$<$<CONFIG:RELEASE>:-O2>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wuninitialized>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-pedantic-errors>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wall>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wextra>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-parameter>"
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wshadow>"
+)
+if (USE_WERROR)
+  list(APPEND OLIVE_COMPILE_OPTIONS "-Werror")
 
-    # GCC 13 emits -Wmaybe-uninitialized from Qt's inline QRect code (reached via
-    # app/widget/curvewidget/curveview.cpp) during optimisation. It is a third-party
-    # false positive, and optimisation-time warnings are *not* covered by the
-    # system-header suppression that -isystem installs for Qt. Keep it visible as a
-    # warning, but do not let it fail the build.
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      list(APPEND OLIVE_COMPILE_OPTIONS "-Wno-error=maybe-uninitialized")
-    endif()
+  # GCC 13 emits -Wmaybe-uninitialized from Qt's inline QRect code (reached via
+  # app/widget/curvewidget/curveview.cpp) during optimisation. It is a third-party
+  # false positive, and optimisation-time warnings are *not* covered by the
+  # system-header suppression that -isystem installs for Qt. Keep it visible as a
+  # warning, but do not let it fail the build.
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND OLIVE_COMPILE_OPTIONS "-Wno-error=maybe-uninitialized")
   endif()
 endif()
 
@@ -160,10 +143,6 @@ endif()
 if(OLIVE_ENABLE_VAAPI_DMABUF STREQUAL "ON")
   list(APPEND OLIVE_DEFINITIONS OLIVE_ENABLE_VAAPI_DMABUF)
 endif()
-if (WIN32)
-  list(APPEND OLIVE_DEFINITIONS -DUNICODE -D_UNICODE)
-endif()
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # Link OpenGL
@@ -232,15 +211,15 @@ if (NOT Qt6Network_FOUND)
   message("   Qt6::Network module not found, crash reporting will be disabled.")
 endif()
 
-# Zip package import for .olivetheme is optional: it uses Qt's private
+# Zip package import for .olivelantheme is optional: it uses Qt's private
 # QZipReader, which is only available when the Qt private development headers
 # are installed. Directory and plain .qss imports work without it.
 if (TARGET Qt6::CorePrivate)
   list(APPEND OLIVE_LIBRARIES Qt6::CorePrivate)
   list(APPEND OLIVE_DEFINITIONS OLIVE_HAVE_QZIPREADER)
-  message(STATUS "Qt6 CorePrivate found - .olivetheme zip import enabled")
+  message(STATUS "Qt6 CorePrivate found - .olivelantheme zip import enabled")
 else()
-  message(STATUS "Qt6 CorePrivate not found - .olivetheme zip import disabled")
+  message(STATUS "Qt6 CorePrivate not found - .olivelantheme zip import disabled")
 endif()
 
 list(APPEND OLIVE_LIBRARIES
@@ -320,25 +299,9 @@ else()
   message("   OpenTimelineIO interchange will be disabled.")
 endif()
 
-# Optional: Link Google Crashpad
-find_package(GoogleCrashpad)
-if (GoogleCrashpad_FOUND)
-  list(APPEND OLIVE_DEFINITIONS USE_CRASHPAD)
-  list(APPEND OLIVE_INCLUDE_DIRS ${CRASHPAD_INCLUDE_DIRS})
-  list(APPEND OLIVE_LIBRARIES ${CRASHPAD_LIBRARIES})
-else()
-  message("   Automatic crash reporting will be disabled.")
-
-  if (APPLE)
-    # Enables use of special functions for slider dragging, only linked if Crashpad isn't found
-    # because Crashpad links it itself and will cause duplicate references if we also link it
-    list(APPEND OLIVE_LIBRARIES "-framework ApplicationServices")
-  endif()
-endif()
-
-if (WIN32)
-  list(APPEND OLIVE_DEFINITIONS "-DUNICODE -D_UNICODE")
-elseif (APPLE)
+if (APPLE)
+  # Enables use of special functions for slider dragging.
+  list(APPEND OLIVE_LIBRARIES "-framework ApplicationServices")
   list(APPEND OLIVE_LIBRARIES "-framework CoreAudio" "-framework CoreFoundation" "-framework IOKit" "-framework IOSurface" "-framework CoreVideo" "-framework OpenGL")
 elseif(UNIX)
   list(APPEND OLIVE_LIBRARIES Qt6::DBus)
@@ -365,11 +328,6 @@ if(GIT_FOUND)
   if(GIT_HASH)
     set(PROJECT_LONG_VERSION ${PROJECT_VERSION}-${GIT_HASH})
   endif()
-endif()
-
-# Optional: Find Doxygen if requested
-if(BUILD_DOXYGEN)
-  find_package(Doxygen)
 endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

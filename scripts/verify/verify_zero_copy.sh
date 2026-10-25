@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-APP="${OLIVE_APP:-$ROOT/build/app/Olive.app/Contents/MacOS/Olive}"
+APP="${OLIVE_APP:-$ROOT/build/app/Olivelan.app/Contents/MacOS/Olivelan}"
 PROJECT="${1:-}"
 if [ -z "$PROJECT" ]; then
   echo "Usage: $0 <project.ove>" >&2
