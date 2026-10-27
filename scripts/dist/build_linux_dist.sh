@@ -65,16 +65,29 @@ cp -p "$SRC_BIN" "$DIST/bin/olivelan"
 # distro and running on an older one can fail before main() with missing GLIBCXX_*/CXXABI_* symbols.
 is_system_lib() {
   case "$1" in
-    libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libstdc++.so*|libgcc_s.so*|ld-linux*)
+    # Core C/C++ runtime and dynamic linker (provided by the host glibc / toolchain)
+    libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libstdc++.so*|libgcc_s.so*|ld-linux*)
       return 0 ;;
-    libGL.so*|libEGL.so*|libGLX.so*|libGLdispatch.so*|libOpenGL.so*)
+    # Graphics drivers, OpenGL / EGL / Vulkan runtime layers
+    libGL.so*|libEGL.so*|libGLX.so*|libGLdispatch.so*|libOpenGL.so*|libGLESv2.so*|libvulkan.so*)
       return 0 ;;
-    libcuda.so*|libnvcuvid.so*|libnvidia-*.so*|libva*.so*|libdrm.so*)
+    # GPU vendor and hardware acceleration drivers / buffers
+    libcuda.so*|libnvcuvid.so*|libnvidia-*.so*|libva*.so*|libdrm.so*|libgbm.so*)
+      return 0 ;;
+    # Wayland display stack: must match host compositor and host Mesa EGL drivers.
+    # Bundling older Wayland client libraries causes ABI conflicts with modern Mesa (e.g. Mesa 26),
+    # breaking EGL context creation and erroneously forcing fallback to XWayland.
+    libwayland-client.so*|libwayland-egl.so*|libwayland-cursor.so*|libwayland-server.so*)
+      return 0 ;;
+    # OS plumbing and system daemons: bundling older libsystemd/libudev overrides host libs via
+    # LD_LIBRARY_PATH, breaking host binaries (such as /usr/bin/env on Ubuntu 24.04/26.04) with
+    # version symbol mismatches (e.g. LIBSYSTEMD_254 not found).
+    libsystemd.so*|libudev.so*)
       return 0 ;;
     # Audio stacks are host/driver-owned. Bundling Ubuntu's libasound makes the
     # host PipeWire/JACK ALSA plugins fail with an ALSA_* symbol-version mismatch
     # (the host plugin is newer than the bundled library). Keep the host copy.
-    libasound.so*|libjack.so*|libpulse.so*)
+    libasound.so*|libjack.so*|libpulse.so*|libpipewire-*.so*)
       return 0 ;;
   esac
   return 1
@@ -222,8 +235,8 @@ while [ $# -gt 0 ]; do
 done
 set -- "${OLIVE_ARGS[@]}"
 
-# The bundled libasound is from Ubuntu; let it discover the host's ALSA plugin
-# directory (Fedora uses /usr/lib64/alsa-lib, Debian/Ubuntu uses the other path).
+# The host libasound discovers the host ALSA plugin directory (Fedora uses /usr/lib64/alsa-lib,
+# Debian/Ubuntu uses /usr/lib/x86_64-linux-gnu/alsa-lib).
 if [ -z "${ALSA_PLUGIN_DIR:-}" ]; then
   for candidate in /usr/lib/x86_64-linux-gnu/alsa-lib /usr/lib64/alsa-lib /usr/lib/alsa-lib; do
     if [ -d "$candidate" ]; then
