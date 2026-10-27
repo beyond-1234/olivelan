@@ -210,8 +210,17 @@ bool GpuSessionAdvisor::RestartWithSession(Mode mode)
   // it must not ask it again immediately.
   qputenv(kRestartedEnv, "1");
 
-  const QString program = QCoreApplication::applicationFilePath();
+  const QString appimage = qEnvironmentVariable("APPIMAGE");
+  const QString program = !appimage.isEmpty() ? appimage : QCoreApplication::applicationFilePath();
   const QStringList arguments = QCoreApplication::arguments().mid(1);
+
+  // Restore the original host LD_LIBRARY_PATH before restarting to prevent environment poisoning
+  const QByteArray orig_ld = qgetenv("OLIVELAN_ORIGINAL_LD_LIBRARY_PATH");
+  if (!orig_ld.isEmpty()) {
+    qputenv("LD_LIBRARY_PATH", orig_ld);
+  } else if (!appimage.isEmpty()) {
+    qunsetenv("LD_LIBRARY_PATH");
+  }
 
   if (!QProcess::startDetached(program, arguments)) {
     qWarning() << "[GPU Session] Failed to restart" << program

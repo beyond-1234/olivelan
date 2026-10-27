@@ -121,6 +121,15 @@ GraphicsFallback::Result GraphicsFallback::Relaunch(const QString &fallback_mode
           << "software_gl" << software_gl;
 
 #if defined(Q_OS_UNIX)
+  // Restore the original host LD_LIBRARY_PATH if running from an AppImage to prevent
+  // leaking bundled library paths into the new process's shebang and dynamic linker.
+  const QByteArray orig_ld = qgetenv("OLIVELAN_ORIGINAL_LD_LIBRARY_PATH");
+  if (!orig_ld.isEmpty()) {
+    qputenv("LD_LIBRARY_PATH", orig_ld);
+  } else if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
+    qunsetenv("LD_LIBRARY_PATH");
+  }
+
   // Preserve the terminal/stdout/stderr and PID-visible process. A detached
   // QProcess would make the new fallback process lose the user's terminal
   // logs, which makes field diagnostics impossible.

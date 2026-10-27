@@ -1,0 +1,94 @@
+# ==============================================================================
+# Olivelan AppImage Exclude List
+#
+# Libraries matching the patterns in this file must NEVER be bundled inside the
+# self-contained Linux distribution directory or standalone AppImage.
+#
+# They must be provided by the host operating system, windowing system, and GPU driver.
+# ==============================================================================
+
+# --- 1. Core C Runtime & Dynamic Linker (Host glibc / toolchain) ---
+ld-linux.so.2
+ld-linux-x86-64.so.2
+ld-linux*.so*
+libc.so*
+libm.so*
+libmvec.so*
+libdl.so*
+libpthread.so*
+librt.so*
+libresolv.so*
+libutil.so*
+libnss_*.so*
+libanl.so*
+libthread_db.so*
+libBrokenLocale.so*
+libcidn.so*
+
+# --- 2. GCC C++ Runtime (Host-owned compiler baseline) ---
+libstdc++.so*
+libgcc_s.so*
+
+# --- 3. Graphics Drivers & Hardware Acceleration (Mesa, DRI, Vulkan, VA-API, CUDA) ---
+libGL.so*
+libEGL.so*
+libGLdispatch.so*
+libGLX.so*
+libOpenGL.so*
+libGLESv2.so*
+libGLES*.so*
+libglapi.so*
+libgbm.so*
+libdrm*.so*
+libvulkan.so*
+libva*.so*
+libcuda.so*
+libnvcuvid.so*
+libnvidia-*.so*
+
+# --- 4. Wayland Display Stack ---
+# Must match host compositor and host Mesa EGL drivers. Bundling older Wayland client
+# libraries causes ABI conflicts with modern Mesa (e.g. Mesa 26), breaking EGL
+# initialization and erroneously forcing fallback to XWayland.
+libwayland-client.so*
+libwayland-egl.so*
+libwayland-cursor.so*
+libwayland-server.so*
+
+# --- 5. X11 & XCB Windowing Stack ---
+libX11.so*
+libX11-xcb.so*
+libxcb.so*
+libxcb-*.so*
+libICE.so*
+libSM.so*
+libxshmfence.so*
+
+# --- 6. Host OS Plumbing, Init Systems & Device Node Management ---
+# Bundling older libsystemd/libudev overrides host libraries via LD_LIBRARY_PATH,
+# breaking host tools like /usr/bin/env on Ubuntu 24.04/26.04 (e.g. LIBSYSTEMD_254 not found).
+libsystemd.so*
+libudev.so*
+
+# --- 7. Audio Architecture (Host / Driver Owned) ---
+# Audio stacks are host/driver-owned. Bundling Ubuntu's libasound makes the
+# host PipeWire/JACK ALSA plugins fail with an ALSA_* symbol-version mismatch.
+libasound.so*
+libjack.so*
+libpulse*.so*
+libpipewire-*.so*
+
+# --- 8. Font & Text Rendering Baseline ---
+# Fontconfig caches must come from the host OS; bundling libfontconfig causes launch stalls.
+libfontconfig.so*
+libfreetype.so*
+libharfbuzz.so*
+libfribidi.so*
+
+# --- 9. Core System Baseline Utilities ---
+libz.so*
+libuuid.so*
+libexpat.so*
+libgmp.so*
+libgpg-error.so*
+libcom_err.so*

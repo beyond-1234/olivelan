@@ -63,8 +63,33 @@ cp -p "$SRC_BIN" "$DIST/bin/olivelan"
 # libstdc++/libgcc are deliberately host-owned. The build must therefore target the oldest
 # supported glibc/GCC baseline; see harness/build-dependency-baseline.md. Building on a newer
 # distro and running on an older one can fail before main() with missing GLIBCXX_*/CXXABI_* symbols.
+
+EXCLUDELIST="${EXCLUDELIST:-$ROOT/scripts/dist/excludelist}"
+EXCLUDE_PATTERNS=()
+if [ -f "$EXCLUDELIST" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="$(echo "$line" | xargs)"
+    [ -z "$line" ] && continue
+    EXCLUDE_PATTERNS+=("$line")
+  done < "$EXCLUDELIST"
+  echo "[INFO] 已从 $EXCLUDELIST 加载 ${#EXCLUDE_PATTERNS[@]} 条排除规则"
+fi
+
 is_system_lib() {
-  case "$1" in
+  local target="$1"
+  if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
+    for pat in "${EXCLUDE_PATTERNS[@]}"; do
+      # shellcheck disable=SC2053
+      if [[ "$target" == $pat ]]; then
+        return 0
+      fi
+    done
+    return 1
+  fi
+
+  # Fallback inline filter in case excludelist file was not found
+  case "$target" in
     # Core C/C++ runtime and dynamic linker (provided by the host glibc / toolchain)
     libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libstdc++.so*|libgcc_s.so*|ld-linux*)
       return 0 ;;
@@ -75,18 +100,12 @@ is_system_lib() {
     libcuda.so*|libnvcuvid.so*|libnvidia-*.so*|libva*.so*|libdrm.so*|libgbm.so*)
       return 0 ;;
     # Wayland display stack: must match host compositor and host Mesa EGL drivers.
-    # Bundling older Wayland client libraries causes ABI conflicts with modern Mesa (e.g. Mesa 26),
-    # breaking EGL context creation and erroneously forcing fallback to XWayland.
     libwayland-client.so*|libwayland-egl.so*|libwayland-cursor.so*|libwayland-server.so*)
       return 0 ;;
-    # OS plumbing and system daemons: bundling older libsystemd/libudev overrides host libs via
-    # LD_LIBRARY_PATH, breaking host binaries (such as /usr/bin/env on Ubuntu 24.04/26.04) with
-    # version symbol mismatches (e.g. LIBSYSTEMD_254 not found).
+    # OS plumbing and system daemons: bundling older libsystemd/libudev overrides host libs
     libsystemd.so*|libudev.so*)
       return 0 ;;
-    # Audio stacks are host/driver-owned. Bundling Ubuntu's libasound makes the
-    # host PipeWire/JACK ALSA plugins fail with an ALSA_* symbol-version mismatch
-    # (the host plugin is newer than the bundled library). Keep the host copy.
+    # Audio stacks are host/driver-owned. Keep the host copy.
     libasound.so*|libjack.so*|libpulse.so*|libpipewire-*.so*)
       return 0 ;;
   esac
@@ -179,7 +198,13 @@ if [ -z "${XAUTHORITY:-}" ]; then
   done
 fi
 
-export LD_LIBRARY_PATH="$HERE/lib:${LD_LIBRARY_PATH:-}"
+# Save original LD_LIBRARY_PATH so child processes and relaunched instances
+# can restore the clean host environment.
+if [ -z "${OLIVELAN_ORIGINAL_LD_LIBRARY_PATH+x}" ]; then
+  export OLIVELAN_ORIGINAL_LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+fi
+
+export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QT_PLUGIN_PATH="$HERE/plugins"
 
 # Do not force QT_QPA_PLATFORM here. GpuSessionAdvisor applies the matching
@@ -250,13 +275,26 @@ exec "$HERE/bin/olivelan" "$@"
 EOF
 chmod +x "$DIST/run-olive.sh"
 
-# 可选：用 patchelf 给二进制写死 $ORIGIN RPATH（若可用），否则依赖上面的 LD_LIBRARY_PATH
+# --- 5. 用 patchelf 为二进制、依赖库和 Qt 插件写入规范的 RPATH ---
 if command -v patchelf >/dev/null 2>&1; then
+  echo "[INFO] 为主程序设置 RPATH \$ORIGIN/../lib..."
   patchelf --set-rpath '$ORIGIN/../lib' "$DIST/bin/olivelan" 2>/dev/null || true
-  echo "[INFO] 已写入 RPATH \$ORIGIN/../lib"
+
+  echo "[INFO] 为内部共享库设置 RPATH \$ORIGIN..."
+  for lib in "$DIST"/lib/*.so*; do
+    [ -f "$lib" ] && [ ! -L "$lib" ] || continue
+    patchelf --set-rpath '$ORIGIN' "$lib" 2>/dev/null || true
+  done
+
+  echo "[INFO] 为 Qt 插件设置 RPATH \$ORIGIN/../../lib..."
+  for plug in "$DIST"/plugins/*/*.so; do
+    [ -f "$plug" ] || continue
+    patchelf --set-rpath '$ORIGIN/../../lib' "$plug" 2>/dev/null || true
+  done
+  echo "[OK] 已完成全量 RPATH 设置"
 fi
 
-# --- 5. 生成 tar.gz ---
+# --- 6. 生成 tar.gz ---
 cd "$ROOT/dist"
 TARBALL="olive-linux-x86_64-$(date +%Y%m%d).tar.gz"
 tar czf "$TARBALL" linux-x86_64
